@@ -59,7 +59,7 @@ Nguyên tắc chung `[XN]` (D-01): **một bộ đánh giá, hai mục đích**.
 | ID | Mục tiêu | Trạng thái |
 |---|---|---|
 | NC-1 | Xây dựng bộ đánh giá cho bài toán citation fidelity trong lĩnh vực CS–AI, song ngữ Anh–Việt | `[XN]` |
-| NC-2 | So sánh các cách tiếp cận (Single LLM, RAG trên toàn văn, pipeline nhiều bước) theo điều kiện truy cập (abstract / toàn văn) và ngôn ngữ claim (Anh / Việt) | `[ĐX]` |
+| NC-2 | So sánh các cách tiếp cận (Single LLM, RAG trên toàn văn, pipeline nhiều bước), lấy **ngôn ngữ claim (Anh / Việt) làm trục chính**; điều kiện truy cập (abstract / toàn văn) là trục phụ vì đã có công trình liên quan (`02` §4.4) | `[ĐX]` (cập nhật 20/11/2026) |
 | NC-3 | Phân tích trade-off giữa chất lượng, chi phí và độ trễ | `[XN]` (RQ5 của v1.0) |
 
 Câu hỏi nghiên cứu chính thức được chốt sau literature review ở Phase 1. Bản nháp và cách ánh xạ với RQ1–RQ5 của v1.0 nằm ở `01-idea-analysis.md` §4.6.

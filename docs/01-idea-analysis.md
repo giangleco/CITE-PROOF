@@ -161,9 +161,13 @@ Bộ trạng thái cố ý không có giá trị kiểu "giả mạo", vì hệ 
 
 **Không tuyên bố tính mới.** Mọi đóng góp tiềm năng, kể cả khía cạnh xuyên ngôn ngữ Việt–Anh, chỉ được khẳng định sau literature review, đúng nguyên tắc v1.0 §17.3.
 
+**Cập nhật 20/11/2026:** tra cứu sơ bộ ở `02` §4.3–§4.4 cho thấy trục multi-agent (CiteAudit) và trục abstract/toàn văn (DeepSciVerify) đã có công trình liên quan. Trục xuyên ngôn ngữ Việt–Anh được đề xuất làm trục chính (NC-2 trong `00`).
+
 ### 4.7 Giải pháp hiện có (sơ bộ)
 
 Một số công cụ có chồng lấn một phần, cần khảo sát ở Phase 1 (`02`): scite.ai (phân loại câu trích dẫn theo hướng hỗ trợ hay trái chiều), Consensus và Elicit (trợ lý tìm kiếm và tổng hợp tài liệu khoa học bằng AI), các công cụ phát hiện tài liệu tham khảo bịa đặt, và các trình quản lý tài liệu tham khảo. Mô tả này dựa trên hiểu biết chung, chưa được kiểm chứng; tính năng và tình trạng hiện tại của từng công cụ sẽ được xác minh ở Phase 1.
+
+**Cập nhật 20/11/2026:** đã tra cứu sơ bộ, kết quả ở `02` §4.3. Kiểm tra tài liệu tham khảo bịa đặt đã có nhiều công cụ mã nguồn mở, nên khác biệt phải đến từ phần citation fidelity và hỗ trợ tiếng Việt.
 
 Các điểm khác biệt cần kiểm chứng `[GĐ]`:
 
@@ -198,6 +202,7 @@ Các điểm khác biệt cần kiểm chứng `[GĐ]`:
 | Q-07 | Chiến lược đánh giá cụ thể (§4.5.3) | Phase 1 |
 | Q-08 | Có dùng open-weight model trong MVP không | Phase 3 |
 | Q-09 | Môi trường chạy pilot (máy cá nhân hay cloud) | Phase 3 |
+| Q-10 | Số giờ mỗi tuần bạn dành cho dự án (ảnh hưởng roadmap `11`) | Phase 1 |
 
 ## 5. Implementation Steps
 
@@ -211,14 +216,14 @@ Kế hoạch sơ bộ cho Phase 1 `[ĐX]`, chi tiết hóa khi bắt đầu phas
 | 4 | Phỏng vấn ngắn sinh viên, và giảng viên nếu có thể | A-01, A-03, A-09 |
 | 5 | Thử thủ công khả năng đối chiếu claim tiếng Việt với bằng chứng tiếng Anh | A-05 |
 | 6 | Gán nhãn thử một mẫu nhỏ, đo thời gian và độ nhất quán | A-08, kích thước tập đánh giá |
-| 7 | Trả lời các câu hỏi mở chốt ở Phase 1 | Q-01, Q-03 đến Q-07 |
+| 7 | Trả lời các câu hỏi mở chốt ở Phase 1 | Q-01, Q-03 đến Q-07, Q-10 |
 
 Bước 3 và bước 6 nên dùng chung một mẫu bài để tiết kiệm thời gian.
 
 ## 6. Expected Outputs
 
 - Phân tích được thống nhất về điểm mạnh, vấn đề và mâu thuẫn của v1.0.
-- Danh sách giả định A-01 đến A-09 và câu hỏi mở Q-01 đến Q-09, mỗi mục có phase xử lý.
+- Danh sách giả định A-01 đến A-09 và câu hỏi mở Q-01 đến Q-10, mỗi mục có phase xử lý.
 - Phương án chiến lược đánh giá cho điều kiện một người gán nhãn.
 - Kế hoạch sơ bộ cho Phase 1.
 
