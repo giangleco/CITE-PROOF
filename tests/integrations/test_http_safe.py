@@ -387,3 +387,76 @@ async def test_non_network_http_error_is_non_retryable() -> None:
         await Recorder(bad).client().get("http://example.org/?q=SECRET")
     assert not isinstance(ei.value, RetryableError)
     assert "SECRET" not in str(ei.value)
+
+
+@pytest.mark.parametrize("url", ["http://[v1..:]/", "http://[v7.abc]/"])
+async def test_ipvfuture_hosts_rejected(url: str) -> None:
+    with pytest.raises(UnsafeUrlError) as ei:
+        await Recorder().client().get(url)
+    assert ei.value.code == "HOST_NOT_ALLOWED"
+
+
+async def test_resolver_unicode_error_is_dns_failed() -> None:
+    async def boom(host: str, port: int) -> list[str]:
+        raise UnicodeError("bad label")
+
+    client = SafeHttpClient(resolver=boom, transport=httpx.MockTransport(Recorder()))
+    with pytest.raises(UnsafeUrlError) as ei:
+        await client.get("http://example.org/")
+    assert ei.value.code == "DNS_FAILED"
+
+
+async def test_many_tiny_chunks_bounded() -> None:
+    rec = Recorder(lambda r: make_response(200, stream=ChunkStream([b"ab"] * 5000)))
+    resp = await rec.client(max_bytes=1000).get("http://example.org/")
+    assert len(resp.body) == 1000
+    assert resp.truncated
+
+
+async def test_incomplete_gzip_is_truncated() -> None:
+    data = gzip.compress(b"hello world" * 100)[:-12]
+    rec = Recorder(lambda r: make_response(200, headers={"content-encoding": "gzip"}, content=data))
+    resp = await rec.client().get("http://example.org/")
+    assert resp.truncated
+
+
+async def test_concatenated_gzip_members_truncated() -> None:
+    data = gzip.compress(b"first") + gzip.compress(b"second")
+    rec = Recorder(lambda r: make_response(200, headers={"content-encoding": "gzip"}, content=data))
+    resp = await rec.client().get("http://example.org/")
+    assert resp.body == b"first"
+    assert resp.truncated
+
+
+async def test_data_after_eof_in_later_chunk_truncated() -> None:
+    gz = gzip.compress(b"first")
+    rec = Recorder(
+        lambda r: make_response(
+            200, headers={"content-encoding": "gzip"}, stream=ChunkStream([gz, b"extra"])
+        )
+    )
+    resp = await rec.client().get("http://example.org/")
+    assert resp.truncated
+
+
+async def test_complete_gzip_not_truncated() -> None:
+    rec = Recorder(
+        lambda r: make_response(
+            200, headers={"content-encoding": "gzip"}, content=gzip.compress(b"hello")
+        )
+    )
+    resp = await rec.client().get("http://example.org/")
+    assert resp.body == b"hello"
+    assert not resp.truncated
+
+
+async def test_underscore_host_allowed() -> None:
+    hosts = HOSTS | {"my_host.example.org": [PUBLIC_IP]}
+
+    async def res(host: str, port: int) -> list[str]:
+        return hosts[host]
+
+    rec = Recorder()
+    client = SafeHttpClient(resolver=res, transport=httpx.MockTransport(rec))
+    await client.get("http://My_Host.example.org/")
+    assert rec.requests[0].headers["host"] == "my_host.example.org"

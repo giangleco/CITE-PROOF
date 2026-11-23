@@ -195,8 +195,17 @@ class SafeHttpClient:
         if "%" in raw_host:
             raise UnsafeUrlError("HOST_NOT_ALLOWED", "Host không được chứa zone id")
         raw_host = raw_host.removesuffix(".")
-        if ":" in raw_host:
+        if ":" in raw_host or "[" in parts.netloc:
+            try:
+                ipaddress.ip_address(raw_host)
+            except ValueError as exc:
+                raise UnsafeUrlError("HOST_NOT_ALLOWED", "Host không hợp lệ") from exc
             host = raw_host
+        elif raw_host.isascii():
+            host = raw_host
+            labels = host.split(".")
+            if len(host) > 253 or any(not 0 < len(label) <= 63 for label in labels):
+                raise UnsafeUrlError("HOST_NOT_ALLOWED", "Host không hợp lệ")
         else:
             try:
                 host = idna.encode(raw_host, uts46=True).decode("ascii")
@@ -213,7 +222,7 @@ class SafeHttpClient:
 
         try:
             resolved = await self._resolver(host, port)
-        except OSError as exc:
+        except (OSError, ValueError) as exc:  # UnicodeError là ValueError
             raise UnsafeUrlError("DNS_FAILED", f"Không phân giải được host: {host}") from exc
         if not resolved:
             raise UnsafeUrlError("DNS_FAILED", f"Không phân giải được host: {host}")
@@ -261,34 +270,38 @@ class SafeHttpClient:
     async def _read_body(self, resp: httpx.Response) -> tuple[bytes, bool]:
         limit = self._max_bytes
         decoder = _make_decoder(resp.headers)
-        chunks: list[bytes] = []
-        size = 0
+        buf = bytearray()
         try:
             async for chunk in resp.aiter_raw():
                 if decoder is None:
-                    room = limit - size
+                    room = limit - len(buf)
                     if len(chunk) > room:
-                        chunks.append(chunk[:room])
-                        return b"".join(chunks), True
-                    chunks.append(chunk)
-                    size += len(chunk)
+                        buf += chunk[:room]
+                        return bytes(buf), True
+                    buf += chunk
+                    continue
+                if decoder.eof:
+                    if chunk:
+                        return bytes(buf), True  # dữ liệu thừa sau member đầu
                     continue
                 data = chunk
                 while data:
-                    room = limit - size
+                    room = limit - len(buf)
                     if room <= 0:
-                        return b"".join(chunks), True
+                        return bytes(buf), True
                     out = decoder.decompress(data, room)
-                    chunks.append(out)
-                    size += len(out)
-                    data = decoder.unconsumed_tail
+                    if out:
+                        buf += out
                     if decoder.eof:
-                        return b"".join(chunks), False
-                if size >= limit and not decoder.eof:
-                    return b"".join(chunks), True
+                        if decoder.unused_data:
+                            return bytes(buf), True
+                        break
+                    data = decoder.unconsumed_tail
+                if len(buf) >= limit and not decoder.eof:
+                    return bytes(buf), True
         except zlib.error as exc:
             raise FetchFailedError("Nội dung nén không hợp lệ") from exc
-        return b"".join(chunks), False
+        return bytes(buf), decoder is not None and not decoder.eof
 
     async def _request(self, target: _Target) -> _Hop:
         host_header = _fmt_host(target.host)
