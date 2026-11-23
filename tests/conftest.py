@@ -4,6 +4,7 @@ import argparse
 import logging
 import os
 from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
 
 import psycopg
 import pytest
@@ -16,6 +17,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 import citeproof.db.models  # noqa: F401  (đăng ký bảng lên Base.metadata)
+from citeproof.core.settings import Settings
 from citeproof.db.base import Base
 from citeproof.db.session import make_engine, make_session_factory
 
@@ -89,3 +91,9 @@ async def clean_db(engine: AsyncEngine) -> AsyncIterator[None]:
     yield
     # Engine dùng chung giữa các event loop theo test: bỏ connection đã pool.
     await engine.dispose()
+
+
+@pytest.fixture
+def settings(database_url: str, tmp_path: Path) -> Settings:
+    """Settings môi trường local dùng DB test và thư mục storage tạm."""
+    return Settings(database_url=database_url, env="local", storage_dir=tmp_path / "storage")

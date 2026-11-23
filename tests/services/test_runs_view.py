@@ -58,6 +58,13 @@ async def test_failed_run_message_and_stage(
         view = await runs_view.get_run_view(s, user=user, run_id=run_id)
         assert view.failed_stage == S.S5 and view.error_message == "Lỗi mô phỏng ở bước 5"
         assert not view.is_active
+        await set_run(
+            s,
+            run_id,
+            error={"stage": "S5", "type": "InputError", "message": "InputError: Lỗi ở bước 5"},
+        )
+        view = await runs_view.get_run_view(s, user=user, run_id=run_id)
+        assert view.error_message == "Lỗi ở bước 5"
         await set_run(s, run_id, error={"stage": "S5", "type": "KeyError", "message": "'x'"})
         view = await runs_view.get_run_view(s, user=user, run_id=run_id)
     assert view.error_message == "Lỗi hệ thống ở bước này."

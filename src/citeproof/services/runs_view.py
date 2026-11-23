@@ -121,8 +121,10 @@ async def get_run_view(session: AsyncSession, *, user: User, run_id: UUID) -> Ru
     if status == RunStatus.FAILED:
         stage_value = error.get("stage")
         failed_stage = StageName(stage_value) if stage_value in set(StageName) else None
-        if error.get("type") in _domain_error_names() and error.get("message"):
-            message = str(error["message"])
+        error_type = error.get("type")
+        if error_type in _domain_error_names() and error.get("message"):
+            # describe_error lưu dạng "<Loại>: <thông điệp>"; người dùng chỉ cần thông điệp.
+            message = str(error["message"]).removeprefix(f"{error_type}: ")
         else:
             message = GENERIC_STAGE_ERROR
     s3 = jobs.get(StageName.S3.value)
