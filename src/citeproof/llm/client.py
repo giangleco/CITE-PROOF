@@ -3,6 +3,7 @@
 import logging
 import time
 from collections.abc import Mapping
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -35,19 +36,27 @@ def _feedback(errors: list[str]) -> str:
     return "SCHEMA_INVALID:\n" + "\n".join(f"- {line}" for line in errors)
 
 
+def _entry_value[T: OutputModel](schema: type[T], entry: Mapping[str, Any]) -> T | None:
+    """Giá trị đã validate từ entry cache, hoặc None nếu entry hỏng."""
+    try:
+        return schema.model_validate(entry["value"])
+    except (KeyError, TypeError, ValidationError):
+        return None
+
+
 class LLMClient:
     def __init__(
         self,
         provider: LLMProvider,
         cache: CacheStore,
-        logger: CallLogger,
+        call_logger: CallLogger,
         *,
         mode: CacheMode = CacheMode.READ_WRITE,
         prices: Mapping[str, tuple[float, float]] | None = None,
     ) -> None:
         self._provider = provider
         self._cache = cache
-        self._logger = logger
+        self._call_logger = call_logger
         self._mode = mode
         self._prices: Mapping[str, tuple[float, float]] = prices or {}
 
@@ -77,12 +86,11 @@ class LLMClient:
         if self._mode is not CacheMode.FRESH:
             cached = await self._cache.get(key)
             if cached is not None:
-                try:
-                    value = schema.model_validate(cached["value"])
-                except (KeyError, TypeError, ValidationError):
+                value = _entry_value(schema, cached)
+                if value is None:
                     if self._mode is CacheMode.REPLAY_ONLY:
-                        raise CacheEntryInvalidError(key) from None
-                    logger.warning("llm_cache_entry_invalid", extra={"task": parts.task})
+                        raise CacheEntryInvalidError(key)
+                    self._warn_invalid_entry(parts, key)
                     await self._cache.delete(key)
                 else:
                     await self._log(parts, ctx, model, key, 0, 0, 0, cache_hit=True)
@@ -125,7 +133,7 @@ class LLMClient:
 
             if value_or_none is not None and not problems:
                 if self._mode is CacheMode.READ_WRITE:
-                    await self._cache.put(
+                    stored = await self._cache.put(
                         key,
                         CacheEntryMeta(
                             ctx.namespace,
@@ -137,6 +145,13 @@ class LLMClient:
                         ),
                         {"value": value_or_none.model_dump(mode="json")},
                     )
+                    # Lời gọi đồng thời cùng khoá: entry có trước thắng, để kết quả
+                    # trả về bây giờ trùng với kết quả phát lại sau này.
+                    winner = _entry_value(schema, stored)
+                    if winner is None:
+                        self._warn_invalid_entry(parts, key)
+                    else:
+                        value_or_none = winner
                 return LLMResult(
                     value_or_none, False, key, response.input_tokens, response.output_tokens
                 )
@@ -145,6 +160,9 @@ class LLMClient:
             messages.append({"role": "user", "content": _feedback(problems)})
 
         raise LLMOutputError(f"{parts.task}: output invalid after {max_attempts} attempts")
+
+    def _warn_invalid_entry(self, parts: PromptParts, key: str) -> None:
+        logger.warning("llm_cache_entry_invalid", extra={"task": parts.task, "cache_key": key})
 
     async def _log(
         self,
@@ -159,7 +177,7 @@ class LLMClient:
         cache_hit: bool,
     ) -> None:
         cost = estimate_cost(model, input_tokens, output_tokens, self._prices)
-        await self._logger.log(
+        await self._call_logger.log(
             LLMCallRecord(
                 run_id=ctx.run_id,
                 stage=ctx.stage,

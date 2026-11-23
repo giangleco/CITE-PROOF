@@ -1,3 +1,4 @@
+import asyncio
 import unicodedata
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
@@ -116,9 +117,17 @@ async def test_in_memory_roundtrip_first_put_wins() -> None:
     store = InMemoryCacheStore()
     meta = CacheEntryMeta("eval:D@h", None, "t", "m", "v1", "s1")
     assert await store.get("k") is None
-    await store.put("k", meta, {"a": 1})
-    await store.put("k", meta, {"a": 2})
+    assert await store.put("k", meta, {"a": 1}) == {"a": 1}
+    assert await store.put("k", meta, {"a": 2}) == {"a": 1}
     assert await store.get("k") == {"a": 1}
+
+
+async def test_in_memory_put_returns_isolated_copy() -> None:
+    store = InMemoryCacheStore()
+    meta = CacheEntryMeta("eval:D@h", None, "t", "m", "v1", "s1")
+    stored = await store.put("k", meta, {"a": [1]})
+    stored["a"].append(2)
+    assert await store.get("k") == {"a": [1]}
 
 
 @pytest.mark.db
@@ -129,8 +138,8 @@ async def test_pg_cache_roundtrip_counts_hits(
     store = PgCacheStore(session_factory)
     meta = CacheEntryMeta("eval:D2@ab12", None, "t", "m", "v1", "s1")
     assert await store.get("k") is None
-    await store.put("k", meta, {"a": 1})
-    await store.put("k", meta, {"a": 2})
+    assert await store.put("k", meta, {"a": 1}) == {"a": 1}
+    assert await store.put("k", meta, {"a": 2}) == {"a": 1}
     assert await store.get("k") == {"a": 1}
     assert await store.get("k") == {"a": 1}
     async with session_factory() as session:
@@ -258,3 +267,16 @@ async def test_in_memory_store_isolates_responses() -> None:
     assert got is not None
     got["a"].append(3)
     assert await store.get("k") == {"a": [1]}
+
+
+@pytest.mark.db
+@pytest.mark.usefixtures("clean_db")
+async def test_pg_concurrent_puts_return_the_same_stored_response(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    store = PgCacheStore(session_factory)
+    meta = CacheEntryMeta("eval:D2@ab12", None, "t", "m", "v1", "s1")
+    first, second = await asyncio.gather(
+        store.put("c", meta, {"a": 1}), store.put("c", meta, {"a": 2})
+    )
+    assert first == second == await store.get("c")

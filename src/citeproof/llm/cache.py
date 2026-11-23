@@ -11,7 +11,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel
-from sqlalchemy import delete, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -162,7 +162,9 @@ def _check_meta(meta: CacheEntryMeta) -> None:
 class CacheStore(Protocol):
     async def get(self, key: str) -> dict[str, Any] | None: ...
 
-    async def put(self, key: str, meta: CacheEntryMeta, response: dict[str, Any]) -> None: ...
+    async def put(self, key: str, meta: CacheEntryMeta, response: dict[str, Any]) -> dict[str, Any]:
+        """Ghi nếu khoá chưa có; trả về response thực sự được lưu (entry có trước thắng)."""
+        ...
 
     async def delete(self, key: str) -> None: ...
 
@@ -175,9 +177,10 @@ class InMemoryCacheStore:
         entry = self._entries.get(key)
         return copy.deepcopy(entry) if entry is not None else None
 
-    async def put(self, key: str, meta: CacheEntryMeta, response: dict[str, Any]) -> None:
+    async def put(self, key: str, meta: CacheEntryMeta, response: dict[str, Any]) -> dict[str, Any]:
         _check_meta(meta)
-        self._entries.setdefault(key, copy.deepcopy(response))
+        stored = self._entries.setdefault(key, copy.deepcopy(response))
+        return copy.deepcopy(stored)
 
     async def delete(self, key: str) -> None:
         self._entries.pop(key, None)
@@ -202,7 +205,7 @@ class PgCacheStore:
         response: dict[str, Any] = row[0]
         return response
 
-    async def put(self, key: str, meta: CacheEntryMeta, response: dict[str, Any]) -> None:
+    async def put(self, key: str, meta: CacheEntryMeta, response: dict[str, Any]) -> dict[str, Any]:
         _check_meta(meta)
         stmt = (
             insert(LLMCacheEntry)
@@ -217,10 +220,21 @@ class PgCacheStore:
                 response=response,
             )
             .on_conflict_do_nothing(index_elements=["cache_key"])
+            .returning(LLMCacheEntry.response)
         )
         async with self._session_factory() as session:
-            await session.execute(stmt)
+            row = (await session.execute(stmt)).first()
+            if row is None:  # xung đột: đọc entry đã có (đã commit) của writer khác
+                row = (
+                    await session.execute(
+                        select(LLMCacheEntry.response).where(LLMCacheEntry.cache_key == key)
+                    )
+                ).first()
             await session.commit()
+        if row is None:  # entry vừa bị xoá giữa hai câu lệnh
+            return copy.deepcopy(response)
+        stored: dict[str, Any] = row[0]
+        return stored
 
     async def delete(self, key: str) -> None:
         async with self._session_factory() as session:

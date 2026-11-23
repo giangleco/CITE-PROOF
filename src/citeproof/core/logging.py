@@ -20,6 +20,7 @@ ALLOWED_LOG_FIELDS: frozenset[str] = frozenset(
         "status",
         "duration_ms",
         "error_type",
+        "cache_key",
     }
 )
 

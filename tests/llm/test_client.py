@@ -1,11 +1,13 @@
+import json
 from decimal import Decimal
-from typing import ClassVar
+from typing import Any, ClassVar
 from uuid import uuid4
 
 import pytest
 
 from citeproof.core.errors import LLMOutputError, RetryableError
-from citeproof.llm.cache import InMemoryCacheStore, doc_namespace, eval_namespace
+from citeproof.core.logging import configure_logging
+from citeproof.llm.cache import CacheEntryMeta, InMemoryCacheStore, doc_namespace, eval_namespace
 from citeproof.llm.calls import InMemoryCallLogger
 from citeproof.llm.client import LLMClient
 from citeproof.llm.context import PromptParts
@@ -39,8 +41,9 @@ def make(
 ) -> tuple[LLMClient, ScriptedProvider, InMemoryCacheStore, InMemoryCallLogger]:
     provider = ScriptedProvider(responses)
     store = cache or InMemoryCacheStore()
-    logger = InMemoryCallLogger()
-    return LLMClient(provider, store, logger, mode=mode, prices=prices), provider, store, logger
+    call_logger = InMemoryCallLogger()
+    client = LLMClient(provider, store, call_logger=call_logger, mode=mode, prices=prices)
+    return client, provider, store, call_logger
 
 
 async def call(client: LLMClient, ctx: CallContext = CTX) -> str:
@@ -49,15 +52,15 @@ async def call(client: LLMClient, ctx: CallContext = CTX) -> str:
 
 
 async def test_miss_calls_provider_then_hit_skips_it() -> None:
-    client, provider, _, logger = make([GOOD])
+    client, provider, _, call_logger = make([GOOD])
     assert await call(client) == "ok"
     result = await client.complete_structured(parts=PARTS, schema=Echo, model="m", ctx=CTX)
     assert result.value.answer == "ok"
     assert result.cache_hit
     assert len(provider.requests) == 1
-    assert [r.cache_hit for r in logger.records] == [False, True]
-    assert logger.records[1].input_tokens == 0
-    assert logger.records[1].cost_estimate == 0
+    assert [r.cache_hit for r in call_logger.records] == [False, True]
+    assert call_logger.records[1].input_tokens == 0
+    assert call_logger.records[1].cost_estimate == 0
 
 
 async def test_replay_only_raises_on_miss() -> None:
@@ -119,17 +122,17 @@ async def test_max_tokens_stop_reason_is_invalid() -> None:
 async def test_every_provider_attempt_is_logged_with_cost() -> None:
     bad = ProviderResponse("{}", 1_000_000, 0, "end_turn")
     good = ProviderResponse('{"answer":"ok"}', 0, 1_000_000, "end_turn")
-    client, _, _, logger = make([bad, good], prices={"m": (3.0, 15.0)})
+    client, _, _, call_logger = make([bad, good], prices={"m": (3.0, 15.0)})
     await call(client)
-    assert [r.cost_estimate for r in logger.records] == [Decimal(3), Decimal(15)]
-    assert all(not r.cache_hit and r.prompt_version == "v1" for r in logger.records)
+    assert [r.cost_estimate for r in call_logger.records] == [Decimal(3), Decimal(15)]
+    assert all(not r.cache_hit and r.prompt_version == "v1" for r in call_logger.records)
 
 
 async def test_doc_namespace_cache_entry_carries_document_id() -> None:
-    client, _, store, logger = make([GOOD])
+    client, _, store, call_logger = make([GOOD])
     await call(client)
     assert len(store._entries) == 1
-    assert logger.records[0].cache_namespace == f"doc:{DOC}"
+    assert call_logger.records[0].cache_namespace == f"doc:{DOC}"
 
 
 async def test_eval_namespace_is_accepted() -> None:
@@ -141,33 +144,33 @@ async def test_eval_namespace_is_accepted() -> None:
 
 async def test_invalid_namespace_fails_before_provider_call() -> None:
     ctx = CallContext("bogus", None, None, None)
-    client, provider, _, logger = make([GOOD])
+    client, provider, _, call_logger = make([GOOD])
     with pytest.raises(ValueError):
         await call(client, ctx)
-    assert provider.requests == [] and logger.records == []
+    assert provider.requests == [] and call_logger.records == []
 
 
 async def test_provider_error_propagates_unlogged() -> None:
-    client, _, store, logger = make([RetryableError("429")])
+    client, _, store, call_logger = make([RetryableError("429")])
     with pytest.raises(RetryableError):
         await call(client)
-    assert logger.records == [] and store._entries == {}
+    assert call_logger.records == [] and store._entries == {}
 
 
 async def test_replay_only_happy_path_after_read_write() -> None:
     client, _, store, _ = make([GOOD])
     await call(client)
-    replay, provider, _, logger = make([], CacheMode.REPLAY_ONLY, store)
+    replay, provider, _, call_logger = make([], CacheMode.REPLAY_ONLY, store)
     assert await call(replay) == "ok"
-    assert provider.requests == [] and logger.records[0].cache_hit
+    assert provider.requests == [] and call_logger.records[0].cache_hit
 
 
 async def test_retried_call_is_replayable_under_one_key() -> None:
     bad = ProviderResponse('{"bad":1}', 1, 1, "end_turn")
-    client, _, store, logger = make([bad, GOOD])
+    client, _, store, call_logger = make([bad, GOOD])
     result = await client.complete_structured(parts=PARTS, schema=Echo, model="m", ctx=CTX)
     assert list(store._entries) == [result.cache_key]
-    assert {r.cache_key for r in logger.records} == {result.cache_key}
+    assert {r.cache_key for r in call_logger.records} == {result.cache_key}
     replay, provider, _, _ = make([], CacheMode.REPLAY_ONLY, store)
     assert await call(replay) == "ok"
     assert provider.requests == []
@@ -215,3 +218,41 @@ async def test_corrupt_entry_raises_in_replay_only(entry: dict[str, object]) -> 
         await call(replay)
     assert info.value.cache_key == key
     assert provider.requests == []
+
+
+async def test_invalid_entry_warning_carries_cache_key_but_no_values(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    client, _, store, _ = make([GOOD])
+    await call(client)
+    (key,) = store._entries
+    store._entries[key] = {"value": {"wrong": "bí mật"}}
+    configure_logging("INFO")
+    client2, _, _, _ = make([GOOD], CacheMode.READ_WRITE, store)
+    await call(client2)
+    err = capsys.readouterr().err
+    (line,) = [ln for ln in err.splitlines() if "llm_cache_entry_invalid" in ln]
+    rec = json.loads(line)
+    assert rec["cache_key"] == key
+    assert rec["task"] == "echo"
+    assert "bí mật" not in err
+    assert "wrong" not in err
+
+
+class _RacingStore(InMemoryCacheStore):
+    """Worker khác ghi cùng khoá giữa lúc ta đọc miss và lúc ta ghi."""
+
+    async def put(self, key: str, meta: CacheEntryMeta, response: dict[str, Any]) -> dict[str, Any]:
+        await super().put(key, meta, {"value": {"answer": "first"}})
+        return await super().put(key, meta, response)
+
+
+async def test_concurrent_writer_entry_wins_so_live_equals_replay() -> None:
+    store = _RacingStore()
+    client, provider, _, _ = make([GOOD], cache=store)
+    result = await client.complete_structured(parts=PARTS, schema=Echo, model="m", ctx=CTX)
+    assert result.value.answer == "first"
+    assert not result.cache_hit
+    assert len(provider.requests) == 1
+    replay, _, _, _ = make([], CacheMode.REPLAY_ONLY, store)
+    assert await call(replay) == "first"

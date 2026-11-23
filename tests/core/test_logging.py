@@ -71,6 +71,7 @@ def test_allowlist_contents() -> None:
                 "status",
                 "duration_ms",
                 "error_type",
+                "cache_key",
             }
         )
         == ALLOWED_LOG_FIELDS
