@@ -59,6 +59,23 @@ def _check_name(name: str, what: str) -> None:
         raise ValueError(f"invalid {what} name: {name!r}")
 
 
+def _escape_attr(value: str) -> str:
+    """Escape giá trị thuộc tính; `\\n`, `\\r`, `\\t` thành tham chiếu ký tự.
+
+    Ký tự điều khiển khác (< 0x20) bị từ chối; thông điệp lỗi không chứa giá trị.
+    """
+    for ch in value:
+        if ord(ch) < 0x20 and ch not in "\n\r\t":
+            raise ValueError(f"control character U+{ord(ch):04X} not allowed in attribute value")
+    return (
+        escape_data(value)
+        .replace('"', "&quot;")
+        .replace("\n", "&#10;")
+        .replace("\r", "&#13;")
+        .replace("\t", "&#9;")
+    )
+
+
 def render_data_block(
     tag: str,
     body: str,
@@ -70,7 +87,9 @@ def render_data_block(
     parts = [tag]
     for name, value in (attrs or {}).items():
         _check_name(name, "attribute")
-        parts.append(f'{name}="{escape_data(value).replace(chr(34), "&quot;")}"')
+        if name == "untrusted":
+            raise ValueError("attribute name 'untrusted' is reserved")
+        parts.append(f'{name}="{_escape_attr(value)}"')
     if untrusted:
         parts.append('untrusted="true"')
     return f"<{' '.join(parts)}>\n{escape_data(body)}\n</{tag}>"

@@ -95,3 +95,21 @@ def test_builder_protocol_produces_parts_with_id_map() -> None:
     parts = builder.build(_In(ids))
     assert 'id="chunk_2"' in parts.user
     assert parts.id_maps["chunk"].resolve("chunk_1") == ids[0]
+
+
+@pytest.mark.parametrize("untrusted", [True, False])
+def test_untrusted_attr_name_is_reserved(untrusted: bool) -> None:
+    with pytest.raises(ValueError):
+        render_data_block("source", "x", attrs={"untrusted": "false"}, untrusted=untrusted)
+
+
+def test_attr_newline_cr_tab_escaped() -> None:
+    out = render_data_block("chunk", "x", attrs={"note": "a\nb\rc\td"})
+    assert out.startswith('<chunk note="a&#10;b&#13;c&#9;d" untrusted="true">\n')
+
+
+@pytest.mark.parametrize("ch", ["\x00", "\x08", "\x0b", "\x0c", "\x1b", "\x1f"])
+def test_attr_other_control_chars_rejected(ch: str) -> None:
+    with pytest.raises(ValueError) as info:
+        render_data_block("chunk", "x", attrs={"note": f"bí mật{ch}"})
+    assert "bí mật" not in str(info.value)
