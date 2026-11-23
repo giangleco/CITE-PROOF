@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% from "partials/ui.html" import csrf, field_error %}
+{% block title %}Đồng ý dữ liệu | CiteProof{% endblock %}
+{% block content %}
+<div class="narrow">
+  <div class="page-head"><div><h1>Trước lần kiểm tra đầu tiên</h1><p class="lede">Để kiểm tra bài của bạn, CiteProof gửi một phần nội dung ra các dịch vụ bên ngoài. Đây là những gì được gửi đi.</p></div></div>
+  <form class="panel form" method="post" action="/consent">
+    {{ csrf(csrf_token) }}
+    <input type="hidden" name="next" value="{{ next }}">
+    <ul class="bullets">
+      <li>Thông tin trong danh mục tài liệu tham khảo (tên bài, tác giả, năm, DOI) được gửi tới Crossref, OpenAlex và Semantic Scholar để tra cứu.</li>
+      <li>Các câu có trích dẫn, đoạn văn xung quanh và đoạn nguồn liên quan được gửi tới nhà cung cấp mô hình ngôn ngữ {{ provider or '[chưa chốt nhà cung cấp]' }} để đánh giá.{% if policy_url %} <a href="{{ policy_url }}" rel="noopener noreferrer">Chính sách dữ liệu của nhà cung cấp</a>.{% endif %}</li>
+      <li>Bạn xóa được bài và toàn bộ kết quả bất cứ lúc nào, ở trang của từng bài hoặc trang tài khoản.</li>
+    </ul>
+    <div class="consent">
+      <label class="check"><input type="checkbox" name="agree"> <span>Tôi đồng ý gửi nội dung như trên để kiểm tra</span></label>
+      {{ field_error(error) }}
+    </div>
+    <div class="row"><button class="btn primary" type="submit">Đồng ý và tiếp tục</button></div>
+  </form>
+</div>
+{% endblock %}

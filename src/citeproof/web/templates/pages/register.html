@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% from "partials/ui.html" import csrf, field_error %}
+{% block title %}Đăng ký | CiteProof{% endblock %}
+{% block content %}
+<div class="narrow">
+  <div class="page-head"><div><h1>Đăng ký bằng mã mời</h1><p class="lede">Mã mời dùng một lần, do nhóm thử nghiệm gửi cho bạn.</p></div></div>
+  <form class="panel form" method="post" action="/register">
+    {{ csrf(csrf_token) }}
+    <div class="field{% if error_code == 'INVITE_INVALID' %} invalid{% endif %}">
+      <label for="code">Mã mời</label>
+      <input id="code" name="code" type="text" autocomplete="off" required value="{{ form.code or '' }}">
+      {% if error_code == 'INVITE_INVALID' %}{{ field_error(error) }}{% endif %}
+    </div>
+    <div class="field{% if error_code in ('EMAIL_TAKEN', 'INVALID_EMAIL') %} invalid{% endif %}">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="email" required value="{{ form.email or '' }}">
+      {% if error_code in ('EMAIL_TAKEN', 'INVALID_EMAIL') %}{{ field_error(error) }}{% endif %}
+    </div>
+    <div class="field">
+      <label for="display_name">Tên hiển thị</label>
+      <input id="display_name" name="display_name" type="text" autocomplete="name" required value="{{ form.display_name or '' }}">
+    </div>
+    <div class="field{% if error_code == 'PASSWORD_TOO_SHORT' %} invalid{% endif %}">
+      <label for="password">Mật khẩu</label>
+      <input id="password" name="password" type="password" autocomplete="new-password" required minlength="10">
+      <p class="help">Ít nhất 10 ký tự.</p>
+      {% if error_code == 'PASSWORD_TOO_SHORT' %}{{ field_error(error) }}{% endif %}
+    </div>
+    <button class="btn primary" type="submit">Tạo tài khoản</button>
+    <p class="small muted m0">Đã có tài khoản? <a href="/login">Đăng nhập</a></p>
+  </form>
+</div>
+{% endblock %}

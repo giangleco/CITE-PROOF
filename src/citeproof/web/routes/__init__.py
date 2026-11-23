@@ -2,4 +2,6 @@
 
 from fastapi import APIRouter
 
-ROUTERS: list[APIRouter] = []
+from citeproof.web.routes import auth, documents
+
+ROUTERS: list[APIRouter] = [auth.router, documents.router]

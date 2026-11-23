@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "partials/ui.html" import badge, csrf, field_error %}
+{% block title %}Đăng nhập | CiteProof{% endblock %}
+{% block content %}
+<div class="gate">
+  <div class="gate-intro">
+    <h1>Kiểm tra trích dẫn trước khi nộp khóa luận</h1>
+    <p class="lede">CiteProof đối chiếu từng tài liệu tham khảo với các cơ sở dữ liệu học thuật, rồi đặt từng nhận định trong bài cạnh đoạn nguồn mà bạn đã trích.</p>
+    <figure class="gate-sample m0" aria-label="Ví dụ một kết quả đối chiếu">
+      <div class="claim-line">BERT chỉ sử dụng ngữ cảnh bên trái khi huấn luyện trước <span class="marker">[2]</span>.</div>
+      <blockquote class="src-line m0" lang="en">“…by jointly conditioning on both left and right context in all layers.”</blockquote>
+      {{ badge(labels.CLAIM_STATUS["CONTRADICTED"]) }}
+    </figure>
+  </div>
+  <form class="panel form" method="post" action="/login">
+    {{ csrf(csrf_token) }}
+    <input type="hidden" name="next" value="{{ next }}">
+    <h2 class="m0">Đăng nhập</h2>
+    <div class="field{% if error %} invalid{% endif %}">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="email" required value="{{ email }}">
+    </div>
+    <div class="field{% if error %} invalid{% endif %}">
+      <label for="password">Mật khẩu</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      {{ field_error(error) }}
+    </div>
+    <button class="btn primary" type="submit">Đăng nhập</button>
+    <p class="small muted m0">Lần đầu dùng? <a href="/register">Đăng ký bằng mã mời</a> mà nhóm thử nghiệm gửi cho bạn.</p>
+  </form>
+</div>
+{% endblock %}
