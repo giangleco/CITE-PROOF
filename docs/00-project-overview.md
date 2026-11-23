@@ -194,6 +194,9 @@ Phân tích chi tiết từng ràng buộc ở `01-idea-analysis.md` §4.5.
 | D-08 | Tải lên tài liệu được trích là tính năng trung tâm | Vòng hỏi 3 | `[XN]` |
 | D-09 | Bộ tài liệu tinh gọn: gộp 05, 06 vào 04; 08, 09 ở mức đủ cho MVP; 14, 15 ngắn hoặc hoãn | Vòng hỏi 3 | `[XN]` |
 | D-10 | Không có người gán nhãn thứ hai trong giai đoạn MVP | Vòng hỏi 3 | `[XN]` (ràng buộc) |
+| D-11 | Thêm lý do `UNVERIFIABLE` `EVIDENCE_INCONCLUSIVE`: có văn bản nguồn nhưng chưa đủ rõ để kết luận (`04` §4.5.3) | Brainstorm kiến trúc 23/11/2026 (`07a` TK-20) | `[XN]` |
+| D-12 | Thêm trạng thái tài liệu tham khảo `LOOKUP_FAILED`: không tra được nguồn nào do lỗi; lần chạy vẫn hoàn tất, cho phép chạy lại (`04` §4.5.2) | Brainstorm kiến trúc 23/11/2026 (`07a` TK-21) | `[XN]` |
+| D-13 | Duyệt thiết kế điều phối, bộ nhớ và công cụ LLM ở `07a` (TK-01…TK-19): pipeline tất định làm xương sống; chỉ hai agent có giới hạn (A1, A2); bộ nhớ 5 lớp trên PostgreSQL | Duyệt 23/11/2026 | `[XN]` |
 
 **Đề xuất chờ xác nhận:**
 

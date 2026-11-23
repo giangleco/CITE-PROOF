@@ -14,6 +14,8 @@
 
 Lược đồ dữ liệu MVP trên PostgreSQL + pgvector. Dữ liệu dạng file (tài liệu gốc, văn bản đã parse, toàn văn nguồn) nằm trong object storage; cơ sở dữ liệu chỉ lưu tham chiếu. Dữ liệu đánh giá (benchmark) không nằm trong cơ sở dữ liệu sản phẩm mà nằm trong thư mục `benchmark/` (`13` §B).
 
+Khi chạy đánh giá, harness nhập D1–D5 vào một **cơ sở dữ liệu riêng `citeproof_eval`**, dùng cùng lược đồ và cùng migration, dưới người dùng hệ thống `eval` (`07a` §4.3.6). Vì vậy mọi khóa ngoại ở dưới đều bắt buộc cả khi chạy đánh giá. Các bảng phục vụ bộ nhớ và agent (`agent_runs`, `retrieval_results`, `llm_cache`, `metadata_cache`) được thiết kế ở `07a` §4.7.
+
 ## 2. Objectives
 
 - Lưu đủ dữ liệu cho truy xuất nguồn gốc (NFR-05) và tái lập (NFR-06).
@@ -50,7 +52,17 @@ erDiagram
     USERS ||--o{ FEEDBACK : gives
     VERIFICATION_RUNS ||--o{ LLM_CALLS : logs
     VERIFICATION_RUNS ||--o{ JOBS : schedules
+    VERIFICATION_RUNS ||--o{ AGENT_RUNS : runs
+    AGENT_RUNS ||--o{ LLM_CALLS : "step calls"
+    AGENT_RUNS |o--o{ REFERENCE_CHECKS : "resolved"
+    AGENT_RUNS |o--o{ CLAIM_VERIFICATIONS : "investigated"
+    VERIFICATION_RUNS ||--o{ RETRIEVAL_RESULTS : retrieves
+    CLAIMS ||--o{ RETRIEVAL_RESULTS : "query of"
+    SOURCE_CHUNKS ||--o{ RETRIEVAL_RESULTS : "ranked in"
+    DOCUMENTS ||--o{ LLM_CACHE : "cache scope"
 ```
+
+`metadata_cache` đứng riêng, không có khóa ngoại: nó là cache dùng chung của phản hồi API công khai.
 
 Tên bảng `reference_entries` được dùng thay cho `references` vì `REFERENCES` là từ khóa SQL.
 
@@ -101,8 +113,9 @@ Quy ước chung: khóa chính `id UUID`; mọi bảng có `created_at TIMESTAMP
 | Cột | Kiểu | Ghi chú |
 |---|---|---|
 | doi | TEXT UNIQUE NULL | Đã chuẩn hóa |
-| openalex_id, s2_id, arxiv_id, isbn | TEXT NULL | |
+| openalex_id, s2_id, arxiv_id, isbn | TEXT NULL | `arxiv_id` lưu dạng không kèm phiên bản (`2101.00001`, không phải `2101.00001v2`) |
 | title | TEXT | |
+| title_norm | TEXT | Chữ thường, chuẩn hóa NFC, bỏ dấu câu; dùng cho so khớp gần đúng (`07a` §4.7.1) |
 | authors | JSONB | |
 | year | INT NULL | |
 | venue | TEXT NULL | |
@@ -117,10 +130,15 @@ Quy ước chung: khóa chính `id UUID`; mọi bảng có `created_at TIMESTAMP
 |---|---|---|
 | run_id | FK verification_runs | |
 | reference_entry_id | FK reference_entries | |
-| status | ENUM, theo `04` §4.5.2 | |
+| status | ENUM, theo `04` §4.5.2 (gồm `LOOKUP_FAILED`, D-12) | |
 | work_id | FK works NULL | Khi tìm thấy |
 | mismatches | JSONB | Trường lệch, giá trị trong bài và giá trị tìm thấy |
-| sources_searched | TEXT[] | Bắt buộc với `NOT_FOUND_IN_SEARCHED_SOURCES` |
+| sources_searched | TEXT[] | Chỉ gồm nguồn đã tra **thành công**; bắt buộc không rỗng với `NOT_FOUND_IN_SEARCHED_SOURCES` |
+| sources_failed | TEXT[] | Nguồn lỗi hoặc bị ngắt mạch trong lần chạy; hiển thị trong báo cáo |
+| resolved_by | ENUM(`cascade`, `agent`) | `agent` khi kết quả cuối đến từ A1 |
+| agent_run_id | FK agent_runs NULL | |
+| match_score | NUMERIC NULL | Điểm của bộ so khớp tất định |
+| needs_user_review | BOOL | Ví dụ khớp qua tiêu đề khác ngôn ngữ, ứng viên sát điểm |
 | url_alive | BOOL NULL | Tài liệu web |
 | archive_url | TEXT NULL | Tài liệu web |
 
@@ -154,6 +172,7 @@ Quy ước chung: khóa chính `id UUID`; mọi bảng có `created_at TIMESTAMP
 | region | ENUM(`BODY`, `TABLE`, `FIGURE`, `OTHER`) | Dùng cho cờ "nên tự kiểm tra" |
 | language | TEXT | |
 | embedding | VECTOR(n) | n theo model chọn ở ADR-007 |
+| embedding_model | TEXT | Tên model đã tạo embedding |
 | tsv | TSVECTOR | Full-text search |
 
 **citations**
@@ -208,13 +227,17 @@ Quy ước chung: khóa chính `id UUID`; mọi bảng có `created_at TIMESTAMP
 | claim_id | FK claims | |
 | reference_entry_id | FK reference_entries | |
 | status | ENUM, theo `04` §4.5.1 | |
-| unverifiable_reason | ENUM NULL | Bắt buộc khi status là `UNVERIFIABLE` |
+| unverifiable_reason | ENUM NULL | Bắt buộc khi status là `UNVERIFIABLE`; danh mục `04` §4.5.3 (gồm `EVIDENCE_INCONCLUSIVE`, D-11) |
 | content_level_used | ENUM(`NONE`, `ABSTRACT`, `FULL_TEXT`) | FR-43 |
 | explanation | TEXT | |
 | limitations | TEXT NULL | |
 | needs_user_review | BOOL | FR-44 |
 | downgraded_by_rule | TEXT NULL | Quy tắc đã hạ mức kết quả, nếu có |
 | model, prompt_version | TEXT | |
+| schema_version | TEXT | Ví dụ `verdict/2` |
+| verifier | TEXT | `V0`…`V4`, `V2+A2` |
+| agent_run_id | FK agent_runs NULL | Khi kết quả đến từ A2 |
+| escalated_from | FK claim_verifications NULL | Kết quả V2 ban đầu, ở chế độ leo thang |
 
 **evidence**
 
@@ -222,7 +245,7 @@ Quy ước chung: khóa chính `id UUID`; mọi bảng có `created_at TIMESTAMP
 |---|---|---|
 | claim_verification_id | FK claim_verifications | |
 | source_chunk_id | FK source_chunks | Bắt buộc (v1.0 §10.4) |
-| relation | ENUM, theo v1.0 §11.2 | |
+| relation | ENUM(`SUPPORTS`, `PARTIALLY_SUPPORTS`, `CONTRADICTS`, `RELATED`) | `07a` §4.6.3; ánh xạ với v1.0 §11.2 khi có bản gốc |
 | quote_text | TEXT | Đã kiểm tra là chuỗi con của chunk |
 | char_start, char_end | INT | Vị trí trong chunk |
 
@@ -247,7 +270,59 @@ Quy ước chung: khóa chính `id UUID`; mọi bảng có `created_at TIMESTAMP
 | latency_ms | INT | |
 | cost_estimate | NUMERIC | |
 | cache_hit | BOOL | |
-| cache_key | TEXT | |
+| cache_key | TEXT NULL | Đặt NULL khi xóa tài liệu (số liệu giữ lại, không trỏ về nội dung) |
+| cache_namespace | TEXT | `doc:<document_id>` hoặc `eval:<dataset>@<hash>` |
+| agent_run_id | FK agent_runs NULL | Lời gọi thuộc một bước agent |
+| step_index | INT NULL | |
+
+**agent_runs** — quỹ đạo của A1, A2 (`07a` §4.5, §4.7.6)
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| run_id | FK verification_runs | |
+| agent | ENUM(`reference_resolver`, `evidence_investigator`) | |
+| agent_version, tool_catalog_version | TEXT | Nằm trong khóa cache |
+| target_type | ENUM(`REFERENCE_ENTRY`, `CLAIM`) | |
+| target_id | UUID | |
+| status | ENUM(`SUBMITTED`, `NO_SUBMIT`, `BUDGET_EXHAUSTED`, `ERROR`) | |
+| steps | JSONB | Mỗi bước: công cụ, tham số, kết quả rút gọn ≤2.000 ký tự, mã lỗi, token |
+| final_output | JSONB NULL | Kết quả agent nộp, trước hậu xử lý tất định |
+| n_steps, input_tokens, output_tokens | INT | |
+| cost_estimate | NUMERIC | |
+| started_at, finished_at | TIMESTAMPTZ | |
+
+**retrieval_results** — thay "danh sách chunk ứng viên (tạm)" của S7
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| run_id | FK verification_runs | |
+| claim_id | FK claims | |
+| source_file_id | FK source_files | |
+| source_chunk_id | FK source_chunks | |
+| rank | INT | |
+| score_lexical, score_vector, score_fused | REAL | |
+| query_variant | TEXT | `original`, `translated`, `subclaim:s1`… |
+
+**llm_cache** — cache đầu ra LLM (`07a` §4.7.2)
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| cache_key | TEXT PK | `sha256`, cách tính ở `07a` §4.7.2 |
+| namespace | TEXT | `doc:<document_id>` hoặc `eval:<dataset>@<hash>` |
+| document_id | FK documents NULL | Bắt buộc với namespace `doc:`; xóa cascade |
+| task, model, prompt_version, schema_version | TEXT | |
+| response | JSONB | |
+| hit_count | INT | |
+
+**metadata_cache** — cache dùng chung của phản hồi API metadata công khai
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| source | TEXT | `crossref`, `openalex`, `semantic_scholar`, `arxiv` |
+| query_hash | TEXT | PK cùng `source`; **không lưu nguyên văn truy vấn** (truy vấn sinh từ bài của người dùng) |
+| response | JSONB | |
+| outcome | ENUM(`ok`, `not_found`, `error`) | |
+| fetched_at, expires_at | TIMESTAMPTZ | TTL 30 ngày (`ok`), 7 ngày (`not_found`); không có TTL trong DB đánh giá |
 
 **jobs** — hàng đợi trên PostgreSQL (ADR-003)
 
@@ -266,10 +341,14 @@ Quy ước chung: khóa chính `id UUID`; mọi bảng có `created_at TIMESTAMP
 
 | Bảng | Index |
 |---|---|
-| works | UNIQUE(`doi`); index trên `arxiv_id`, `openalex_id` |
-| source_chunks | HNSW trên `embedding`; GIN trên `tsv`; index trên `source_file_id` |
+| works | UNIQUE(`doi`); index trên `arxiv_id`, `openalex_id`; GIN `pg_trgm` trên `title_norm` |
+| source_chunks | GIN trên `tsv`; index trên `source_file_id`. Tìm vector là tìm chính xác trong một file nguồn, nên MVP không cần HNSW (`07a` TK-19) |
 | jobs | Index trên (`status`, `run_after`) |
 | claim_verifications | Index trên (`run_id`, `status`) |
+| agent_runs | Index trên (`run_id`, `agent`), (`target_type`, `target_id`) |
+| retrieval_results | Index trên (`run_id`, `claim_id`) |
+| llm_cache | Index trên `namespace`, `document_id` |
+| metadata_cache | PK (`source`, `query_hash`); index trên `expires_at` |
 | Mọi khóa ngoại | Index thường |
 
 ### 4.4 Quy tắc toàn vẹn dữ liệu
@@ -279,7 +358,10 @@ Quy ước chung: khóa chính `id UUID`; mọi bảng có `created_at TIMESTAMP
 - DOI chuẩn hóa (chữ thường, bỏ tiền tố URL) trước khi lưu.
 - `evidence.source_chunk_id` bắt buộc; `evidence.quote_text` phải là chuỗi con của chunk (kiểm tra ở tầng ứng dụng).
 - `claim_verifications.unverifiable_reason` bắt buộc khi trạng thái là `UNVERIFIABLE` (CHECK constraint).
-- `reference_checks.sources_searched` không rỗng khi trạng thái là `NOT_FOUND_IN_SEARCHED_SOURCES`.
+- `reference_checks.sources_searched` không rỗng khi trạng thái là `NOT_FOUND_IN_SEARCHED_SOURCES`. Không tra được nguồn nào thì trạng thái là `LOOKUP_FAILED` (CHECK constraint).
+- Bằng chứng tối thiểu theo trạng thái claim (`07a` §4.6.3): `SUPPORTED` cần ≥1 `SUPPORTS`; `PARTIALLY_SUPPORTED` cần ≥1 `SUPPORTS` hoặc `PARTIALLY_SUPPORTS`; `CONTRADICTED` cần ≥1 `CONTRADICTS`; `UNSUPPORTED` cần ≥1 `RELATED`. Kiểm tra ở tầng ứng dụng.
+- `claim_verifications.agent_run_id` bắt buộc khi `verifier` là `V4` hoặc `V2+A2` và kết quả cuối đến từ A2.
+- `llm_cache.document_id` bắt buộc khi `namespace` bắt đầu bằng `doc:`.
 - File `USER_UPLOAD` bắt buộc có `owner_user_id` và không bao giờ được dùng cho người dùng khác, kể cả khi trùng `sha256`.
 - Lưu model, phiên bản prompt và thời điểm truy xuất cho mọi kết quả.
 
@@ -292,7 +374,10 @@ Quy ước chung: khóa chính `id UUID`; mọi bảng có `created_at TIMESTAMP
 | source_files dạng `USER_UPLOAD` và chunk | Xóa | Xóa |
 | works, source_files dạng `OPEN_ACCESS` | Giữ (dùng chung, không chứa dữ liệu người dùng) | Giữ |
 | feedback | Xóa theo mục tiêu | Xóa |
-| llm_calls | Giữ số liệu, bỏ liên kết nội dung | Giữ số liệu ẩn danh |
+| `agent_runs`, `retrieval_results` | Xóa (cascade theo lần chạy) | Xóa |
+| `llm_cache` namespace `doc:` | Xóa (cascade theo `document_id`) | Xóa |
+| llm_calls | Giữ số liệu, bỏ liên kết nội dung (`cache_key` đặt NULL) | Giữ số liệu ẩn danh |
+| `metadata_cache` | Giữ (chỉ chứa phản hồi API công khai, khóa là hash) | Giữ |
 
 Thời hạn lưu giữ mặc định cho tài liệu không hoạt động `[ĐX]`: chốt ở `10`.
 

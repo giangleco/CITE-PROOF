@@ -78,13 +78,13 @@ flowchart LR
 | Milestone | Epic |
 |---|---|
 | M0 | Nghiên cứu người dùng; literature review; spike; chốt PRD, kiến trúc, ADR; hướng dẫn phát triển |
-| M1 | Tooling; hạ tầng local; lược đồ DB; job runner; CI; lớp LLM |
+| M1 | Tooling; hạ tầng local; lược đồ DB (gồm bảng bộ nhớ của `07a`); job runner; CI; lớp LLM (cache theo namespace, `ContextBuilder`); `http_safe` |
 | M2 | Upload và kiểm tra file; parse PDF; parse DOCX; nhận diện ngôn ngữ và bảng mã; tách tài liệu tham khảo |
-| M3 | Connector metadata; so khớp và gán trạng thái; tài liệu web; giao diện tối thiểu; pilot-α |
-| M4 | Marker và liên kết; tách claim; xác định truy cập; tải lên tài liệu được trích; chia đoạn và lập chỉ mục |
-| M5 | Truy xuất hybrid và xuyên ngôn ngữ; phán quyết và kiểm soát; quy tắc trạng thái; biến thể; kiểm chứng lại; harness đánh giá |
+| M3 | Connector metadata; tra cứu tuần tự, ngắt mạch, `metadata_cache`; so khớp và gán trạng thái (gồm `LOOKUP_FAILED`); tài liệu web; giao diện tối thiểu; pilot-α |
+| M4 | Marker và liên kết; tách claim (W2); xác định truy cập; tải lên tài liệu được trích; chia đoạn và lập chỉ mục; quyết định làm A1 theo SPK-02 và pilot-α; A1 nếu làm (P1) |
+| M5 | Truy xuất hybrid và xuyên ngôn ngữ (`retrieval_results`); phán quyết W5 và kiểm soát; quy tắc trạng thái; biến thể V0–V2; kiểm chứng lại; harness đánh giá trên DB `citeproof_eval` |
 | M6 | Báo cáo; xem bằng chứng; phản hồi; xóa dữ liệu; triển khai pilot; pilot-β |
-| M7 | Chạy thực nghiệm; ablation; phân tích lỗi; chi phí và độ trễ |
+| M7 | V3 (W4); `AgentRunner` và A2 (V4, `V2+A2`); chạy thực nghiệm; ablation; phân tích lỗi; chi phí và độ trễ; chọn cấu hình mặc định (có leo thang hay không) |
 | M8 | Sửa theo phản hồi; checklist bảo mật; ổn định |
 | M9 | Bài báo; báo cáo dự án; cập nhật tài liệu |
 
@@ -102,14 +102,15 @@ flowchart LR
 
 Cắt theo thứ tự từ trên xuống, mỗi lần cắt ghi vào Decision Log:
 
-1. Biến thể V4 (agentic).
-2. Xuất báo cáo PDF (giữ Markdown/HTML).
-3. Kiểm tra bản lưu trữ cho tài liệu web (FR-15).
-4. Biến thể V3 (pipeline nhiều bước).
-5. Kiểm chứng lại một phần (FR-34): thay bằng chạy lại toàn bộ.
-6. Cảnh báo ngoài lĩnh vực (FR-05).
-7. Tập claim tiếng Việt viết tự nhiên: chỉ giữ tập dịch.
-8. Pilot-α: gộp vào pilot-β.
+1. Agent A2: biến thể V4 và chế độ leo thang `V2+A2` (`07a`).
+2. Agent A1: giữ tra cứu tuần tự tất định.
+3. Xuất báo cáo PDF (giữ Markdown/HTML).
+4. Kiểm tra bản lưu trữ cho tài liệu web (FR-15).
+5. Biến thể V3 (pipeline nhiều bước).
+6. Kiểm chứng lại một phần (FR-34): thay bằng chạy lại toàn bộ.
+7. Cảnh báo ngoài lĩnh vực (FR-05).
+8. Tập claim tiếng Việt viết tự nhiên: chỉ giữ tập dịch.
+9. Pilot-α: gộp vào pilot-β.
 
 Không cắt: các kiểm soát hallucination (`07` §4.6), bộ trạng thái trung thực, checklist bảo mật, tập test bị khóa.
 

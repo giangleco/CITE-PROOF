@@ -172,6 +172,7 @@ Chốt từ bản nháp ở `01` §4.5.2:
 | `NOT_FOUND_IN_SEARCHED_SOURCES` | Không tìm thấy trong các nguồn đã tra | "Chưa tìm thấy trong [danh sách nguồn]" |
 | `UNSUPPORTED_TYPE` | Loại tài liệu chưa có cơ chế tra cứu | Nêu loại tài liệu; gợi ý tự kiểm tra hoặc tải lên |
 | `PARSE_FAILED` | Không tách được thông tin từ chuỗi tài liệu tham khảo | Hiển thị chuỗi gốc để người dùng kiểm tra |
+| `LOOKUP_FAILED` | Không tra được nguồn nào do lỗi kết nối hoặc lỗi hệ thống (D-12) | "Chưa tra cứu được do lỗi kết nối tới nguồn; có thể chạy lại". Không bao giờ diễn đạt thành "chưa tìm thấy" |
 
 Tài liệu web có thêm hai thuộc tính: URL còn hoạt động hay không, có bản lưu trữ hay không.
 
@@ -184,6 +185,7 @@ Tài liệu web có thêm hai thuộc tính: URL còn hoạt động hay không,
 | `NO_ACCESSIBLE_TEXT` | Không có toàn văn, không có abstract, người dùng chưa tải lên |
 | `ABSTRACT_ONLY_INSUFFICIENT` | Chỉ có abstract và abstract không đủ để kết luận |
 | `SOURCE_PARSE_FAILED` | Không trích xuất được văn bản từ nguồn |
+| `EVIDENCE_INCONCLUSIVE` | Có văn bản nguồn nhưng chưa đủ rõ để kết luận; luôn gắn cờ "nên tự kiểm tra" (D-11) |
 | `SOURCE_LANGUAGE_UNSUPPORTED` | Nguồn viết bằng ngôn ngữ ngoài tiếng Việt và tiếng Anh |
 | `NOT_A_CLAIM` | Câu trích dẫn không chứa nhận định kiểm chứng được (ví dụ "xem thêm [5]") |
 | `PROCESSING_ERROR` | Lỗi hệ thống trong quá trình xử lý |
@@ -195,10 +197,14 @@ Tài liệu web có thêm hai thuộc tính: URL còn hoạt động hay không,
 - Bằng chứng nằm trong vùng bảng hoặc hình (văn bản trích xuất kém tin cậy).
 - File người dùng tải lên có cảnh báo không khớp với mục tài liệu tham khảo.
 - Kết quả bị hạ mức bởi quy tắc kiểm tra bằng chứng (`07` §4.6).
+- Kết quả `UNSUPPORTED` từ biến thể RAG một bước (V2), cho đến khi M7 quyết định có bật bước kiểm tra lại bằng agent hay không (`07a` TK-13).
+- Kết quả `UNVERIFIABLE` với lý do `EVIDENCE_INCONCLUSIVE`.
+- Tài liệu tham khảo được agent khớp với tiêu đề khác ngôn ngữ (`07a` §4.5.2), hoặc agent hết ngân sách trước khi nộp kết quả.
 
 #### 4.5.5 Quan hệ bằng chứng và trạng thái truy cập
 
-Dùng nguyên danh mục của v1.0: quan hệ bằng chứng ở §11.2, trạng thái truy cập ở §9.3.
+- **Quan hệ bằng chứng:** `SUPPORTS`, `PARTIALLY_SUPPORTS`, `CONTRADICTS`, `RELATED`. Mỗi trạng thái cần bằng chứng tối thiểu theo `07a` §4.6.3; `UNSUPPORTED` kèm đoạn `RELATED` gần nhất để người dùng thấy nguồn thực sự nói gì. Khi lưu bản v1.0 vào `reference/`, đối chiếu và ánh xạ với v1.0 §11.2.
+- **Trạng thái truy cập:** theo v1.0 §9.3.
 
 ### 4.6 User Stories
 

@@ -44,7 +44,8 @@
 | Nhóm | Mối đe dọa | Biện pháp kiểm soát |
 |---|---|---|
 | Tải file | File độc hại, file giả định dạng, file nén gây tràn bộ nhớ | Kiểm tra MIME và chữ ký file; giới hạn kích thước và số trang; parse trong container riêng (GROBID, worker); không chạy macro trong DOCX; timeout khi parse |
-| Prompt injection | Văn bản trong bài hoặc nguồn chứa chỉ dẫn điều khiển LLM | Dữ liệu đặt trong khối có phân tách; prompt hệ thống yêu cầu bỏ qua chỉ dẫn trong dữ liệu; LLM không có công cụ; validate schema; kiểm tra trích dẫn nguyên văn (`07` §4.6) |
+| Prompt injection | Văn bản trong bài hoặc nguồn chứa chỉ dẫn điều khiển LLM, kể cả xúi agent gọi công cụ | Dữ liệu đặt trong khối có phân tách, đánh dấu không tin cậy; prompt hệ thống yêu cầu bỏ qua chỉ dẫn trong dữ liệu; worker không có công cụ; agent chỉ có công cụ chỉ đọc, phạm vi khóa phía server; validate schema; kiểm tra trích dẫn nguyên văn; quy tắc trạng thái tất định sau LLM (`07` §4.6, `07a` §4.9) |
+| SSRF | URL trong bài của người dùng trỏ tới mạng nội bộ (DB, GROBID, metadata cloud) | Mọi truy cập URL lấy từ dữ liệu người dùng đi qua `http_safe`: chỉ `http`/`https`; chặn IP nội bộ, loopback, link-local, metadata cloud, kiểm tra sau phân giải DNS và sau mỗi lần chuyển hướng; giới hạn thời gian và kích thước; không gửi cookie hay header xác thực |
 | Truy cập trái phép | Xem dữ liệu người khác qua đổi ID (IDOR) | Mọi truy vấn lọc theo chủ sở hữu; trả 404; test tự động cho từng endpoint |
 | Xác thực | Đoán mật khẩu, chiếm phiên | Băm mật khẩu bằng thuật toán chuyên dụng (ví dụ Argon2id); giới hạn số lần đăng nhập; cookie `HttpOnly`, `Secure`, `SameSite`; chống CSRF cho form |
 | Rò rỉ qua log | Nội dung bản thảo xuất hiện trong log | Không ghi văn bản tài liệu vào log; chỉ ghi ID và số liệu |
@@ -80,6 +81,9 @@
 | SR-08 | Nhà cung cấp LLM lưu bản thảo | Phụ thuộc nhà cung cấp | Cao | Q-03; chọn cấu hình phù hợp; thông báo người dùng | Mở |
 | SR-09 | Người dùng bị gán nhãn sai | Trung bình | Cao | Bộ trạng thái trung thực; cờ "nên tự kiểm tra" | Mở |
 | SR-10 | Mất dữ liệu do sự cố | Thấp | Trung bình | Sao lưu định kỳ, thử khôi phục (`14`) | Mở |
+| SR-11 | SSRF qua URL trong tài liệu tham khảo | Trung bình | Cao | `http_safe` (§4.2); test với URL nội bộ | Mở |
+| SR-12 | Agent bị dẫn dắt gọi công cụ lặp vô ích hoặc nộp kết quả sai | Trung bình | Trung bình | Ngân sách số bước và token; chỉ nộp được ID có trong phiên; hậu xử lý tất định; theo dõi tỷ lệ hết ngân sách (`15`) | Mở |
+| SR-13 | Lộ nội dung người dùng qua cache dùng chung | Thấp | Cao | `llm_cache` theo namespace tài liệu; `metadata_cache` chỉ lưu hash truy vấn (`07a` §4.7.3); test xóa | Mở |
 
 Rủi ro dự án (R-xx) nằm ở `01` §8; sổ này chỉ chứa rủi ro bảo mật.
 
@@ -89,7 +93,8 @@ Rủi ro dự án (R-xx) nằm ở `01` §8; sổ này chỉ chứa rủi ro b�
 
 - [ ] Kiểm tra MIME, chữ ký file, giới hạn kích thước và số trang đã hoạt động.
 - [ ] Test IDOR cho mọi endpoint P0 đều đạt.
-- [ ] Bộ test prompt injection (`13` §A.4) đều đạt.
+- [ ] Bộ test prompt injection (`13` §A.4) đều đạt, kể cả các ca nhắm vào agent.
+- [ ] Bộ test SSRF (`13` §A.4) đều đạt.
 - [ ] Không còn nội dung tài liệu trong log (kiểm tra log mẫu).
 - [ ] Bí mật nằm ngoài repo; quét bí mật trong CI đạt.
 - [ ] Màn hình đồng ý và chức năng xóa dữ liệu hoạt động.

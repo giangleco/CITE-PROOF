@@ -25,6 +25,8 @@ Quy tắc khi dùng:
 | `03-feasibility-study.md` | 1 | Khả thi kỹ thuật, dữ liệu, nghiên cứu, nguồn lực, pháp lý; tiêu chí go/no-go | Bản nháp trước |
 | `04-prd.md` | 2 | Yêu cầu chức năng và phi chức năng, user stories, use cases | Bản nháp trước |
 | `07-technical-architecture.md` | 3 | Kiến trúc, pipeline, thiết kế LLM, đánh giá lại tech stack | Bản nháp trước |
+| `07a-orchestration-memory-tools.md` | 3 | Điều phối (worker, agent có giới hạn), bộ nhớ 5 lớp, bộ công cụ và schema, ngân sách context | Đã duyệt (D-13) |
+| `decisions/ADR-009…`, `ADR-010…` | 3 | Agent có giới hạn trong pipeline; hiện thực vòng lặp agent | ADR-009 Accepted, ADR-010 Proposed |
 | `08-database-design.md` | 3 | Lược đồ dữ liệu MVP | Bản nháp trước |
 | `09-api-interface-specification.md` | 3 | REST API và interface nội bộ | Bản nháp trước |
 | `10-security-risk-assessment.md` | 3 | Bảo mật, quyền riêng tư, bản quyền, sổ rủi ro bảo mật | Bản nháp trước |

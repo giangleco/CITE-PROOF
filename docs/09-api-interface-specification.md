@@ -156,16 +156,24 @@ Giá trị `status`: `QUEUED`, `RUNNING`, `COMPLETED`, `COMPLETED_WITH_WARNINGS`
 }
 ```
 
-**Verdict** — đầu ra LLM ở giai đoạn S8, trước khi áp quy tắc ở `07` §4.6
+**Verdict v2** — đầu ra LLM ở giai đoạn S8 (W5 và `submit_verdict` của A2), trước khi áp quy tắc ở `07` §4.6. Đặc tả đầy đủ ở `07a` §4.6.3.
 
 ```json
 {
+  "schema_version": "verdict/2",
   "status": "SUPPORTED | PARTIALLY_SUPPORTED | CONTRADICTED | UNSUPPORTED | UNVERIFIABLE",
-  "evidence": [{"chunk_id": "uuid", "quote": "…", "relation": "SUPPORTS"}],
+  "evidence": [{"chunk_id": "chunk_3", "quote": "…", "relation": "SUPPORTS | PARTIALLY_SUPPORTS | CONTRADICTS | RELATED"}],
+  "abstain_cause": "TEXT_UNREADABLE | CONTEXT_INCONCLUSIVE | null",
   "explanation": "…",
   "limitations": "…"
 }
 ```
+
+- `chunk_id` là ID ngắn trong context (`chunk_1`…). Server ánh xạ về UUID của `source_chunks`.
+- `abstain_cause` chỉ có khi `status = UNVERIFIABLE`. Ánh xạ: `TEXT_UNREADABLE` → `SOURCE_PARSE_FAILED`; `CONTEXT_INCONCLUSIVE` → `EVIDENCE_INCONCLUSIVE`.
+- `content_level_used`, `unverifiable_reason`, `needs_user_review` do code gán.
+
+Trong `ReferenceCheck`, thêm `needs_user_review` và `sources_failed`. Trạng thái `LOOKUP_FAILED` có `sources_searched` rỗng.
 
 ### 4.5 Giới hạn `[ĐX]`
 
@@ -211,13 +219,35 @@ class EvidenceRetriever(Protocol):
     ) -> list["ScoredChunk"]: ...
 
 class Verifier(Protocol):
-    variant: str  # V0..V4
+    variant: str  # V0..V4, "V2+A2"
     async def verify(self, claim: "Claim", ctx: "VerificationContext") -> "VerificationOutcome": ...
 
 class PipelineStage(Protocol):
     name: "StageName"  # S1..S9
-    async def run(self, run_id: UUID) -> "StageResult": ...  # idempotent
+    async def run(self, run_id: UUID) -> "StageResult": ...  # idempotent theo từng mục
+
+# --- Bổ sung theo 07a §4.11 ---
+
+class ContextBuilder(Protocol[InT]):
+    task: str
+    def build(self, inp: InT) -> "PromptParts": ...  # stable_prefix, variable, id_map (ID ngắn ↔ UUID)
+
+class Tool(Protocol):
+    name: str
+    description: str                 # nạp từ prompts/tools/<catalog>/<version>.yaml
+    input_model: type[BaseModel]     # strict, additionalProperties=false
+    async def __call__(self, args: BaseModel) -> "ToolResult": ...  # ToolResult | ToolError(code, message, fix)
+
+class AgentRunner(Protocol):
+    async def run(self, *, agent: str, version: str, parts: "PromptParts",
+                  tools: "Sequence[Tool]", submit_model: type[T],
+                  budget: "AgentBudget", cache_namespace: str) -> "AgentOutcome[T]": ...
+
+class ReferenceResolver(Protocol):   # CascadeResolver, AgentResolver (A1)
+    async def resolve(self, entry: "ReferenceEntry", prior: "CascadeResult | None") -> "ResolutionResult": ...
 ```
+
+`AgentBudget` gồm `max_steps`, `max_context_tokens`, `max_total_input_tokens`, `max_wall_seconds`, `max_submit_attempts` (`07a` §4.5.1). Đây là bản phác thảo; tên kiểu cụ thể chốt khi viết mã.
 
 `ConnectorInterface` của v1.0 §9.2 được tách thành ba protocol: `MetadataConnector`, `AccessResolver`, `FullTextFetcher`. Lý do: không nguồn nào hỗ trợ đủ cả ba chức năng.
 

@@ -35,7 +35,9 @@ Trạng thái: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `IN_REVIEW`, `COMPLETED`
 | T-104 | Lược đồ DB | Model SQLAlchemy và migration đầu tiên theo `08` | P0 | T-102 | NOT_STARTED | Migration chạy lên và xuống được; test constraint đạt |
 | T-105 | Job runner | Hàng đợi trên PostgreSQL, retry, backoff, tiếp tục theo giai đoạn | P0 | T-104 | NOT_STARTED | Job lỗi được thử lại; run tiếp tục từ giai đoạn lỗi |
 | T-106 | CI | Lint, type check, test, quét bí mật | P0 | T-101 | NOT_STARTED | CI chạy trên mọi push |
-| T-107 | `LLMClient` | Đầu ra có cấu trúc, cache, retry, ghi `llm_calls`, chế độ ghi/phát lại cho test | P0 | T-104 | NOT_STARTED | Test chạy không cần gọi mạng; mọi lời gọi được ghi log |
+| T-107 | `LLMClient` | Đầu ra có cấu trúc, cache theo namespace (`llm_cache`, khóa ở `07a` §4.7.2), retry, ghi `llm_calls`, chế độ ghi/phát lại cho test | P0 | T-104 | NOT_STARTED | Test chạy không cần gọi mạng; mọi lời gọi được ghi log; cùng đầu vào cho cùng khóa cache |
+| T-108 | `PromptParts` và `ContextBuilder` | Nạp prompt có phiên bản; phần cố định và phần thay đổi; khối dữ liệu không tin cậy; ánh xạ ID ngắn ↔ UUID (`07a` §4.8) | P0 | T-107 | NOT_STARTED | ID ngắn gán tất định; prompt render giống hệt qua nhiều lần chạy |
+| T-109 | `http_safe` | HTTP client chống SSRF (`07a` §4.9, SR-11) | P0 | T-101 | NOT_STARTED | Bộ test SSRF ở `13` §A.4 đạt |
 
 ## M2 — Nhận và parse tài liệu
 
@@ -57,7 +59,7 @@ Trạng thái: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `IN_REVIEW`, `COMPLETED`
 | T-301 | Connector metadata | Crossref, OpenAlex, Semantic Scholar theo `MetadataConnector` | P0 | T-107 | NOT_STARTED | Test với phản hồi HTTP đã ghi sẵn |
 | T-302 | So khớp và gán trạng thái | Bộ trạng thái `04` §4.5.2; liệt kê trường lệch | P0 | T-301, T-207 | NOT_STARTED | Đúng trạng thái trên tập D5 (`13`) |
 | T-303 | Tài liệu web | URL còn hoạt động, bản lưu trữ (FR-15) | P1 | T-302 | NOT_STARTED | Kết quả đúng trên mẫu URL |
-| T-304 | Cache và giới hạn tốc độ | Cache theo DOI/tiêu đề; backoff | P0 | T-301 | NOT_STARTED | Lần chạy thứ hai không gọi lại API cho cùng tài liệu |
+| T-304 | Cache, giới hạn tốc độ, ngắt mạch | `metadata_cache` theo hash truy vấn, có TTL; backoff; ngắt mạch theo nguồn; `LOOKUP_FAILED` khi không nguồn nào tra được (`07a` §4.3.5) | P0 | T-301 | NOT_STARTED | Lần chạy thứ hai không gọi lại API cho cùng tài liệu; `sources_searched` chỉ chứa nguồn thành công |
 | T-305 | Giao diện tối thiểu | Đăng nhập, đồng ý, tải lên, xem kết quả tài liệu tham khảo | P0 | T-302 | NOT_STARTED | Người dùng hoàn thành luồng mà không cần hướng dẫn |
 | T-306 | Pilot-α | 2–5 người dùng thử phần kiểm tra tài liệu tham khảo | P1 | T-305 | NOT_STARTED | Ghi nhận phản hồi; cập nhật `04` nếu cần |
 
@@ -70,17 +72,20 @@ Trạng thái: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `IN_REVIEW`, `COMPLETED`
 | T-403 | Xác định truy cập, lấy toàn văn | arXiv, ACL Anthology, OpenAlex/Unpaywall (FR-30, FR-31) | P0 | T-301 | NOT_STARTED | Ghi trạng thái truy cập và giấy phép cho mỗi file |
 | T-404 | Tải lên tài liệu được trích | Khớp tiêu đề, cảnh báo (FR-32, FR-33) | P0 | T-403 | NOT_STARTED | File chỉ chủ sở hữu truy cập được |
 | T-405 | Chia đoạn và lập chỉ mục | Giữ trang, mục, vị trí; embedding; tsvector | P0 | T-403 | NOT_STARTED | Chunk truy ngược được vị trí trong nguồn |
+| T-406 | `AgentRunner` và khung công cụ | Vòng lặp agent có giới hạn, công cụ chỉ đọc, cache theo bước, `agent_runs` (`07a` §4.5.1; ADR-010). Làm cùng agent đầu tiên được bật (A1 hoặc A2) | P1 | T-108 | NOT_STARTED | Phát lại cho đúng quỹ đạo cũ; dừng đúng khi hết ngân sách |
+| T-407 | Quyết định về A1 | Phân loại các ca `NOT_FOUND` từ SPK-02 và pilot-α: lỗi gõ hoặc dịch tiêu đề, hay nguồn trong nước (`07a` TK-03) | P1 | T-006, T-306 | NOT_STARTED | Quyết định ghi vào Decision Log |
+| T-408 | Agent A1 Reference Resolver | `meta_search`, `meta_get`, `submit_resolution`; hậu xử lý tất định (`07a` §4.5.2) | P1 | T-406, T-407, T-302 | NOT_STARTED | Tỷ lệ khớp sai trên D5 gần 0 |
 
 ## M5 — Kiểm chứng
 
 | ID | Task | Mô tả | Ưu tiên | Phụ thuộc | Trạng thái | Acceptance criteria |
 |---|---|---|---|---|---|---|
-| T-501 | Truy xuất bằng chứng | Hybrid BM25 + vector; chế độ X1, X2 | P0 | T-405 | NOT_STARTED | Recall@k đo được trên tập dev |
+| T-501 | Truy xuất bằng chứng | Hybrid BM25 + vector tìm chính xác trong một nguồn; chế độ X1, X2; ghi `retrieval_results` | P0 | T-405 | NOT_STARTED | Recall@k đo được trên tập dev; kết quả tất định |
 | T-502 | Phán quyết | Prompt, schema `Verdict`, kiểm tra trích dẫn nguyên văn | P0 | T-501 | NOT_STARTED | Không có bằng chứng nào lọt qua mà không khớp nguyên văn |
 | T-503 | Quy tắc trạng thái | Quy tắc abstract, lý do `UNVERIFIABLE`, cờ "nên tự kiểm tra" | P0 | T-502 | NOT_STARTED | Test cho từng quy tắc |
 | T-504 | Biến thể | V0, V1, V2 qua cấu hình; V3 nếu kịp | P0 | T-502 | NOT_STARTED | Chọn biến thể bằng file cấu hình |
 | T-505 | Kiểm chứng lại một phần | FR-34 | P1 | T-503 | NOT_STARTED | Chỉ claim liên quan được chạy lại |
-| T-506 | Harness đánh giá | Chạy biến thể trên tập dữ liệu, tính chỉ số (`13` §B) | P0 | T-504, T-E02 | NOT_STARTED | Một lệnh cho ra báo cáo chỉ số kèm cấu hình |
+| T-506 | Harness đánh giá | Nhập D1–D5 vào DB `citeproof_eval`; chạy biến thể, tính chỉ số (`13` §B); chế độ phát lại và mẫu mới; `pg_dump` sau mỗi đợt | P0 | T-504, T-E02 | NOT_STARTED | Một lệnh cho ra báo cáo chỉ số kèm cấu hình; phát lại cho đúng kết quả cũ |
 
 ## M6 — Báo cáo và Pilot-β
 
@@ -101,6 +106,8 @@ Trạng thái: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `IN_REVIEW`, `COMPLETED`
 | T-701 | Chạy thực nghiệm chính | V0–V3 × X1/X2 × abstract/toàn văn trên tập test | P0 | T-506, T-E06 | NOT_STARTED | Bảng kết quả kèm khoảng tin cậy |
 | T-702 | Ablation và phân tích lỗi | Theo `13` §B.6 | P0 | T-701 | NOT_STARTED | Phân loại lỗi có ví dụ |
 | T-703 | Chi phí và độ trễ | Từ `llm_calls` | P0 | T-701 | NOT_STARTED | Bảng trade-off chất lượng–chi phí–độ trễ |
+| T-704 | Agent A2 Evidence Investigator | `source_outline`, `source_search`, `source_read`, `submit_verdict`; V4 và `V2+A2` (`07a` §4.5.3) | P1 | T-406, T-503 | NOT_STARTED | Chạy được V4 và `V2+A2` trên tập dev; có chỉ số ở `13` §B.1 |
+| T-705 | Quyết định chế độ leo thang | So sánh `V2+A2` với V2/V3 về chất lượng và chi phí; chọn cấu hình mặc định | P1 | T-704, T-701 | NOT_STARTED | Quyết định ghi vào Decision Log; cập nhật `04` §4.5.4 (bỏ hoặc giữ TK-13) |
 
 ## M8 — Cải tiến
 

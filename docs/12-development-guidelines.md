@@ -45,11 +45,12 @@ citeproof-ai/
 │   │   ├── verification/
 │   │   └── reports/
 │   ├── pipeline/        # giai đoạn S1–S9, runner, jobs
-│   ├── llm/             # LLMClient, nạp prompt, cache
-│   ├── integrations/    # crossref, openalex, semantic_scholar, unpaywall, arxiv, grobid
+│   ├── llm/             # LLMClient, nạp prompt, cache (namespace), context.py (PromptParts,
+│   │                    #   ContextBuilder), agent_runner.py, tools.py — theo 07a §4.11
+│   ├── integrations/    # crossref, openalex, semantic_scholar, unpaywall, arxiv, grobid, http_safe
 │   ├── storage/         # object storage
 │   └── db/              # model SQLAlchemy, repository
-├── prompts/             # <task>/<version>.md
+├── prompts/             # <task>/<version>.md; tools/<catalog>/<version>.yaml (mô tả công cụ)
 ├── migrations/          # Alembic
 ├── tests/
 │   ├── unit/
@@ -138,6 +139,13 @@ CiteProofError
 4. Mỗi lời gọi ghi model, phiên bản prompt, token, chi phí, cache hit.
 5. Đổi prompt mặc định phải chạy lại đánh giá trên tập dev và ghi kết quả.
 6. Không tinh chỉnh prompt dựa trên tập test.
+7. Prompt và mô tả công cụ viết bằng tiếng Anh, có phiên bản; giải thích cho người dùng theo ngôn ngữ của bài (`07a` TK-08).
+8. Không dựa vào tham số nhiệt độ hay ép gọi công cụ (`tool_choice` any/tool); tái lập dựa vào cache và model ID cố định (`07a` §4.7.2).
+9. Không đưa thời gian hiện tại, UUID hay thứ tự không ổn định vào prompt; ID trong context là ID ngắn gán tất định.
+10. Mọi lời gọi có nội dung người dùng phải cache trong namespace `doc:<document_id>`.
+11. Agent chỉ có công cụ chỉ đọc; phạm vi công cụ khóa bằng closure, không nhận qua tham số.
+12. Mọi URL lấy từ dữ liệu người dùng phải đi qua `integrations/http_safe`.
+13. Trước khi viết mã dùng SDK của framework hoặc nhà cung cấp LLM, tra cú pháp mới nhất (context7 hoặc tài liệu chính thức).
 
 ### 4.9 Checklist tự review trước khi merge
 

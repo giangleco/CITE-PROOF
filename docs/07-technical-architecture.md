@@ -6,7 +6,7 @@
 | Phase | Phase 3 — System Architecture & Technical Design |
 | Ngày cập nhật | 20/11/2026 |
 | Trạng thái | Bản nháp trước |
-| Tài liệu liên quan | `04-prd.md`, `08-database-design.md`, `09-api-interface-specification.md`, `10-security-risk-assessment.md` |
+| Tài liệu liên quan | `04-prd.md`, `07a-orchestration-memory-tools.md` (điều phối, bộ nhớ, công cụ LLM — đã duyệt, D-13), `08-database-design.md`, `09-api-interface-specification.md`, `10-security-risk-assessment.md` |
 
 ---
 
@@ -49,7 +49,7 @@ Kiến trúc kỹ thuật cho MVP Pilot: một modular monolith viết bằng Py
 | Data contract | Pydantic v2 | Giữ | Validate đầu ra LLM và API | ADR-001 |
 | Database | PostgreSQL + pgvector | Giữ | Một kho cho cả dữ liệu quan hệ, vector và full-text search | ADR-001 |
 | ORM, migration | SQLAlchemy + Alembic | Giữ | Chuẩn, ổn định | ADR-001 |
-| Điều phối | LangGraph | Pipeline Python tự viết, theo giai đoạn, trạng thái lưu trong DB. LangGraph chỉ dùng cho biến thể agentic V4 nếu làm | Luồng MVP gần như tuyến tính; checkpoint và retry đáp ứng được bằng trạng thái lưu từng giai đoạn; bớt một lớp trừu tượng khi debug | ADR-002 |
+| Điều phối | LangGraph | Pipeline Python tự viết, theo giai đoạn, trạng thái lưu trong DB. Hai agent có giới hạn (A1, A2) chạy bằng vòng lặp tự viết trên `LLMClient`, không dùng LangGraph (`07a`) | Luồng MVP gần như tuyến tính; checkpoint và retry đáp ứng được bằng trạng thái lưu từng giai đoạn; bớt một lớp trừu tượng khi debug; vòng lặp agent ≤8 bước không cần đồ thị hay checkpointer | ADR-002, ADR-009, ADR-010 |
 | Hàng đợi tác vụ | Redis + worker | Hàng đợi trên PostgreSQL (bảng `jobs`, khóa `FOR UPDATE SKIP LOCKED`) | Bớt một dịch vụ (Redis); khối lượng pilot nhỏ | ADR-003 |
 | Parse tài liệu | PyMuPDF, python-docx | GROBID cho PDF khoa học + PyMuPDF dự phòng + python-docx | GROBID tách sẵn tài liệu tham khảo và marker trích dẫn; cần kiểm chứng ở SPK-01 | ADR-004 |
 | Giao diện | Next.js | Server-rendered bằng FastAPI + Jinja2 + HTMX cho pilot; Next.js sau MVP | Giữ toàn bộ mã nguồn bằng Python, đủ cho pilot | ADR-005 |
@@ -92,8 +92,8 @@ Web app chỉ nhận yêu cầu, ghi job vào bảng `jobs` và đọc kết qu�
 | `verification` | Các verifier, quy tắc trạng thái, kiểm tra bằng chứng | `core`, `retrieval`, `llm` |
 | `reports` | Tổng hợp báo cáo, xuất file | `core` |
 | `pipeline` | Định nghĩa giai đoạn, chạy job, tiếp tục khi lỗi | Mọi module nghiệp vụ |
-| `llm` | `LLMClient`, nạp prompt, cache, ghi log lời gọi | `core` |
-| `integrations` | Connector tới dịch vụ ngoài | `core` |
+| `llm` | `LLMClient`, nạp prompt, cache theo namespace, ghi log lời gọi, `ContextBuilder`, `AgentRunner`, khung công cụ (`07a` §4.11) | `core` |
+| `integrations` | Connector tới dịch vụ ngoài; HTTP client chống SSRF (`http_safe`) | `core` |
 | `api`, `web` | REST API và giao diện | `pipeline`, module nghiệp vụ (chỉ đọc) |
 | `evaluation` | Chạy biến thể trên tập đánh giá, tính chỉ số (chạy ngoài luồng sản phẩm) | `verification`, `retrieval` |
 
@@ -120,12 +120,12 @@ flowchart TD
 |---|---|---|---|---|
 | S1 | File hoặc văn bản | Văn bản đã parse (object storage), ngôn ngữ, cảnh báo | Không | Phát hiện bảng mã cũ, PDF scan |
 | S2 | Văn bản đã parse | `reference_entries` | Dự phòng | GROBID trước, LLM khi thất bại |
-| S3 | `reference_entries` | `reference_checks`, `works` | Không | Chạy song song có giới hạn; cache theo DOI và tiêu đề |
+| S3 | `reference_entries` | `reference_checks`, `works`, `agent_runs` | Agent A1 khi leo thang | Tra cứu tuần tự tất định, chạy song song có giới hạn, ngắt mạch theo nguồn, `metadata_cache`; leo thang lên A1 theo `07a` §4.3.4 |
 | S4 | Văn bản, `reference_entries` | `citations`, `citation_links`, `claims` | Có | Span claim phải là chuỗi con của câu gốc |
 | S5 | `works`, file tải lên | `source_files` | Không | Ghi trạng thái truy cập và giấy phép |
 | S6 | `source_files` | `source_chunks` + embedding + tsvector | Embedding | Giữ trang, mục, vị trí ký tự |
-| S7 | `claims`, `source_chunks` | Danh sách chunk ứng viên (tạm) | Embedding / dịch (X2) | Hybrid: BM25 (tsvector) + vector, gộp điểm |
-| S8 | Claim + chunk ứng viên | `claim_verifications`, `evidence` | Có | Kiểm soát ở §4.6 |
+| S7 | `claims`, `source_chunks` | `retrieval_results` | Embedding / dịch (X2) | Hybrid: BM25 (tsvector) + vector tìm chính xác trong một nguồn, gộp bằng RRF |
+| S8 | Claim + chunk ứng viên | `claim_verifications`, `evidence`, `agent_runs` (V4) | Có | Kiểm soát ở §4.6; worker và agent theo `07a` §4.4–§4.5 |
 | S9 | Toàn bộ kết quả | Báo cáo (tạo khi xem, xuất file khi yêu cầu) | Không | — |
 
 **Tính idempotent và tiếp tục khi lỗi:** mỗi giai đoạn ghi kết quả kèm `run_id`. Chạy lại một giai đoạn sẽ thay thế kết quả cũ của chính giai đoạn đó. Lần chạy lỗi tiếp tục từ giai đoạn chưa hoàn tất (NFR-04).
@@ -147,8 +147,8 @@ Các cơ chế kiểm soát cho phán quyết:
 2. **Kiểm tra trích dẫn nguyên văn:** mỗi đoạn bằng chứng LLM trả về phải xuất hiện nguyên văn trong chunk được tham chiếu (sau khi chuẩn hóa khoảng trắng). Đoạn không khớp bị loại. Nếu không còn bằng chứng hợp lệ, kết quả bị hạ về `UNVERIFIABLE` và gắn cờ.
 3. **Quy tắc trạng thái tất định** áp dụng sau LLM. Ví dụ: `UNSUPPORTED` chỉ hợp lệ khi đã có toàn văn; nếu không, chuyển thành `UNVERIFIABLE` (`ABSTRACT_ONLY_INSUFFICIENT`) theo `04` §4.5.1.
 4. **Validate schema** bằng Pydantic; thử lại có giới hạn khi đầu ra sai định dạng.
-5. **Chống prompt injection:** văn bản tài liệu và nguồn đặt trong khối dữ liệu có phân tách rõ; prompt hệ thống yêu cầu bỏ qua mọi chỉ dẫn nằm trong dữ liệu; LLM phán quyết không được cấp công cụ nào.
-6. **Thiết lập tất định** (nhiệt độ thấp nhất mà model hỗ trợ) và cache theo khóa (model, prompt version, input hash).
+5. **Chống prompt injection:** văn bản tài liệu và nguồn đặt trong khối dữ liệu có phân tách rõ, đánh dấu không tin cậy; prompt hệ thống yêu cầu bỏ qua mọi chỉ dẫn nằm trong dữ liệu. Worker (W1–W5) không có công cụ. Agent A1, A2 chỉ có công cụ chỉ đọc, phạm vi khóa phía server; không agent nào có công cụ ghi, truy cập mạng tự do hay thực thi mã (`07a` §4.9).
+6. **Tái lập bằng cache, không bằng nhiệt độ:** một số nhà cung cấp đã bỏ tham số nhiệt độ. Tái lập dựa vào model ID cố định và cache theo khóa (model, task, prompt version, schema version, input chuẩn hóa); agent cache theo từng bước (`07a` §4.7.2).
 7. **Ghi log mọi lời gọi** vào `llm_calls`: model, prompt version, token, độ trễ, chi phí ước tính, cache hit.
 
 ### 4.7 Biến thể phục vụ thực nghiệm
@@ -159,7 +159,8 @@ Các cơ chế kiểm soát cho phán quyết:
 | V1 | Abstract-only | Phán quyết chỉ dựa trên abstract |
 | V2 | RAG toàn văn | Truy xuất top-k chunk từ toàn văn, phán quyết một bước |
 | V3 | Pipeline nhiều bước | Tách claim thành các ý con, truy xuất cho từng ý, tổng hợp phán quyết |
-| V4 | Agentic (tùy chọn) | Agent tự quyết truy xuất thêm; làm bằng LangGraph nếu còn thời gian |
+| V4 | Agentic (tùy chọn) | Agent A2 tự điều hướng trong toàn văn (xem mục lục, tìm, đọc) rồi phán quyết; ≤8 bước (`07a` §4.5.3) |
+| V2+A2 | Leo thang | V2 cho mọi claim; A2 kiểm tra lại các ca `UNSUPPORTED`/`PARTIALLY_SUPPORTED` có toàn văn. Ứng viên cấu hình mặc định cho sản phẩm, quyết định ở M7 |
 
 | Mã | Chế độ xuyên ngôn ngữ | Mô tả |
 |---|---|---|
@@ -194,7 +195,8 @@ claim_verification → verification_run.config (biến thể, model, prompt vers
 | Giới hạn tốc độ API bên ngoài | Cache theo DOI và tiêu đề; backoff khi bị giới hạn; giới hạn đồng thời theo từng nguồn |
 | Thông lượng GROBID | Một instance cho pilot; xếp hàng qua bảng `jobs` |
 | PDF lớn | Giới hạn kích thước và số trang (FR-01) |
-| Truy vấn vector | Index HNSW của pgvector; giới hạn tìm kiếm trong phạm vi một file nguồn |
+| Truy vấn vector | Tìm chính xác (không ANN) trong phạm vi một file nguồn: nhanh vì chỉ vài trăm chunk, và cho kết quả tất định để phát lại được (`07a` TK-19). Index HNSW chỉ thêm khi có truy vấn trên toàn kho |
+| Chi phí agent | Ngân sách số bước và token cho từng agent; A2 chỉ chạy cho phần nhỏ claim ở chế độ leo thang (`07a` §4.8.5) |
 
 ### 4.11 ADR đề xuất
 
@@ -208,6 +210,8 @@ claim_verification → verification_run.config (biến thể, model, prompt vers
 | ADR-006 | Lớp truy cập LLM | Đề xuất |
 | ADR-007 | Embedding và chiến lược xuyên ngôn ngữ | Chờ SPK-04 |
 | ADR-008 | Tái sử dụng hay tự xây kiểm tra tài liệu tham khảo | Chờ T-002 |
+| ADR-009 | Agent có giới hạn trong pipeline tất định (`decisions/ADR-009-bounded-agents-in-pipeline.md`) | Accepted (D-13) |
+| ADR-010 | Hiện thực vòng lặp agent (`decisions/ADR-010-agent-loop-implementation.md`) | Proposed, chốt khi bắt đầu T-406 |
 
 ## 5. Implementation Steps
 
