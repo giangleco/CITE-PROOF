@@ -18,6 +18,8 @@ services:
 
   grobid:
     image: lfoppiano/grobid:0.8.1
+    environment:
+      JAVA_TOOL_OPTIONS: "-XX:-UseContainerSupport"
     ports:
       - "8070:8070"
 
@@ -36,17 +38,19 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    command:
-      - uvicorn
-      - --factory
-      - citeproof.api.app:create_app
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8000"
+    command: ["python", "-m", "citeproof.api"]
     environment: *app-env
     ports:
       - "8000:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 5
     depends_on:
       migrate:
         condition: service_completed_successfully

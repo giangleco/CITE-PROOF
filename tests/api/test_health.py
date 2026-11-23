@@ -1,6 +1,6 @@
 """Test endpoint /api/v1/health."""
 
-import logging
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -9,6 +9,7 @@ import pytest
 from httpx import ASGITransport
 
 from citeproof.api.app import create_app
+from citeproof.core.logging import configure_logging
 from citeproof.core.settings import Settings
 
 
@@ -30,12 +31,16 @@ async def test_health_ok(database_url: str) -> None:
     assert response.json() == {"status": "ok", "database": "ok"}
 
 
-async def test_health_degraded_when_db_unreachable(caplog: pytest.LogCaptureFixture) -> None:
+async def test_health_degraded_when_db_unreachable(capsys: pytest.CaptureFixture[str]) -> None:
+    configure_logging("INFO")
     url = "postgresql+psycopg://citeproof:secret-pw@localhost:1/citeproof"
-    with caplog.at_level(logging.INFO):
-        async with _client(url) as client:
-            response = await client.get("/api/v1/health")
+    async with _client(url) as client:
+        response = await client.get("/api/v1/health")
     assert response.status_code == 503
     assert response.json() == {"status": "degraded", "database": "unavailable"}
-    assert "secret-pw" not in caplog.text
-    assert "refused" not in caplog.text.lower()
+    err = capsys.readouterr().err
+    events = [json.loads(line) for line in err.splitlines() if line.startswith("{")]
+    degraded = [e for e in events if e["level"] == "WARNING" and "error_type" in e]
+    assert degraded
+    assert "secret-pw" not in err
+    assert "refused" not in err.lower()
