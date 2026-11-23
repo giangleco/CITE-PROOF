@@ -1,16 +1,17 @@
 """Báo cáo một lần chạy: bốn tab, tờ đối chiếu, xuất Markdown (spec web UI §7.5)."""
 
-from typing import Any
+import json
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Request
-from fastapi.responses import Response
+from fastapi import APIRouter, Form, Request
+from fastapi.responses import RedirectResponse, Response
 
-from citeproof.core.enums import ClaimStatus, ReferenceStatus
+from citeproof.core.enums import ClaimStatus, FeedbackVerdict, ReferenceStatus
 from citeproof.core.errors import InputError
 from citeproof.schemas.report import Overview
-from citeproof.services import report
-from citeproof.web.deps import CurrentUser, Db, UserDep, is_htmx
+from citeproof.services import feedback, report
+from citeproof.web.deps import Csrf, CurrentUser, Db, UserDep, is_htmx
 from citeproof.web.rendering import render
 
 router = APIRouter()
@@ -189,4 +190,50 @@ async def markdown_export(db: Db, current: UserDep, run_id: UUID) -> Response:
         content=text,
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="citeproof-{str(run_id)[:8]}.md"'},
+    )
+
+
+@router.post("/claim-verifications/{claim_verification_id}/feedback", dependencies=[Csrf])
+async def submit_feedback(
+    request: Request,
+    db: Db,
+    current: UserDep,
+    claim_verification_id: UUID,
+    verdict: Annotated[str, Form()] = "",
+    comment: Annotated[str | None, Form()] = None,
+) -> Response:
+    run_id = await feedback.owning_run_id(
+        db, user=current.user, claim_verification_id=claim_verification_id
+    )
+    try:
+        chosen = FeedbackVerdict(verdict)
+    except ValueError:
+        raise InputError("Lựa chọn phản hồi không hợp lệ.") from None
+    error: str | None = None
+    try:
+        await feedback.save_feedback(
+            db,
+            user=current.user,
+            claim_verification_id=claim_verification_id,
+            verdict=chosen,
+            comment=comment,
+        )
+        await db.commit()
+    except InputError as exc:
+        await db.rollback()
+        if not is_htmx(request):
+            raise
+        error = str(exc)
+    if not is_htmx(request):
+        return RedirectResponse(f"/runs/{run_id}/claims?c={claim_verification_id}", status_code=303)
+    sheet = await report.get_claim_sheet(
+        db, user=current.user, run_id=run_id, claim_verification_id=claim_verification_id
+    )
+    headers = {} if error else {"HX-Trigger": json.dumps({"toast": "Đã lưu phản hồi"})}
+    return render(
+        request,
+        "partials/feedback.html",
+        {"sheet": sheet, "run_id": run_id, "feedback_error": error},
+        current=current,
+        headers=headers,
     )
