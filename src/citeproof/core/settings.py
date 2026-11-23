@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     login_max_failures_per_ip: int = 20
     login_window_minutes: int = 15
     # Người đồng ý trước mốc này phải đồng ý lại (FR-63).
-    consent_text_updated_at: datetime = datetime(2026, 11, 24, tzinfo=UTC)
+    consent_text_updated_at: datetime = datetime(2026, 11, 23, tzinfo=UTC)
     llm_provider_name: str | None = None
     llm_provider_policy_url: str | None = None
 
