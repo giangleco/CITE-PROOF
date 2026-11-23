@@ -1,0 +1,85 @@
+"""Fixture dùng chung: database test, engine, session và dọn logging."""
+
+import argparse
+import logging
+import os
+from collections.abc import AsyncIterator, Iterator
+
+import psycopg
+import pytest
+from alembic import command
+from alembic.config import Config
+from psycopg import sql
+from psycopg.conninfo import make_conninfo
+from sqlalchemy import text
+from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+
+import citeproof.db.models  # noqa: F401  (đăng ký bảng lên Base.metadata)
+from citeproof.db.base import Base
+from citeproof.db.session import make_engine, make_session_factory
+
+DEFAULT_TEST_URL = "postgresql+psycopg://citeproof:citeproof@localhost:5432/citeproof_test"
+_HANDLER_MARK = "_citeproof_handler"
+
+
+def alembic_config(url: str) -> Config:
+    config = Config("alembic.ini")
+    config.cmd_opts = argparse.Namespace(x=[f"url={url}"])
+    return config
+
+
+@pytest.fixture(autouse=True)
+def _restore_root_logger() -> Iterator[None]:
+    root = logging.getLogger()
+    level = root.level
+    yield
+    for handler in list(root.handlers):
+        if getattr(handler, _HANDLER_MARK, False):
+            root.removeHandler(handler)
+    root.setLevel(level)
+
+
+@pytest.fixture(scope="session")
+def database_url() -> str:
+    url = os.environ.get("CITEPROOF_TEST_DATABASE_URL", DEFAULT_TEST_URL)
+    parsed = make_url(url)
+    admin_dsn = make_conninfo(
+        host=parsed.host or "localhost",
+        port=parsed.port or 5432,
+        user=parsed.username,
+        password=parsed.password,
+        dbname="postgres",
+    )
+    name = sql.Identifier(parsed.database or "citeproof_test")
+    try:
+        with psycopg.connect(admin_dsn, autocommit=True, connect_timeout=5) as conn:
+            conn.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(name))
+            conn.execute(sql.SQL("CREATE DATABASE {}").format(name))
+    except psycopg.OperationalError as exc:
+        if os.environ.get("CITEPROOF_REQUIRE_DB") == "1":
+            pytest.fail(f"PostgreSQL không truy cập được: {exc}")
+        pytest.skip("PostgreSQL không truy cập được; bỏ qua test db")
+    command.upgrade(alembic_config(url), "head")
+    return url
+
+
+@pytest.fixture(scope="session")
+def engine(database_url: str) -> AsyncEngine:
+    return make_engine(database_url)
+
+
+@pytest.fixture(scope="session")
+def session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    return make_session_factory(engine)
+
+
+@pytest.fixture
+async def clean_db(engine: AsyncEngine) -> AsyncIterator[None]:
+    tables = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
+    if tables:
+        async with engine.begin() as conn:
+            await conn.execute(text(f"TRUNCATE {tables} CASCADE"))
+    yield
+    # Engine dùng chung giữa các event loop theo test: bỏ connection đã pool.
+    await engine.dispose()
