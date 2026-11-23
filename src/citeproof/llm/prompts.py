@@ -37,13 +37,15 @@ class PromptLoader:
         path = self._root / task / f"{version}.md"
         if not path.is_file():
             raise FileNotFoundError(f"prompt template not found: {path}")
-        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
-        idx = [i for i, ln in enumerate(lines) if ln.rstrip("\r\n") == USER_SEPARATOR]
+        # Chuẩn hoá xuống dòng tường minh: file CRLF/CR cho đúng prompt như file LF.
+        text = path.read_bytes().decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+        lines = text.splitlines(keepends=True)
+        idx = [i for i, ln in enumerate(lines) if ln.rstrip("\n") == USER_SEPARATOR]
         if len(idx) != 1:
             raise ValueError(
                 f"{path}: expected exactly one {USER_SEPARATOR!r} line, found {len(idx)}"
             )
-        system = "".join(lines[: idx[0]]).removesuffix("\n").removesuffix("\r")
+        system = "".join(lines[: idx[0]]).removesuffix("\n")
         user = "".join(lines[idx[0] + 1 :])
         tpl = PromptTemplate(task=task, version=version, system=system, user_template=user)
         self._cache[key] = tpl

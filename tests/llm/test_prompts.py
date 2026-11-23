@@ -50,3 +50,16 @@ def test_bad_separator_raises(tmp_path: Path, content: str) -> None:
     (tmp_path / "t" / "v1.md").write_text(content, encoding="utf-8")
     with pytest.raises(ValueError):
         PromptLoader(tmp_path).load("t", "v1")
+
+
+@pytest.mark.parametrize("newline", [b"\r\n", b"\r"])
+def test_crlf_and_cr_prompt_files_load_like_lf(tmp_path: Path, newline: bytes) -> None:
+    lf = b"line one\nline two\n=== USER ===\nClaim: {{ claim }}\nend\n"
+    for name, data in (("lf", lf), ("other", lf.replace(b"\n", newline))):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "v1.md").write_bytes(data)
+    loader = PromptLoader(tmp_path)
+    a, b = loader.load("lf", "v1"), loader.load("other", "v1")
+    assert b.system == a.system == "line one\nline two"
+    assert b.user_template == a.user_template
+    assert "\r" not in loader.render("other", "v1", claim="X").user
