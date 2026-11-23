@@ -1,6 +1,7 @@
 """Các model ORM; import module model tại đây để đăng ký lên Base.metadata."""
 
 from citeproof.db.models.agents import AgentRun
+from citeproof.db.models.auth import Invite, LoginAttempt, WebSession
 from citeproof.db.models.citations import Citation, CitationLink, Claim
 from citeproof.db.models.documents import Document
 from citeproof.db.models.feedback import Feedback
@@ -21,9 +22,11 @@ __all__ = [
     "Document",
     "Evidence",
     "Feedback",
+    "Invite",
     "Job",
     "LLMCacheEntry",
     "LLMCall",
+    "LoginAttempt",
     "MetadataCacheEntry",
     "ReferenceCheck",
     "ReferenceEntry",
@@ -32,5 +35,6 @@ __all__ = [
     "SourceFile",
     "User",
     "VerificationRun",
+    "WebSession",
     "Work",
 ]
