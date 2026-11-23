@@ -106,3 +106,6 @@ class ReferenceCheck(IdCreatedMixin, Base):
     needs_user_review: Mapped[bool] = mapped_column(server_default=text("false"))
     url_alive: Mapped[bool | None]
     archive_url: Mapped[str | None] = mapped_column(Text)
+    agent_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="SET NULL"), index=True
+    )

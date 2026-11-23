@@ -92,6 +92,9 @@ class ClaimVerification(IdCreatedMixin, Base):
     escalated_from: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("claim_verifications.id", ondelete="SET NULL"), index=True
     )
+    agent_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="SET NULL"), index=True
+    )
 
 
 class Evidence(IdCreatedMixin, Base):

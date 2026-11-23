@@ -25,6 +25,10 @@ class SourceFile(IdCreatedMixin, Base):
             "AND reference_entry_id IS NOT NULL)",
             name="user_upload_needs_owner_and_reference",
         ),
+        CheckConstraint(
+            "origin <> 'OPEN_ACCESS' OR (owner_user_id IS NULL AND reference_entry_id IS NULL)",
+            name="open_access_is_shared",
+        ),
     )
 
     work_id: Mapped[uuid.UUID | None] = mapped_column(
