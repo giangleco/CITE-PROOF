@@ -23,8 +23,17 @@ ALLOWED_LOG_FIELDS: frozenset[str] = frozenset(
     }
 )
 
+# Chỉ logger của ta và uvicorn được ghi nguyên văn message; logger bên thứ ba
+# (vd. httpx ghi cả URL kèm query string) chỉ còn tên logger làm `event`.
+_VERBATIM_LOGGERS: tuple[str, ...] = ("citeproof", "uvicorn")
+_QUIET_LOGGERS: tuple[str, ...] = ("httpx", "httpcore")
+
 _context: contextvars.ContextVar[dict[str, str]] = contextvars.ContextVar("log_context")
 _HANDLER_MARK = "_citeproof_handler"
+
+
+def _is_verbatim(name: str) -> bool:
+    return any(name == prefix or name.startswith(f"{prefix}.") for prefix in _VERBATIM_LOGGERS)
 
 
 class JsonFormatter(logging.Formatter):
@@ -33,7 +42,7 @@ class JsonFormatter(logging.Formatter):
             "timestamp": datetime.fromtimestamp(record.created, UTC).isoformat(),
             "level": record.levelname,
             "module": record.module,
-            "event": record.getMessage(),
+            "event": record.getMessage() if _is_verbatim(record.name) else record.name,
         }
         for key, value in _context.get({}).items():
             if key in ALLOWED_LOG_FIELDS:
@@ -57,6 +66,8 @@ def configure_logging(level: str) -> None:
     setattr(handler, _HANDLER_MARK, True)
     root.addHandler(handler)
     root.setLevel(level.upper())
+    for name in _QUIET_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 @contextmanager

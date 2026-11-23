@@ -1,9 +1,12 @@
 import json
 import logging
+from collections.abc import AsyncIterator
 
+import httpx
 import pytest
 
 from citeproof.core.logging import ALLOWED_LOG_FIELDS, configure_logging, log_context
+from citeproof.integrations.http_safe import SafeHttpClient
 
 
 def _last_record(capsys: pytest.CaptureFixture[str]) -> dict[str, object]:
@@ -72,3 +75,50 @@ def test_allowlist_contents() -> None:
         )
         == ALLOWED_LOG_FIELDS
     )
+
+
+class _Body(httpx.AsyncByteStream):
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        yield b"ok"
+
+
+async def _public(host: str, port: int) -> list[str]:
+    return ["93.184.216.34"]
+
+
+async def test_http_client_logs_never_leak_url(capsys: pytest.CaptureFixture[str]) -> None:
+    configure_logging("INFO")
+    client = SafeHttpClient(
+        resolver=_public,
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, stream=_Body())),
+    )
+    resp = await client.get("http://example.org/hidden-path?token=SECRET&q=private")
+    assert resp.status_code == 200
+    err = capsys.readouterr().err
+    assert "SECRET" not in err
+    assert "private" not in err
+    assert "hidden-path" not in err
+
+
+def test_configure_logging_quiets_http_libraries() -> None:
+    configure_logging("DEBUG")
+    assert logging.getLogger("httpx").getEffectiveLevel() == logging.WARNING
+    assert logging.getLogger("httpcore").getEffectiveLevel() == logging.WARNING
+
+
+@pytest.mark.parametrize("name", ["thirdparty.lib", "citeprooflib", "uvicornx", "root"])
+def test_foreign_logger_message_is_dropped(capsys: pytest.CaptureFixture[str], name: str) -> None:
+    configure_logging("INFO")
+    logging.getLogger(name).warning("GET http://x/?token=%s", "SECRET")
+    err = capsys.readouterr().err
+    assert "SECRET" not in err
+    assert json.loads(err.strip().splitlines()[-1])["event"] == name
+
+
+@pytest.mark.parametrize("name", ["citeproof", "citeproof.x", "uvicorn", "uvicorn.error"])
+def test_own_and_uvicorn_messages_are_verbatim(
+    capsys: pytest.CaptureFixture[str], name: str
+) -> None:
+    configure_logging("INFO")
+    logging.getLogger(name).info("Started server process")
+    assert _last_record(capsys)["event"] == "Started server process"
