@@ -1,5 +1,6 @@
 import asyncio
 import gzip
+import socket
 import tracemalloc
 import zlib
 from collections.abc import Callable
@@ -460,3 +461,72 @@ async def test_underscore_host_allowed() -> None:
     client = SafeHttpClient(resolver=res, transport=httpx.MockTransport(rec))
     await client.get("http://My_Host.example.org/")
     assert rec.requests[0].headers["host"] == "my_host.example.org"
+
+
+def _redirect_then_ok(location: str) -> Recorder:
+    def handler(r: httpx.Request) -> httpx.Response:
+        if r.url.path == "/start":
+            return httpx.Response(
+                302, headers=[(b"location", location.encode("utf-8"))], stream=ChunkStream([])
+            )
+        return make_response(200, content=b"ok")
+
+    return Recorder(handler)
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "http://a\u3002com\uff0f@b/",  # urljoin/urlsplit raise ValueError (NFKC netloc)
+        "http://ex\uff0fample.com/",  # httpx rejects the Location itself
+    ],
+)
+async def test_hostile_location_is_invalid_url(location: str) -> None:
+    rec = _redirect_then_ok(location)
+    with pytest.raises(UnsafeUrlError) as ei:
+        await rec.client().get("http://example.org/start?token=SECRET")
+    assert ei.value.code == "INVALID_URL"
+    assert not isinstance(ei.value, RetryableError)
+    assert "SECRET" not in str(ei.value)
+    assert "\u3002" not in str(ei.value)
+    assert "\uff0f" not in str(ei.value)
+    assert len(rec.requests) == 1
+
+
+async def test_unparseable_initial_url_with_fragment_is_invalid_url() -> None:
+    rec = Recorder()
+    with pytest.raises(UnsafeUrlError) as ei:
+        await rec.client().get("http://a\u3002com\uff0f@b/#frag")
+    assert ei.value.code == "INVALID_URL"
+    assert not rec.requests
+
+
+async def test_transient_dns_failure_is_retryable() -> None:
+    async def again(host: str, port: int) -> list[str]:
+        raise socket.gaierror(socket.EAI_AGAIN, "Temporary failure in name resolution")
+
+    client = SafeHttpClient(resolver=again, transport=httpx.MockTransport(Recorder()))
+    with pytest.raises(FetchError) as ei:
+        await client.get("http://example.org/p?token=SECRET")
+    assert isinstance(ei.value, RetryableError)
+    assert "SECRET" not in str(ei.value)
+
+
+async def test_permanent_dns_failure_is_dns_failed() -> None:
+    async def noname(host: str, port: int) -> list[str]:
+        raise socket.gaierror(socket.EAI_NONAME, "Name or service not known")
+
+    client = SafeHttpClient(resolver=noname, transport=httpx.MockTransport(Recorder()))
+    with pytest.raises(UnsafeUrlError) as ei:
+        await client.get("http://example.org/")
+    assert ei.value.code == "DNS_FAILED"
+
+
+async def test_dropped_connection_is_retryable() -> None:
+    def dropped(r: httpx.Request) -> httpx.Response:
+        raise httpx.RemoteProtocolError("Server disconnected without sending a response.")
+
+    with pytest.raises(FetchError) as ei:
+        await Recorder(dropped).client().get("http://example.org/?q=SECRET")
+    assert isinstance(ei.value, RetryableError)
+    assert "SECRET" not in str(ei.value)

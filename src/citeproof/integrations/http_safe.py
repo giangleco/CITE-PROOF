@@ -37,6 +37,7 @@ _LEGACY_IPV4_RE = re.compile(r"^[0-9a-fA-FxX.]+$")
 _USER_AGENT = "CiteProof/0.1"
 _MAX_URL_LEN = 65_536
 _GLOBAL_UNICAST_V6 = ipaddress.ip_network("2000::/3")
+_HTTPX_BAD_LOCATION = "Invalid URL in location header"
 
 
 class UnsafeUrlError(InputError):
@@ -223,6 +224,8 @@ class SafeHttpClient:
         try:
             resolved = await self._resolver(host, port)
         except (OSError, ValueError) as exc:  # UnicodeError là ValueError
+            if isinstance(exc, socket.gaierror) and exc.errno == socket.EAI_AGAIN:
+                raise FetchError(f"Lỗi DNS tạm thời khi phân giải {host}") from exc
             raise UnsafeUrlError("DNS_FAILED", f"Không phân giải được host: {host}") from exc
         if not resolved:
             raise UnsafeUrlError("DNS_FAILED", f"Không phân giải được host: {host}")
@@ -248,7 +251,10 @@ class SafeHttpClient:
             raise FetchError(f"Quá thời gian tổng khi tải {_safe_label(url)}") from exc
 
     async def _get(self, url: str) -> SafeResponse:
-        current = urldefrag(url)[0]
+        try:
+            current = urldefrag(url)[0]
+        except ValueError as exc:
+            raise UnsafeUrlError("INVALID_URL", "URL không hợp lệ") from exc
         for hop in range(self._max_redirects + 1):
             target = await self._validate(current)
             result = await self._request(target)
@@ -256,7 +262,10 @@ class SafeHttpClient:
             if result.status_code in _REDIRECT_STATUSES and location:
                 if hop >= self._max_redirects:
                     raise UnsafeUrlError("TOO_MANY_REDIRECTS", "Quá nhiều lần chuyển hướng")
-                current = urldefrag(urljoin(current, location))[0]
+                try:
+                    current = urldefrag(urljoin(current, location))[0]
+                except ValueError as exc:
+                    raise UnsafeUrlError("INVALID_URL", "Header Location không hợp lệ") from exc
                 continue
             return SafeResponse(
                 status_code=result.status_code,
@@ -335,6 +344,12 @@ class SafeHttpClient:
                 return _Hop(resp.status_code, dict(resp.headers), body, truncated)
         except httpx.InvalidURL as exc:
             raise UnsafeUrlError("INVALID_URL", "URL không hợp lệ") from exc
+        except httpx.RemoteProtocolError as exc:
+            # httpx dựng sẵn request chuyển hướng kể cả khi follow_redirects=False và báo
+            # Location không parse được bằng RemoteProtocolError; còn lại là mất kết nối.
+            if str(exc).startswith(_HTTPX_BAD_LOCATION):
+                raise UnsafeUrlError("INVALID_URL", "Header Location không hợp lệ") from exc
+            raise FetchError(f"Kết nối bị đóng khi tải {target.label}") from exc
         except (httpx.TimeoutException, httpx.NetworkError) as exc:
             raise FetchError(f"Lỗi mạng hoặc timeout khi tải {target.label}") from exc
         except httpx.HTTPError as exc:
