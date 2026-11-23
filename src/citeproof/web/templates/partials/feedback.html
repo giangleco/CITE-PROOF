@@ -1,0 +1,17 @@
+{% from "partials/ui.html" import csrf %}
+<form class="feedback" method="post" action="/claim-verifications/{{ sheet.id }}/feedback" hx-post="/claim-verifications/{{ sheet.id }}/feedback" hx-target="this" hx-swap="outerHTML">
+  {{ csrf(csrf_token) }}
+  <input type="hidden" name="run_id" value="{{ run_id }}">
+  <span class="q" id="fb-q-{{ sheet.id }}">Kết quả này có đúng không?</span>
+  <div class="row" role="group" aria-labelledby="fb-q-{{ sheet.id }}">
+    {% for verdict, text in labels.FEEDBACK.items() %}
+    <button class="btn small" type="submit" name="verdict" value="{{ verdict.value }}" aria-pressed="{{ 'true' if sheet.my_feedback == verdict else 'false' }}">{{ text }}</button>
+    {% endfor %}
+  </div>
+  <details{% if sheet.my_comment %} open{% endif %}>
+    <summary class="small">Thêm ghi chú (gửi kèm khi bạn bấm một lựa chọn)</summary>
+    <label class="sr" for="fb-comment-{{ sheet.id }}">Ghi chú</label>
+    <textarea id="fb-comment-{{ sheet.id }}" name="comment" maxlength="2000">{{ sheet.my_comment or '' }}</textarea>
+  </details>
+  {% if feedback_error %}<p class="field-error">{{ feedback_error }}</p>{% endif %}
+</form>

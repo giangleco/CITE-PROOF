@@ -1,0 +1,47 @@
+{% from "partials/ui.html" import csrf, notice %}
+<div class="report-head">
+  <div>
+    <h1>{{ header.document_name }}</h1>
+    <div class="meta">
+      {% if header.is_sample %}<span class="sample-label">Bài mẫu</span>{% endif %}
+      <span>{{ labels.RUN_STATUS[header.status].label }}</span>
+      {% if header.finished_at %}<span>Kiểm tra xong {{ header.finished_at.strftime('%d/%m/%Y') }}</span>{% endif %}
+    </div>
+  </div>
+  <div class="row">
+    <a class="btn small" href="/runs/{{ header.run_id }}/report.md">Tải báo cáo</a>
+    {% if not header.is_sample %}
+    <form method="post" action="/documents/{{ header.document_id }}/runs" class="row">
+      {{ csrf(csrf_token) }}
+      {% if current.is_admin %}
+      <label class="sr" for="rerun-variant">Biến thể</label>
+      <select id="rerun-variant" name="variant" class="btn small">
+        {% for v in ['V0', 'V1', 'V2'] %}<option value="{{ v }}"{% if v == 'V2' %} selected{% endif %}>{{ v }}</option>{% endfor %}
+      </select>
+      {% endif %}
+      <button class="btn small" type="submit" name="action" value="rerun">Kiểm tra lại</button>
+    </form>
+    {% endif %}
+    <a class="btn small danger" href="/documents/{{ header.document_id }}/delete" data-dialog="delete-dialog">Xóa bài</a>
+  </div>
+</div>
+<dialog id="delete-dialog" aria-labelledby="delete-title">
+  <form class="form" method="post" action="/documents/{{ header.document_id }}/delete">
+    {{ csrf(csrf_token) }}
+    <h2 id="delete-title" class="m0">Xóa bài này?</h2>
+    <p class="m0 lede">Bài, các tệp bạn tải lên, kết quả kiểm tra và phản hồi của bạn sẽ bị xóa vĩnh viễn. Không khôi phục được.</p>
+    <div class="dialog-actions">
+      <button class="btn ghost" type="button" data-close-dialog>Giữ lại</button>
+      <button class="btn danger" type="submit">Xóa vĩnh viễn</button>
+    </div>
+  </form>
+</dialog>
+{% for w in header.warnings %}{{ notice(labels.warning_text(w.code, w.detail) ~ (' (' ~ w.code ~ ')' if current.is_admin and w.code not in labels.WARNINGS else ''), 'warn') }}{% endfor %}
+{% set ref_total = overview.ref_tally | sum(attribute='count') %}
+{% set claim_total = overview.claim_tally | sum(attribute='count') %}
+<nav class="tabs mt" aria-label="Phần của báo cáo">
+  <a href="/runs/{{ header.run_id }}/report"{% if tab == 'overview' %} aria-current="page"{% endif %}>Tổng quan</a>
+  <a href="/runs/{{ header.run_id }}/references"{% if tab == 'references' %} aria-current="page"{% endif %}>Tài liệu tham khảo <span class="count">{{ ref_total }}</span></a>
+  <a href="/runs/{{ header.run_id }}/claims"{% if tab == 'claims' %} aria-current="page"{% endif %}>Nhận định <span class="count">{{ claim_total }}</span></a>
+  <a href="/runs/{{ header.run_id }}/missing"{% if tab == 'missing' %} aria-current="page"{% endif %}>Thiếu toàn văn <span class="count">{{ overview.missing_count }}</span></a>
+</nav>

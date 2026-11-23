@@ -1,0 +1,46 @@
+{% from "partials/ui.html" import badge, flag %}
+<div class="sheet-head">
+  <div class="row">{{ badge(labels.CLAIM_STATUS[sheet.status]) }}{% if sheet.needs_user_review %}{{ flag() }}{% endif %}</div>
+  <span class="muted small">Trang {{ sheet.page or '[chưa có]' }} trong bài</span>
+</div>
+<div class="facing">
+  <section>
+    <div class="side-label">Bài của bạn</div>
+    <div class="yours">{{ sheet.sentence | highlight_claim(sheet.span, sheet.marker) }}</div>
+    {% if sheet.section %}<div class="context">Mục {{ sheet.section }}</div>{% endif %}
+  </section>
+  <section>
+    <div class="side-label">Nguồn [{{ sheet.ref_index }}] nói</div>
+    {% for ev in sheet.evidence %}
+    <blockquote class="quote {{ ev.relation.value }}" lang="{{ ev.language }}">{{ ev.quote }}</blockquote>
+    <div class="quote-meta">
+      <span>{{ labels.RELATIONS[ev.relation] }}</span>
+      {% if ev.page or ev.section %}<span>{% if ev.page %}Trang {{ ev.page }}{% endif %}{% if ev.page and ev.section %}, {% endif %}{{ ev.section or '' }}</span>{% endif %}
+      {% if ev.url %}<a href="{{ ev.url }}" rel="noopener noreferrer" target="_blank">Mở nguồn</a>{% endif %}
+    </div>
+    {% else %}
+    <p class="no-evidence">{{ labels.REASONS[sheet.unverifiable_reason] if sheet.unverifiable_reason else 'Chưa có đoạn nguồn cho nhận định này.' }}</p>
+    {% if sheet.unverifiable_reason == 'NO_ACCESSIBLE_TEXT' %}
+    <p><a class="btn small" href="/runs/{{ run_id }}/missing">Xem tài liệu thiếu toàn văn</a></p>
+    {% else %}
+    <p><a class="btn small" href="/runs/{{ run_id }}/references">Xem tài liệu [{{ sheet.ref_index }}]</a></p>
+    {% endif %}
+    {% endfor %}
+    <div class="ref-line">{{ sheet.ref_raw }}</div>
+  </section>
+</div>
+<div class="verdict">
+  <div>
+    {% if sheet.status != 'UNVERIFIABLE' %}<h3>Vì sao</h3><p>{{ sheet.explanation }}</p>{% else %}<h3>Vì sao chưa kiểm chứng được</h3><p>{{ labels.REASONS[sheet.unverifiable_reason] if sheet.unverifiable_reason else sheet.explanation }}</p>{% endif %}
+  </div>
+  <dl class="facts">
+    <dt>Dựa trên</dt><dd>{{ labels.CONTENT_LEVEL[sheet.content_level_used] }}</dd>
+    <dt>Giới hạn</dt><dd>{{ sheet.limitations or '[chưa có]' }}</dd>
+    {% if current.is_admin %}
+    <dt>Mô hình</dt><dd class="id">{{ sheet.model }}</dd>
+    <dt>Prompt</dt><dd class="id">{{ sheet.prompt_version }}</dd>
+    <dt>Verifier</dt><dd class="id">{{ sheet.verifier }}</dd>
+    {% endif %}
+  </dl>
+</div>
+{% include "partials/feedback.html" %}

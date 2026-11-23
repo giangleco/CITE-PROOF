@@ -58,6 +58,7 @@ class Overview(_View):
     ref_tally: list[Tally]
     todos: list[TodoItem]
     is_empty: bool
+    missing_count: int
 
 
 class MismatchView(_View):

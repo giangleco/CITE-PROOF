@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup, escape
 
 from citeproof.core.settings import Settings
 from citeproof.web import labels
@@ -15,6 +16,38 @@ TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 templates.env.globals["labels"] = labels
+
+
+def highlight_claim(sentence: str, span: str, marker: str) -> Markup:
+    """Câu của người dùng với phần nhận định được tô và marker được đánh dấu; mọi phần
+    đều được escape trước khi bọc thẻ."""
+
+    def mark(text: str) -> Markup:
+        if marker and marker in text:
+            before, _, after = text.partition(marker)
+            return (
+                escape(before)
+                + Markup('<span class="marker">')
+                + escape(marker)
+                + (Markup("</span>") + escape(after))
+            )
+        return escape(text)
+
+    if span and span in sentence:
+        before, _, after = sentence.partition(span)
+        return (
+            mark(before)
+            + Markup('<span class="span">')
+            + escape(span)
+            + (Markup("</span>") + mark(after))
+        )
+    return mark(sentence)
+
+
+templates.env.filters["highlight_claim"] = highlight_claim
+templates.env.filters["source_names"] = lambda codes: ", ".join(
+    labels.source_name(c) for c in codes
+)
 templates.env.trim_blocks = True
 templates.env.lstrip_blocks = True
 

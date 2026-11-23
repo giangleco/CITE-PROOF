@@ -28,6 +28,13 @@
     document.body.addEventListener("htmx:configRequest", function (evt) {
       evt.detail.headers["X-CSRF-Token"] = csrfToken();
     });
+    document.body.addEventListener("htmx:beforeRequest", function (evt) {
+      var el = evt.detail && evt.detail.elt;
+      if (!el || !el.classList || !el.classList.contains("claim-item")) return;
+      document.querySelectorAll(".claim-item").forEach(function (item) {
+        item.setAttribute("aria-current", item === el ? "true" : "false");
+      });
+    });
     document.body.addEventListener("toast", function (evt) {
       var detail = evt.detail || {};
       showToast(typeof detail === "string" ? detail : detail.value);

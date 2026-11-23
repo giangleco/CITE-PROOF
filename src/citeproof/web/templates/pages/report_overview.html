@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% from "partials/ui.html" import badge, csrf %}
+{% block title %}Báo cáo: {{ header.document_name }} | CiteProof{% endblock %}
+{% macro tally(title, items, table, tab_path) %}
+  {% set total = items | sum(attribute='count') %}
+  <div class="tally">
+    <h2>{{ title }}</h2>
+    <svg class="tally-bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true">
+      {% if total %}
+        {% set ns = namespace(x=0) %}
+        {% for t in items %}{% set w = t.count / total * 100 %}<rect class="{{ table[t.key].tone }}" x="{{ '%.3f' | format(ns.x) }}" y="0" width="{{ '%.3f' | format(w) }}" height="10"/>{% set ns.x = ns.x + w %}{% endfor %}
+      {% else %}<rect class="empty" x="0" y="0" width="100" height="10"/>{% endif %}
+    </svg>
+    <ul class="legend">
+      {% for t in items %}<li><a href="/runs/{{ header.run_id }}/{{ tab_path }}?status={{ t.key }}">{{ badge(table[t.key]) }}<span class="n">{{ t.count }}</span></a></li>{% endfor %}
+    </ul>
+  </div>
+{% endmacro %}
+{% block content %}
+{% include "partials/report_head.html" %}
+{% if overview.is_empty %}
+<div class="panel empty">
+  <h2 class="m0">Lần kiểm tra này chưa có kết quả</h2>
+  <p class="m0 lede">Các bước xử lý thật (đọc bài, tra cứu, đối chiếu) đang được xây dựng nên lần chạy này chưa ghi kết quả nào. Bạn có thể xem bài mẫu để thấy báo cáo trông thế nào.</p>
+  {% if env == 'local' %}
+  <form method="post" action="/dev/sample">{{ csrf(csrf_token) }}<button class="btn" type="submit">Thêm bài mẫu</button></form>
+  {% endif %}
+</div>
+{% else %}
+<div class="overview">
+  <div class="panel">
+    {{ tally('Nhận định', overview.claim_tally, labels.CLAIM_STATUS, 'claims') }}
+    {{ tally('Tài liệu tham khảo', overview.ref_tally, labels.REF_STATUS, 'references') }}
+  </div>
+  <div class="panel todo">
+    <h2>Nên làm tiếp</h2>
+    {% if overview.todos %}
+    <ol>
+      {% for todo in overview.todos %}
+      <li><strong>{{ todo.title }}</strong><p>{{ todo.detail }}</p><a class="btn small" href="{{ todo.href }}">Mở</a></li>
+      {% endfor %}
+    </ol>
+    {% else %}<p class="m0 muted">Không có việc gì cần làm thêm.</p>{% endif %}
+  </div>
+</div>
+<p class="limits">Giới hạn của lần kiểm tra: chỉ đối chiếu nhận định với chính tài liệu được trích, không tìm bằng chứng ở nguồn khác.</p>
+{% endif %}
+{% endblock %}

@@ -209,6 +209,7 @@ async def get_overview(session: AsyncSession, *, user: User, run_id: UUID) -> Ov
         ref_tally=_tally(ref_counts, (s.value for s in ReferenceStatus)),
         todos=todos,
         is_empty=not claim_rows and not ref_rows,
+        missing_count=missing,
     )
 
 

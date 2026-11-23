@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% from "partials/ui.html" import badge, flag, csrf %}
+{% block title %}Tài liệu tham khảo: {{ header.document_name }} | CiteProof{% endblock %}
+{% block content %}
+{% include "partials/report_head.html" %}
+<nav class="filters" aria-label="Lọc theo trạng thái">
+  <a class="chip" href="/runs/{{ header.run_id }}/references"{% if not status %} aria-current="true"{% endif %}>Tất cả</a>
+  {% for t in overview.ref_tally %}
+  <a class="chip" href="/runs/{{ header.run_id }}/references?status={{ t.key }}"{% if status == t.key %} aria-current="true"{% endif %}>{{ labels.REF_STATUS[t.key].label }}</a>
+  {% endfor %}
+</nav>
+{% if items %}
+<div class="panel">
+  <ul class="refs">
+  {% for ref in items %}
+    <li class="ref">
+      <span class="idx">[{{ ref.index }}]</span>
+      <div>
+        <div class="raw">{{ ref.raw_text }}</div>
+        <div class="why">
+          {% if ref.status == 'MATCHED' %}
+            <p>Khớp với bản ghi trong {{ ref.sources_searched | source_names or 'nguồn đã tra' }}.</p>
+          {% elif ref.status == 'METADATA_MISMATCH' %}
+            <p>Tìm thấy bản ghi tương ứng, nhưng một số trường lệch:</p>
+            <div class="diff">
+              {% for m in ref.mismatches %}<span class="k">{{ labels.MISMATCH_FIELDS.get(m.field, m.field) }}</span><del>{{ m.in_document or 'không ghi' }}</del><ins>{{ m.found or '[chưa có]' }}</ins>{% endfor %}
+            </div>
+          {% elif ref.status == 'NOT_FOUND_IN_SEARCHED_SOURCES' %}
+            <p>Chưa tìm thấy trong {{ ref.sources_searched | source_names }}. Luận văn và tài liệu trong nước thường chưa có trong các cơ sở dữ liệu này.</p>
+            <p>Cách tự kiểm tra: tìm trên thư viện số của trường cấp bằng, hoặc trên Google Scholar theo tên tác giả.</p>
+          {% elif ref.status == 'UNSUPPORTED_TYPE' %}
+            <p>{{ labels.REF_TYPES[ref.ref_type] }} chưa có cơ chế tra cứu tự động. Bạn có thể tự kiểm tra thông tin xuất bản.</p>
+          {% elif ref.status == 'PARSE_FAILED' %}
+            <p>Chưa tách được tên bài, tác giả, năm từ chuỗi này. Hãy kiểm tra cách ghi tài liệu trong bài.</p>
+          {% elif ref.status == 'LOOKUP_FAILED' %}
+            <p>Không kết nối được tới nguồn tra cứu nào trong lần này. Đây là lỗi kết nối, không phải kết quả “chưa tìm thấy”.</p>
+            {% if not header.is_sample %}
+            <form method="post" action="/documents/{{ header.document_id }}/runs">{{ csrf(csrf_token) }}<button class="btn small" type="submit" name="action" value="rerun">Kiểm tra lại cả bài</button></form>
+            {% endif %}
+          {% endif %}
+          {% if ref.doi %}<p>DOI <a class="doi" href="{{ ref.url }}" rel="noopener noreferrer" target="_blank">{{ ref.doi }}</a></p>{% endif %}
+          {% if ref.needs_user_review and ref.status not in ('MATCHED',) %}<p>{{ flag() }}</p>{% endif %}
+        </div>
+      </div>
+      <div>{{ badge(labels.REF_STATUS[ref.status]) }}</div>
+    </li>
+  {% endfor %}
+  </ul>
+</div>
+{% else %}
+<div class="panel empty"><p class="m0">Không có tài liệu tham khảo nào ở trạng thái này.</p></div>
+{% endif %}
+{% endblock %}

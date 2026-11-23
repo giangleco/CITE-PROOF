@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "partials/ui.html" import badge, flag %}
+{% block title %}Nhận định: {{ header.document_name }} | CiteProof{% endblock %}
+{% block content %}
+{% include "partials/report_head.html" %}
+{% set base = '/runs/' ~ header.run_id ~ '/claims' %}
+<nav class="filters" aria-label="Lọc nhận định">
+  <a class="chip" href="{{ base }}"{% if not status and not flagged and not ref_index %} aria-current="true"{% endif %}>Tất cả</a>
+  <a class="chip" href="{{ base }}?flag=1"{% if flagged %} aria-current="true"{% endif %}>Nên tự kiểm tra</a>
+  {% for t in overview.claim_tally %}
+  <a class="chip" href="{{ base }}?status={{ t.key }}"{% if status == t.key %} aria-current="true"{% endif %}>{{ labels.CLAIM_STATUS[t.key].label }}</a>
+  {% endfor %}
+  {% if ref_index %}<span class="chip" aria-current="true">Tài liệu [{{ ref_index }}]</span>{% endif %}
+</nav>
+{% if rows %}
+<div class="collate">
+  <div class="panel">
+    <ul class="claim-list" aria-label="Danh sách nhận định">
+    {% for row in rows %}
+      {% set qs = (filter_qs ~ '&' if filter_qs else '') ~ 'c=' ~ row.id %}
+      <li><a class="claim-item" href="{{ base }}?{{ qs }}" hx-get="{{ base }}/{{ row.id }}" hx-target="#claim-sheet" hx-swap="innerHTML" hx-push-url="{{ base }}?{{ qs }}" aria-current="{{ 'true' if sheet and sheet.id == row.id else 'false' }}">
+        <span class="txt">{{ row.sentence }}</span>
+        <span class="row">{{ badge(labels.CLAIM_STATUS[row.status]) }}{% if row.needs_user_review %}{{ flag() }}{% endif %}<span class="muted small">tr. {{ row.page or '[chưa có]' }}</span></span>
+      </a></li>
+    {% endfor %}
+    </ul>
+  </div>
+  <article class="panel sheet" id="claim-sheet" aria-live="polite">
+    {% if sheet %}{% with run_id = header.run_id %}{% include "partials/claim_sheet.html" %}{% endwith %}{% endif %}
+  </article>
+</div>
+{% else %}
+<div class="panel empty"><p class="m0">Không có nhận định nào khớp bộ lọc này.</p><a class="btn small" href="{{ base }}">Xem tất cả</a></div>
+{% endif %}
+{% endblock %}

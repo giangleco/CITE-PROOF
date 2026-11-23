@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Thiếu toàn văn: {{ header.document_name }} | CiteProof{% endblock %}
+{% block content %}
+{% include "partials/report_head.html" %}
+<p class="lede">Hệ thống chưa lấy được toàn văn mở cho các tài liệu dưới đây. Khi có chức năng tải nguồn lên, bạn sẽ tải PDF của từng tài liệu để đối chiếu các nhận định liên quan; chỉ những nhận định đó được kiểm tra lại.</p>
+{% if items %}
+<div class="panel">
+  <ul class="missing">
+  {% for item in items %}
+    <li>
+      <div>
+        <div class="ref m0"><span class="idx">[{{ item.ref_index }}]</span><span class="raw">{{ item.raw_text }}</span></div>
+        <p class="small muted m0">{{ item.waiting_claims }} nhận định đang chờ toàn văn</p>
+      </div>
+      <div class="stack-sm">
+        <label class="sr" for="src-{{ item.ref_index }}">Tải PDF cho tài liệu [{{ item.ref_index }}]</label>
+        <input id="src-{{ item.ref_index }}" type="file" accept=".pdf" disabled>
+        <p class="small muted m0">Tải nguồn lên sẽ có ở bản sau.</p>
+      </div>
+    </li>
+  {% endfor %}
+  </ul>
+</div>
+{% else %}
+<div class="panel empty"><p class="m0">Không có tài liệu nào thiếu toàn văn trong lần kiểm tra này.</p></div>
+{% endif %}
+{% endblock %}
