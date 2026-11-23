@@ -9,7 +9,7 @@ from fastapi.responses import RedirectResponse, Response
 from citeproof.core.enums import RunStatus, StageName, Verifier
 from citeproof.core.errors import CiteProofError, ConflictError, InputError, RateLimitedError
 from citeproof.core.settings import Settings
-from citeproof.services import documents
+from citeproof.services import deletion, documents
 from citeproof.services.documents import ADMIN_VARIANTS, DemoConfig
 from citeproof.web.deps import (
     AppSettings,
@@ -193,3 +193,23 @@ async def rerun(
     )
     await db.commit()
     return RedirectResponse(f"/runs/{run_id}", status_code=303)
+
+
+@router.get("/documents/{document_id}/delete")
+async def delete_confirm(request: Request, db: Db, current: UserDep, document_id: UUID) -> Response:
+    document = await documents.get_own_document(db, user=current.user, document_id=document_id)
+    return render(
+        request,
+        "pages/delete_document.html",
+        {"document": document, "is_sample": documents.is_sample(document)},
+        current=current,
+        nav="documents",
+    )
+
+
+@router.post("/documents/{document_id}/delete", dependencies=[Csrf])
+async def delete_submit(
+    db: Db, storage: AppStorage, current: UserDep, document_id: UUID
+) -> Response:
+    await deletion.delete_document(db, storage, user=current.user, document_id=document_id)
+    return RedirectResponse("/documents?done=deleted", status_code=303)

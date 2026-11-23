@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "partials/ui.html" import csrf %}
+{% block title %}Xóa bài | CiteProof{% endblock %}
+{% block content %}
+<div class="narrow">
+  <div class="page-head"><div><h1>Xóa bài này?</h1><p class="lede break">{{ document.filename }}{% if is_sample %} (bài mẫu){% endif %}</p></div></div>
+  <form class="panel form" method="post" action="/documents/{{ document.id }}/delete">
+    {{ csrf(csrf_token) }}
+    <p class="m0">Bài, các tệp bạn tải lên, kết quả kiểm tra và phản hồi của bạn sẽ bị xóa vĩnh viễn. Không khôi phục được.</p>
+    <div class="row">
+      <a class="btn ghost" href="/documents">Giữ lại</a>
+      <button class="btn danger" type="submit">Xóa vĩnh viễn</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

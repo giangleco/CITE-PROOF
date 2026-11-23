@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% from "partials/ui.html" import csrf, field_error %}
+{% block title %}Tài khoản | CiteProof{% endblock %}
+{% block content %}
+<div class="narrow stack">
+  <div class="page-head"><div><h1>Tài khoản</h1></div></div>
+  <div class="panel panel-pad">
+    <dl class="facts m0">
+      <dt>Tên hiển thị</dt><dd>{{ current.user.display_name }}</dd>
+      <dt>Email</dt><dd class="break">{{ current.user.email }}</dd>
+      <dt>Vai trò</dt><dd>{{ 'Nghiên cứu viên' if current.is_admin else 'Người dùng' }}</dd>
+      <dt>Đồng ý dữ liệu</dt><dd>{{ current.user.consent_llm_at.strftime('%d/%m/%Y') if current.user.consent_llm_at else 'Chưa đồng ý' }}</dd>
+    </dl>
+  </div>
+  <form class="panel form" method="post" action="/account/delete">
+    {{ csrf(csrf_token) }}
+    <h2 class="m0">Xóa tài khoản</h2>
+    <p class="m0 lede">Mọi bài, tệp, kết quả kiểm tra và phản hồi của bạn sẽ bị xóa vĩnh viễn, rồi bạn được đăng xuất. Số liệu sử dụng ẩn danh (số lời gọi mô hình, chi phí) được giữ lại.</p>
+    <div class="field{% if error %} invalid{% endif %}">
+      <label for="password">Nhập mật khẩu để xác nhận</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      {{ field_error(error) }}
+    </div>
+    <div class="row"><button class="btn danger" type="submit">Xóa tài khoản vĩnh viễn</button></div>
+  </form>
+</div>
+{% endblock %}
