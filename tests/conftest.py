@@ -51,7 +51,13 @@ def database_url() -> str:
         password=parsed.password,
         dbname="postgres",
     )
-    name = sql.Identifier(parsed.database or "citeproof_test")
+    db_name = parsed.database or "citeproof_test"
+    if not db_name.endswith("_test"):
+        # Fixture này DROP database: không bao giờ đụng tới database không phải test.
+        pytest.fail(
+            f"Từ chối dùng database {db_name!r}: tên database test phải kết thúc bằng '_test'"
+        )
+    name = sql.Identifier(db_name)
     try:
         with psycopg.connect(admin_dsn, autocommit=True, connect_timeout=5) as conn:
             conn.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(name))

@@ -21,3 +21,4 @@ def test_upgrade_downgrade_upgrade(database_url: str) -> None:
     assert not {"vector", "pg_trgm"} & _extensions(database_url)
     command.upgrade(config, "head")
     assert {"vector", "pg_trgm"} <= _extensions(database_url)
+    command.check(config)  # model và migration không lệch nhau
