@@ -15,6 +15,8 @@ COPY --chown=citeproof:citeproof src/ src/
 COPY --chown=citeproof:citeproof migrations/ migrations/
 COPY --chown=citeproof:citeproof alembic.ini ./
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1
+# Volume storage được tạo với quyền của thư mục này ở lần gắn đầu tiên.
+RUN mkdir -p /app/var/storage && chown -R citeproof:citeproof /app/var
 USER citeproof
 EXPOSE 8000
 CMD ["python", "-m", "citeproof.api"]

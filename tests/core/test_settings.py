@@ -21,3 +21,19 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_get_settings_is_cached() -> None:
     assert get_settings() is get_settings()
+
+
+def test_secure_cookies_default_by_env() -> None:
+    assert Settings(env="local").secure_cookies() is False
+    assert Settings(env="pilot").secure_cookies() is True
+    assert Settings(env="local", cookie_secure=True).secure_cookies() is True
+    assert Settings(env="pilot", cookie_secure=False).secure_cookies() is False
+
+
+def test_web_settings_defaults() -> None:
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.max_upload_bytes == 26_214_400
+    assert s.runs_per_day == 20
+    assert s.session_ttl_days == 14
+    assert s.login_max_failures_per_email == 5
+    assert s.llm_provider_name is None

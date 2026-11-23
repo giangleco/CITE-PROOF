@@ -30,6 +30,7 @@ services:
     command: ["alembic", "upgrade", "head"]
     environment: &app-env
       CITEPROOF_DATABASE_URL: postgresql+psycopg://citeproof:citeproof@db:5432/citeproof
+      CITEPROOF_STORAGE_DIR: /app/var/storage
     depends_on:
       db:
         condition: service_healthy
@@ -40,6 +41,8 @@ services:
       dockerfile: docker/Dockerfile
     command: ["python", "-m", "citeproof.api"]
     environment: *app-env
+    volumes:
+      - citeproof_storage:/app/var/storage
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:
@@ -61,9 +64,12 @@ services:
       dockerfile: docker/Dockerfile
     command: ["python", "-m", "citeproof.pipeline"]
     environment: *app-env
+    volumes:
+      - citeproof_storage:/app/var/storage
     depends_on:
       migrate:
         condition: service_completed_successfully
 
 volumes:
   citeproof_db:
+  citeproof_storage:
