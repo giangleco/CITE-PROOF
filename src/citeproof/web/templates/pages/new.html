@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% from "partials/ui.html" import csrf, field_error %}
+{% block title %}Kiểm tra bài mới | CiteProof{% endblock %}
+{% macro options() %}
+  {% if current.is_admin %}
+  <div class="field">
+    <label for="variant">Biến thể kiểm chứng</label>
+    <select id="variant" name="variant">
+      {% for v in variants %}<option value="{{ v }}"{% if v == 'V2' %} selected{% endif %}>{{ v }}</option>{% endfor %}
+    </select>
+    <p class="help">Chỉ nghiên cứu viên thấy lựa chọn này. Người dùng thường luôn chạy V2.</p>
+  </div>
+  {% endif %}
+  {% if env == 'local' %}
+  <fieldset class="demo">
+    <legend>Chế độ thử (chỉ ở máy local)</legend>
+    <p class="help m0">Làm chậm từng bước hoặc giả lập lỗi để thử trang tiến độ.</p>
+    <div class="demo-grid">
+      <div class="field">
+        <label for="demo_delay">Thời gian mỗi bước (giây)</label>
+        <select id="demo_delay" name="demo_delay">
+          {% for s in ['0', '0.5', '1', '2', '3', '5'] %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="demo_fail_at">Giả lập lỗi ở bước</label>
+        <select id="demo_fail_at" name="demo_fail_at">
+          <option value="">Không</option>
+          {% for st in stages %}<option value="{{ st }}">{{ loop.index }}. {{ labels.STAGES[st][0] }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+  </fieldset>
+  {% endif %}
+{% endmacro %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Kiểm tra bài mới</h1>
+    <p class="lede">Tải lên cả bài, hoặc dán một đoạn kèm danh mục tài liệu tham khảo.</p>
+  </div>
+</div>
+<nav class="tabs" aria-label="Cách nhập bài">
+  <a href="/documents/new"{% if mode == 'file' %} aria-current="page"{% endif %}>Tải file PDF hoặc DOCX</a>
+  <a href="/documents/new?mode=text"{% if mode == 'text' %} aria-current="page"{% endif %}>Dán đoạn văn</a>
+</nav>
+<div class="upload-grid">
+  {% if mode == 'file' %}
+  <form method="post" action="/documents" enctype="multipart/form-data" class="stack">
+    {{ csrf(csrf_token) }}
+    <div class="drop{% if error %} invalid{% endif %}">
+      <label for="file"><strong>Chọn tệp bài viết</strong></label>
+      <span class="muted small">PDF hoặc DOCX. Giới hạn kích thước và số trang sẽ chốt sau đợt đo hiệu năng.</span>
+      <input id="file" name="file" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required data-file-input>
+      <span class="file-chip" data-file-name hidden></span>
+      {{ field_error(error) }}
+    </div>
+    {{ options() }}
+    <div class="form-actions">
+      <button class="btn primary" type="submit">Bắt đầu kiểm tra</button>
+      <span class="muted small">Bạn có thể đóng trang; kết quả được lưu lại.</span>
+    </div>
+  </form>
+  {% else %}
+  <form method="post" action="/documents/text" class="stack">
+    {{ csrf(csrf_token) }}
+    <div class="panel form">
+      <div class="field">
+        <label for="title">Tên gợi nhớ (không bắt buộc)</label>
+        <input id="title" name="title" type="text" value="{{ form.title or '' }}" maxlength="200">
+      </div>
+      <div class="field{% if error %} invalid{% endif %}">
+        <label for="body">Đoạn văn có trích dẫn</label>
+        <textarea id="body" name="body" required>{{ form.body or '' }}</textarea>
+      </div>
+      <div class="field{% if error %} invalid{% endif %}">
+        <label for="references">Danh mục tài liệu tham khảo</label>
+        <textarea id="references" name="references" class="short" required>{{ form.references or '' }}</textarea>
+        <p class="help">Mỗi tài liệu một dòng, giữ nguyên như trong bài.</p>
+        {{ field_error(error) }}
+      </div>
+    </div>
+    {{ options() }}
+    <div class="form-actions">
+      <button class="btn primary" type="submit">Bắt đầu kiểm tra</button>
+      <span class="muted small">Bạn có thể đóng trang; kết quả được lưu lại.</span>
+    </div>
+  </form>
+  {% endif %}
+  <aside class="panel aside-list">
+    <h3>Hệ thống sẽ làm gì</h3>
+    <ol>
+      <li>Đọc bài và tách danh mục tài liệu tham khảo.</li>
+      <li>Tra từng tài liệu trong Crossref, OpenAlex và Semantic Scholar.</li>
+      <li>Tìm câu có trích dẫn và nhận định mà trích dẫn đó hỗ trợ.</li>
+      <li>Lấy toàn văn mở của nguồn khi có, rồi đối chiếu từng nhận định.</li>
+    </ol>
+    <p class="muted small mt m0">Kết quả tài liệu tham khảo hiện ra trước, không cần chờ cả lần kiểm tra.</p>
+  </aside>
+</div>
+{% endblock %}

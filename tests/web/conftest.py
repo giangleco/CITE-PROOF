@@ -2,6 +2,7 @@
 
 import re
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -25,13 +26,19 @@ def web_settings(database_url: str, tmp_path: Path) -> Settings:
     return Settings(database_url=database_url, env="local", storage_dir=tmp_path / "storage")
 
 
-@pytest.fixture
-async def client(web_settings: Settings, clean_db: None) -> AsyncIterator[httpx.AsyncClient]:
-    app = create_app(web_settings)
+@asynccontextmanager
+async def client_for(settings: Settings) -> AsyncIterator[httpx.AsyncClient]:
+    app = create_app(settings)
     async with (
         app.router.lifespan_context(app),
         httpx.AsyncClient(transport=ASGITransport(app), base_url="http://test") as c,
     ):
+        yield c
+
+
+@pytest.fixture
+async def client(web_settings: Settings, clean_db: None) -> AsyncIterator[httpx.AsyncClient]:
+    async with client_for(web_settings) as c:
         yield c
 
 

@@ -1,5 +1,61 @@
 {% extends "base.html" %}
+{% from "partials/ui.html" import badge, csrf %}
 {% block title %}Tài liệu của tôi | CiteProof{% endblock %}
 {% block content %}
-<div class="page-head"><div><h1>Tài liệu của tôi</h1></div><a class="btn primary" href="/documents/new">Kiểm tra bài mới</a></div>
+<div class="page-head">
+  <div>
+    <h1>Tài liệu của tôi</h1>
+    <p class="lede">Mỗi bài dẫn tới lần kiểm tra gần nhất.</p>
+  </div>
+  <a class="btn primary" href="/documents/new">Kiểm tra bài mới</a>
+</div>
+{% if rows %}
+<div class="panel table-wrap">
+  <table class="doc-table">
+    <thead><tr><th scope="col">Bài</th><th scope="col">Trạng thái</th><th scope="col" class="col-date">Tải lên</th><th scope="col"><span class="sr">Thao tác</span></th></tr></thead>
+    <tbody>
+    {% for row in rows %}
+      {% set run_url = ('/runs/' ~ row.latest_run_id ~ ('/report' if row.latest_run_status in finished else '')) if row.latest_run_id else none %}
+      <tr>
+        <td>
+          {% if run_url %}<a class="doc-title" href="{{ run_url }}">{{ row.name }}</a>{% else %}<span class="doc-title">{{ row.name }}</span>{% endif %}
+          <div class="doc-sub row">
+            <span>{{ 'Tệp tải lên' if row.kind == 'FILE' else 'Đoạn văn dán trực tiếp' }}</span>
+            {% if row.is_sample %}<span class="sample-label">Bài mẫu</span>{% endif %}
+          </div>
+        </td>
+        <td>
+          {% if row.latest_run_status %}
+            {{ badge(labels.RUN_STATUS[row.latest_run_status]) }}
+            {% if row.latest_run_status in ('QUEUED', 'RUNNING') %}<div class="doc-sub">Bước {{ row.done_stages + 1 if row.done_stages < 9 else 9 }}/9</div>{% endif %}
+          {% else %}<span class="muted small">Chưa kiểm tra</span>{% endif %}
+        </td>
+        <td class="col-date muted small">{{ row.created_at.strftime('%d/%m/%Y') }}</td>
+        <td class="cell-actions">{% if run_url %}<a class="btn small ghost" href="{{ run_url }}">{{ 'Xem báo cáo' if row.latest_run_status in finished else 'Xem tiến độ' }}</a>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="panel empty">
+  <h2 class="m0">Chưa có bài nào</h2>
+  <p class="m0 lede">Tải lên khóa luận dạng PDF hoặc DOCX, hoặc dán một đoạn văn kèm danh mục tài liệu tham khảo để bắt đầu.</p>
+  <div class="row">
+    <a class="btn primary" href="/documents/new">Kiểm tra bài mới</a>
+    {% if env == 'local' %}
+    <form method="post" action="/dev/sample" class="inline-form">
+      {{ csrf(csrf_token) }}
+      <button class="btn" type="submit">Thêm bài mẫu</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% if rows and env == 'local' %}
+<form method="post" action="/dev/sample" class="mt">
+  {{ csrf(csrf_token) }}
+  <button class="btn small ghost" type="submit">Thêm bài mẫu</button>
+</form>
+{% endif %}
 {% endblock %}
