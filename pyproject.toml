@@ -1,0 +1,51 @@
+[project]
+name = "citeproof"
+version = "0.1.0"
+description = "CiteProof citation verification platform"
+authors = [
+    { name = "giangleco", email = "gianglehoang14205@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.20.1",
+    "fastapi>=0.165.0",
+    "httpx>=0.28.1",
+    "jinja2>=3.1.6",
+    "pgvector>=0.5.1",
+    "psycopg[binary]>=3.2",
+    "pydantic>=2",
+    "pydantic-settings>=2.16.3",
+    "sqlalchemy[asyncio]>=2",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.3,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["docs", ".superpowers"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "SIM", "RUF"]
+
+[tool.mypy]
+strict = true
+plugins = ["pydantic.mypy"]
+packages = ["citeproof"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = ["db: needs PostgreSQL"]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.1",
+    "pre-commit>=4.7.0",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
+    "ruff>=0.17.6",
+]
