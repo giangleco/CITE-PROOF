@@ -1,0 +1,48 @@
+{% from "partials/ui.html" import csrf %}
+<div id="progress" class="progress-wrap" aria-live="polite"{% if view.is_active %} hx-get="/runs/{{ view.id }}/progress" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  <div class="panel">
+    <ol class="steps">
+    {% for step in view.steps %}
+      {% set name, detail = labels.STAGES[step.stage] %}
+      <li class="step {{ step.state }}">
+        <span class="num">{% if step.state == 'done' %}<svg aria-hidden="true"><use href="#i-ok"/></svg><span class="sr">Xong</span>{% else %}{{ loop.index }}{% endif %}</span>
+        <div>
+          <div class="label">{{ name }}</div>
+          {% if detail %}<div class="detail">{{ detail }}</div>{% endif %}
+          {% if step.state == 'running' %}<div class="bar" role="presentation"></div>{% endif %}
+        </div>
+        <span class="step-state">
+          {%- if step.state == 'done' %}Xong{% elif step.state == 'running' %}Đang chạy{% elif step.state == 'queued' %}Đang chờ{% elif step.state == 'failed' %}Dừng{% endif -%}
+        </span>
+      </li>
+    {% endfor %}
+    </ol>
+  </div>
+  <div class="side-blocks">
+    {% if view.status == 'FAILED' %}
+    <div class="panel side-block">
+      <div class="notice err">{{ view.error_message }} Các bước trước vẫn giữ nguyên.</div>
+      {% if view.failed_stage %}
+      <form method="post" action="/runs/{{ view.id }}/resume">
+        {{ csrf(csrf_token) }}
+        <button class="btn small primary" type="submit">Tiếp tục từ bước {{ view.failed_stage.value[1:] }}</button>
+      </form>
+      {% endif %}
+    </div>
+    {% elif view.status in finished %}
+    <div class="panel side-block">
+      <h3 class="m0">Kiểm tra xong</h3>
+      <a class="btn small primary" href="/runs/{{ view.id }}/report">Mở báo cáo</a>
+    </div>
+    {% elif view.status == 'CANCELLED' %}
+    <div class="panel side-block"><div class="notice">Lần kiểm tra này đã bị hủy.</div></div>
+    {% endif %}
+    {% if view.references_ready and view.is_active %}
+    <div class="panel side-block">
+      <h3 class="m0">Đã có kết quả tài liệu tham khảo</h3>
+      <p class="small muted m0">Phần đối chiếu nhận định vẫn đang chạy.</p>
+      <a class="btn small" href="/runs/{{ view.id }}/references">Xem tài liệu tham khảo</a>
+    </div>
+    {% endif %}
+  </div>
+</div>

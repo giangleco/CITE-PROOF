@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ heading }} | CiteProof{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ heading }}</h1>
+    <p class="lede break">{{ view.document_name }}</p>
+  </div>
+  {% if view.is_active %}<a class="btn small ghost" href="/runs/{{ view.id }}">Làm mới</a>{% endif %}
+</div>
+{% include "partials/progress.html" %}
+{% if tech %}
+<details class="panel tech mt">
+  <summary>Chi tiết kỹ thuật</summary>
+  <dl class="facts">
+    <dt>Mã lần chạy</dt><dd class="id">{{ view.id }}</dd>
+    <dt>Cấu hình</dt><dd class="id">{{ tech.config | tojson }}</dd>
+    <dt>Tạo lúc</dt><dd>{{ view.created_at.strftime('%d/%m/%Y %H:%M:%S') }} UTC</dd>
+    <dt>Kết thúc lúc</dt><dd>{{ view.finished_at.strftime('%d/%m/%Y %H:%M:%S') ~ ' UTC' if view.finished_at else '[chưa có]' }}</dd>
+    <dt>Lời gọi LLM</dt><dd>{{ tech.llm_calls }}</dd>
+    <dt>Token vào / ra</dt><dd>{{ tech.input_tokens }} / {{ tech.output_tokens }}</dd>
+    <dt>Chi phí ước tính</dt><dd>{{ '%.6f' | format(tech.cost) }} USD</dd>
+    <dt>Model</dt><dd>{{ tech.models | join(', ') if tech.models else '[chưa có]' }}</dd>
+    <dt>Phiên bản prompt</dt><dd>{{ tech.prompt_versions | join(', ') if tech.prompt_versions else '[chưa có]' }}</dd>
+  </dl>
+  <table class="tech-table">
+    <thead><tr><th scope="col">Bước</th><th scope="col">Trạng thái job</th><th scope="col">Lần thử</th><th scope="col">Vào hàng đợi</th><th scope="col">Thời lượng</th><th scope="col">Lỗi cuối</th></tr></thead>
+    <tbody>
+    {% for step in view.steps %}
+      <tr><td>{{ step.stage.value }}</td><td>{{ step.state }}</td><td>{{ step.attempts }}</td><td>{{ step.queued_at.strftime('%H:%M:%S') if step.queued_at else '[chưa có]' }}</td><td>[chưa có]</td><td class="id">{{ step.last_error or '' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if tech.other_runs %}
+  <h3 class="mt">Các lần chạy khác của bài này</h3>
+  <ul class="bullets">
+    {% for rid, status, created in tech.other_runs %}<li><a class="id" href="/runs/{{ rid }}">{{ rid }}</a> {{ labels.RUN_STATUS[status].label }}, {{ created.strftime('%d/%m/%Y %H:%M') }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</details>
+{% endif %}
+{% endblock %}
