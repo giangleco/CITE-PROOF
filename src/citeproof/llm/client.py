@@ -1,5 +1,6 @@
 """LLMClient: cache theo chế độ, validate schema, retry kèm phản hồi lỗi (07a §4.4.2, §4.7.2)."""
 
+import logging
 import time
 from collections.abc import Mapping
 
@@ -16,6 +17,7 @@ from citeproof.llm.calls import CallLogger, LLMCallRecord, estimate_cost
 from citeproof.llm.context import PromptParts
 from citeproof.llm.providers.base import LLMProvider
 from citeproof.llm.types import (
+    CacheEntryInvalidError,
     CacheMissError,
     CacheMode,
     CallContext,
@@ -23,6 +25,8 @@ from citeproof.llm.types import (
     OutputModel,
     ProviderRequest,
 )
+
+logger = logging.getLogger(__name__)
 
 _BAD_STOP_REASONS = frozenset({"max_tokens", "refusal"})
 
@@ -57,31 +61,36 @@ class LLMClient:
         max_tokens: int = 4096,
         max_attempts: int = 2,
     ) -> LLMResult[T]:
-        if self._mode is CacheMode.READ_WRITE:
-            validate_namespace(ctx.namespace, ctx.document_id)
+        validate_namespace(ctx.namespace, ctx.document_id)
         output_schema = schema.model_json_schema()
         messages: list[dict[str, str]] = [{"role": "user", "content": parts.user}]
-
-        for attempt in range(1, max_attempts + 1):
-            key = worker_cache_key(
-                namespace=ctx.namespace,
-                provider=self._provider.name,
-                model=model,
-                task=parts.task,
-                prompt_version=parts.prompt_version,
-                schema_version=schema.SCHEMA_VERSION,
-                inputs={"system": parts.system, "messages": messages},
-                attempt=attempt,
-            )
-            if self._mode is not CacheMode.FRESH:
-                cached = await self._cache.get(key)
-                if cached is not None:
+        key = worker_cache_key(
+            namespace=ctx.namespace,
+            provider=self._provider.name,
+            model=model,
+            task=parts.task,
+            prompt_version=parts.prompt_version,
+            schema_version=schema.SCHEMA_VERSION,
+            inputs={"system": parts.system, "messages": messages},
+            attempt=1,
+        )
+        if self._mode is not CacheMode.FRESH:
+            cached = await self._cache.get(key)
+            if cached is not None:
+                try:
                     value = schema.model_validate(cached["value"])
+                except (KeyError, TypeError, ValidationError):
+                    if self._mode is CacheMode.REPLAY_ONLY:
+                        raise CacheEntryInvalidError(key) from None
+                    logger.warning("llm_cache_entry_invalid", extra={"task": parts.task})
+                    await self._cache.delete(key)
+                else:
                     await self._log(parts, ctx, model, key, 0, 0, 0, cache_hit=True)
                     return LLMResult(value, True, key, 0, 0)
-                if self._mode is CacheMode.REPLAY_ONLY:
-                    raise CacheMissError(key)
+            elif self._mode is CacheMode.REPLAY_ONLY:
+                raise CacheMissError(key)
 
+        for _ in range(max_attempts):
             request = ProviderRequest(
                 model=model,
                 system=parts.system,

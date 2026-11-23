@@ -64,3 +64,11 @@ class CacheMissError(CiteProofError):
     def __init__(self, cache_key: str) -> None:
         super().__init__(f"cache miss ở chế độ replay_only: {cache_key}")
         self.cache_key = cache_key
+
+
+class CacheEntryInvalidError(CiteProofError):
+    """REPLAY_ONLY nhưng entry cache hỏng (thiếu value hoặc sai schema)."""
+
+    def __init__(self, cache_key: str) -> None:
+        super().__init__(f"entry cache không hợp lệ: {cache_key}")
+        self.cache_key = cache_key

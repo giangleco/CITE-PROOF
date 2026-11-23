@@ -11,7 +11,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel
-from sqlalchemy import update
+from sqlalchemy import delete, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -164,6 +164,8 @@ class CacheStore(Protocol):
 
     async def put(self, key: str, meta: CacheEntryMeta, response: dict[str, Any]) -> None: ...
 
+    async def delete(self, key: str) -> None: ...
+
 
 class InMemoryCacheStore:
     def __init__(self) -> None:
@@ -176,6 +178,9 @@ class InMemoryCacheStore:
     async def put(self, key: str, meta: CacheEntryMeta, response: dict[str, Any]) -> None:
         _check_meta(meta)
         self._entries.setdefault(key, copy.deepcopy(response))
+
+    async def delete(self, key: str) -> None:
+        self._entries.pop(key, None)
 
 
 class PgCacheStore:
@@ -215,4 +220,9 @@ class PgCacheStore:
         )
         async with self._session_factory() as session:
             await session.execute(stmt)
+            await session.commit()
+
+    async def delete(self, key: str) -> None:
+        async with self._session_factory() as session:
+            await session.execute(delete(LLMCacheEntry).where(LLMCacheEntry.cache_key == key))
             await session.commit()

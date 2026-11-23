@@ -11,6 +11,7 @@ from citeproof.llm.client import LLMClient
 from citeproof.llm.context import PromptParts
 from citeproof.llm.providers.scripted import ScriptedProvider
 from citeproof.llm.types import (
+    CacheEntryInvalidError,
     CacheMissError,
     CacheMode,
     CallContext,
@@ -88,7 +89,7 @@ async def test_schema_error_retries_with_feedback() -> None:
     assert msgs[-1]["content"].startswith("SCHEMA_INVALID:")
 
 
-async def test_feedback_does_not_echo_input_values() -> None:
+async def test_feedback_lists_loc_keys_but_never_input_values() -> None:
     bad = ProviderResponse('{"answer":"ok","bí mật":"bí mật"}', 1, 1, "end_turn")
     client, provider, _, _ = make([bad, GOOD])
     await call(client)
@@ -151,3 +152,66 @@ async def test_provider_error_propagates_unlogged() -> None:
     with pytest.raises(RetryableError):
         await call(client)
     assert logger.records == [] and store._entries == {}
+
+
+async def test_replay_only_happy_path_after_read_write() -> None:
+    client, _, store, _ = make([GOOD])
+    await call(client)
+    replay, provider, _, logger = make([], CacheMode.REPLAY_ONLY, store)
+    assert await call(replay) == "ok"
+    assert provider.requests == [] and logger.records[0].cache_hit
+
+
+async def test_retried_call_is_replayable_under_one_key() -> None:
+    bad = ProviderResponse('{"bad":1}', 1, 1, "end_turn")
+    client, _, store, logger = make([bad, GOOD])
+    result = await client.complete_structured(parts=PARTS, schema=Echo, model="m", ctx=CTX)
+    assert list(store._entries) == [result.cache_key]
+    assert {r.cache_key for r in logger.records} == {result.cache_key}
+    replay, provider, _, _ = make([], CacheMode.REPLAY_ONLY, store)
+    assert await call(replay) == "ok"
+    assert provider.requests == []
+    again, provider2, _, _ = make([], CacheMode.READ_WRITE, store)
+    assert await call(again) == "ok"
+    assert provider2.requests == []
+
+
+async def test_max_attempts_one_with_invalid_output_raises() -> None:
+    client, _, _, _ = make([ProviderResponse("{}", 1, 1, "end_turn")])
+    with pytest.raises(LLMOutputError):
+        await client.complete_structured(
+            parts=PARTS, schema=Echo, model="m", ctx=CTX, max_attempts=1
+        )
+
+
+@pytest.mark.parametrize("mode", [CacheMode.FRESH, CacheMode.REPLAY_ONLY])
+async def test_invalid_namespace_raises_in_every_mode(mode: CacheMode) -> None:
+    client, provider, _, _ = make([GOOD], mode)
+    with pytest.raises(ValueError):
+        await call(client, CallContext("bogus", None, None, None))
+    assert provider.requests == []
+
+
+@pytest.mark.parametrize("entry", [{}, {"value": {"wrong": 1}}])
+async def test_corrupt_entry_is_regenerated_in_read_write(entry: dict[str, object]) -> None:
+    client, _, store, _ = make([GOOD])
+    await call(client)
+    (key,) = store._entries
+    store._entries[key] = entry
+    client2, provider, _, _ = make([GOOD], CacheMode.READ_WRITE, store)
+    assert await call(client2) == "ok"
+    assert len(provider.requests) == 1
+    assert store._entries[key] == {"value": {"answer": "ok"}}
+
+
+@pytest.mark.parametrize("entry", [{}, {"value": {"wrong": 1}}])
+async def test_corrupt_entry_raises_in_replay_only(entry: dict[str, object]) -> None:
+    client, _, store, _ = make([GOOD])
+    await call(client)
+    (key,) = store._entries
+    store._entries[key] = entry
+    replay, provider, _, _ = make([], CacheMode.REPLAY_ONLY, store)
+    with pytest.raises(CacheEntryInvalidError) as info:
+        await call(replay)
+    assert info.value.cache_key == key
+    assert provider.requests == []

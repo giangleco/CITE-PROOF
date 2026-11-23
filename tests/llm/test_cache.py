@@ -138,6 +138,23 @@ async def test_pg_cache_roundtrip_counts_hits(
         assert entry.hit_count == 2
 
 
+async def test_in_memory_delete() -> None:
+    store = InMemoryCacheStore()
+    await store.put("k", CacheEntryMeta("eval:D2@ab", None, "t", "m", "v1", "s1"), {"a": 1})
+    await store.delete("k")
+    await store.delete("missing")
+    assert await store.get("k") is None
+
+
+@pytest.mark.db
+@pytest.mark.usefixtures("clean_db")
+async def test_pg_delete(session_factory: async_sessionmaker[AsyncSession]) -> None:
+    store = PgCacheStore(session_factory)
+    await store.put("k", CacheEntryMeta("eval:D2@ab", None, "t", "m", "v1", "s1"), {"a": 1})
+    await store.delete("k")
+    assert await store.get("k") is None
+
+
 @pytest.mark.db
 @pytest.mark.usefixtures("clean_db")
 async def test_pg_doc_namespace_cascades_on_document_delete(
