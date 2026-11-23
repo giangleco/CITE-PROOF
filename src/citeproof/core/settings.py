@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     consent_text_updated_at: datetime = datetime(2026, 11, 23, tzinfo=UTC)
     llm_provider_name: str | None = None
     llm_provider_policy_url: str | None = None
+    # IP của reverse proxy được tin X-Forwarded-For (phân tách bằng dấu phẩy); rỗng: không tin ai.
+    trusted_proxies: str = "127.0.0.1"
 
     def secure_cookies(self) -> bool:
         if self.cookie_secure is not None:

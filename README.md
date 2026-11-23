@@ -24,6 +24,7 @@ CLI chạy trên máy host, nối tới DB ở `localhost:5432` (mặc định c
 - **Chế độ thử** ở form "Kiểm tra bài mới" (chỉ local): đặt thời gian mỗi bước và bước giả lập lỗi để xem trang tiến độ, lỗi và "Tiếp tục từ bước N".
 - Các bước xử lý thật (đọc bài, tra cứu, đối chiếu) chưa có: bài bạn tải lên sẽ chạy hết 9 bước nhưng báo cáo trống.
 - Tài khoản `--admin` thấy thêm lựa chọn biến thể và phần "Chi tiết kỹ thuật".
+- Khi chạy sau reverse proxy (pilot), đặt `CITEPROOF_TRUSTED_PROXIES` là IP của proxy; nếu không, mọi người dùng chung một IP và giới hạn đăng nhập theo IP sẽ chặn cả lớp.
 
 ## Phát triển
 

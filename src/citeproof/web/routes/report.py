@@ -11,7 +11,7 @@ from citeproof.core.enums import ClaimStatus, FeedbackVerdict, ReferenceStatus
 from citeproof.core.errors import InputError
 from citeproof.schemas.report import Overview
 from citeproof.services import feedback, report
-from citeproof.web.deps import Csrf, CurrentUser, Db, UserDep, is_htmx
+from citeproof.web.deps import Csrf, CurrentUser, Db, UserDep, is_htmx, rollback_keeping_user
 from citeproof.web.rendering import render
 
 router = APIRouter()
@@ -220,7 +220,7 @@ async def submit_feedback(
         )
         await db.commit()
     except InputError as exc:
-        await db.rollback()
+        await rollback_keeping_user(db, current)
         if not is_htmx(request):
             raise
         error = str(exc)

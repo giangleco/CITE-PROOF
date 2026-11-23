@@ -1,5 +1,6 @@
 """Môi trường Jinja2 và hàm render dùng chung cho mọi trang."""
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,17 @@ def highlight_claim(sentence: str, span: str, marker: str) -> Markup:
 
 
 templates.env.filters["highlight_claim"] = highlight_claim
+
+VN_TZ = timezone(timedelta(hours=7))  # Việt Nam không có giờ mùa hè.
+
+
+def vn_time(value: datetime | None, fmt: str = "%d/%m/%Y") -> str:
+    if value is None:
+        return "[chưa có]"
+    return value.astimezone(VN_TZ).strftime(fmt)
+
+
+templates.env.filters["vn_time"] = vn_time
 templates.env.filters["source_names"] = lambda codes: ", ".join(
     labels.source_name(c) for c in codes
 )

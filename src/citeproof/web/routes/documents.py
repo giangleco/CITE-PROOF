@@ -19,6 +19,7 @@ from citeproof.web.deps import (
     CurrentUser,
     Db,
     UserDep,
+    rollback_keeping_user,
 )
 from citeproof.web.rendering import render
 
@@ -129,7 +130,7 @@ async def upload_document(
             demo=_demo(settings, demo_delay, demo_fail_at),
         )
     except (InputError, ConflictError, RateLimitedError) as exc:
-        await db.rollback()
+        await rollback_keeping_user(db, current)
         return _new_page(request, current, mode="file", status=_status_code(exc), error=str(exc))
     try:
         await db.commit()
@@ -166,7 +167,7 @@ async def submit_text(
             demo=_demo(settings, demo_delay, demo_fail_at),
         )
     except (InputError, ConflictError, RateLimitedError) as exc:
-        await db.rollback()
+        await rollback_keeping_user(db, current)
         form = {"title": title, "body": body, "references": references}
         return _new_page(
             request, current, mode="text", status=_status_code(exc), error=str(exc), form=form

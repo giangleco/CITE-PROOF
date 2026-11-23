@@ -45,7 +45,10 @@ async def run_page(request: Request, db: Db, current: UserDep, run_id: UUID) -> 
 async def run_progress(request: Request, db: Db, current: UserDep, run_id: UUID) -> Response:
     view = await runs_view.get_run_view(db, user=current.user, run_id=run_id)
     return render(
-        request, "partials/progress.html", {"view": view, "finished": FINISHED}, current=current
+        request,
+        "partials/progress.html",
+        {"view": view, "finished": FINISHED, "heading": _heading(view)},
+        current=current,
     )
 
 

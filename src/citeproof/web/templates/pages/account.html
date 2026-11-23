@@ -9,7 +9,7 @@
       <dt>Tên hiển thị</dt><dd>{{ current.user.display_name }}</dd>
       <dt>Email</dt><dd class="break">{{ current.user.email }}</dd>
       <dt>Vai trò</dt><dd>{{ 'Nghiên cứu viên' if current.is_admin else 'Người dùng' }}</dd>
-      <dt>Đồng ý dữ liệu</dt><dd>{{ current.user.consent_llm_at.strftime('%d/%m/%Y') if current.user.consent_llm_at else 'Chưa đồng ý' }}</dd>
+      <dt>Đồng ý dữ liệu</dt><dd>{{ current.user.consent_llm_at | vn_time if current.user.consent_llm_at else 'Chưa đồng ý' }}</dd>
     </dl>
   </div>
   <form class="panel form" method="post" action="/account/delete">

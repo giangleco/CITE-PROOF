@@ -183,6 +183,8 @@ async def get_tech_details(session: AsyncSession, *, user: User, run_id: UUID) -
 
 async def resume(session: AsyncSession, settings: Settings, *, user: User, run_id: UUID) -> None:
     run = await own_run(session, user=user, run_id=run_id)
+    if RunStatus(run.status) in _ACTIVE:
+        return  # bấm "Tiếp tục" hai lần: lần chạy đã chạy lại rồi
     demo = (run.config or {}).get("demo")
     if settings.env == "local" and isinstance(demo, dict) and demo.get("fail_at"):
         config = {**run.config, "demo": {**demo, "fail_at": None}}

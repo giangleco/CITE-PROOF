@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import Receive, Scope, Send
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from citeproof.core.errors import (
     AuthError,
@@ -34,6 +35,10 @@ _ERROR_PAGES: dict[int, tuple[str, str]] = {
         "Phiên làm việc đã hết hạn hoặc biểu mẫu không hợp lệ. Tải lại trang rồi thử lại.",
     ),
     404: ("Không tìm thấy trang", "Trang bạn mở không có, hoặc bạn không có quyền xem."),
+    405: (
+        "Thao tác không hợp lệ",
+        "Trang này không nhận kiểu yêu cầu bạn vừa gửi. Quay lại trang trước rồi thử lại.",
+    ),
     409: (
         "Đang có lần kiểm tra chạy",
         "Bài này đang được kiểm tra. Chờ lần kiểm tra xong rồi thử lại.",
@@ -91,18 +96,24 @@ def _redirect(request: Request, target: str) -> Response:
     return RedirectResponse(target, status_code=303)
 
 
+def _with_next(target: str, request: Request) -> str:
+    """Chỉ quay lại được trang GET; URL của POST mở bằng GET sẽ ra lỗi 405."""
+    if request.method != "GET":
+        return target
+    path = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+    return f"{target}?next={quote(path, safe='')}"
+
+
 def _install_handlers(app: FastAPI) -> None:
     from citeproof.web.deps import ConsentRequired, CsrfError, LoginRequired
 
     @app.exception_handler(LoginRequired)
     async def login_required(request: Request, exc: LoginRequired) -> Response:
-        path = request.url.path + (f"?{request.url.query}" if request.url.query else "")
-        return _redirect(request, f"/login?next={quote(path, safe='')}")
+        return _redirect(request, _with_next("/login", request))
 
     @app.exception_handler(ConsentRequired)
     async def consent_required(request: Request, exc: ConsentRequired) -> Response:
-        path = request.url.path + (f"?{request.url.query}" if request.url.query else "")
-        return _redirect(request, f"/consent?next={quote(path, safe='')}")
+        return _redirect(request, _with_next("/consent", request))
 
     @app.exception_handler(CsrfError)
     async def csrf_failed(request: Request, exc: CsrfError) -> Response:
@@ -149,3 +160,5 @@ def mount_web(app: FastAPI, settings: Settings) -> None:
         too_large=too_large,
     )
     app.add_middleware(SecurityHeadersMiddleware)
+    trusted = [host.strip() for host in settings.trusted_proxies.split(",") if host.strip()]
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=trusted)

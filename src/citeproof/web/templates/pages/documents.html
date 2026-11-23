@@ -30,8 +30,11 @@
             {% if row.latest_run_status in ('QUEUED', 'RUNNING') %}<div class="doc-sub">Bước {{ row.done_stages + 1 if row.done_stages < 9 else 9 }}/9</div>{% endif %}
           {% else %}<span class="muted small">Chưa kiểm tra</span>{% endif %}
         </td>
-        <td class="col-date muted small">{{ row.created_at.strftime('%d/%m/%Y') }}</td>
-        <td class="cell-actions">{% if run_url %}<a class="btn small ghost" href="{{ run_url }}">{{ 'Xem báo cáo' if row.latest_run_status in finished else 'Xem tiến độ' }}</a>{% endif %}</td>
+        <td class="col-date muted small">{{ row.created_at | vn_time }}</td>
+        <td class="cell-actions">
+          {% if run_url %}<a class="btn small ghost" href="{{ run_url }}">{{ 'Xem báo cáo' if row.latest_run_status in finished else 'Xem tiến độ' }}</a>{% endif %}
+          <a class="btn small ghost" href="/documents/{{ row.id }}/delete" aria-label="Xóa bài {{ row.name }}">Xóa</a>
+        </td>
       </tr>
     {% endfor %}
     </tbody>

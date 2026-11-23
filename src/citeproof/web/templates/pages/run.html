@@ -1,13 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ heading }} | CiteProof{% endblock %}
 {% block content %}
-<div class="page-head">
-  <div>
-    <h1>{{ heading }}</h1>
-    <p class="lede break">{{ view.document_name }}</p>
-  </div>
-  {% if view.is_active %}<a class="btn small ghost" href="/runs/{{ view.id }}">Làm mới</a>{% endif %}
-</div>
 {% include "partials/progress.html" %}
 {% if tech %}
 <details class="panel tech mt">

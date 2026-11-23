@@ -5,7 +5,7 @@
     <div class="meta">
       {% if header.is_sample %}<span class="sample-label">Bài mẫu</span>{% endif %}
       <span>{{ labels.RUN_STATUS[header.status].label }}</span>
-      {% if header.finished_at %}<span>Kiểm tra xong {{ header.finished_at.strftime('%d/%m/%Y') }}</span>{% endif %}
+      {% if header.finished_at %}<span>Kiểm tra xong {{ header.finished_at | vn_time }}</span>{% endif %}
     </div>
   </div>
   <div class="row">

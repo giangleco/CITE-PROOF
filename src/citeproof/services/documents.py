@@ -30,7 +30,7 @@ from citeproof.core.enums import (
 )
 from citeproof.core.errors import ConflictError, InputError, NotFoundError, RateLimitedError
 from citeproof.core.settings import Settings
-from citeproof.db.models import Document, Job, User, VerificationRun
+from citeproof.db.models import Document, Job, UsageEvent, User, VerificationRun
 from citeproof.pipeline.runs import create_run
 from citeproof.storage import Storage, document_prefix
 
@@ -40,6 +40,7 @@ MIME = {
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 SAMPLE_CODE = "SAMPLE_DOCUMENT"
+RUN_USAGE = "run"
 ADMIN_VARIANTS = (Verifier.V0, Verifier.V1, Verifier.V2)
 DEFAULT_VARIANT = Verifier.V2
 _ACTIVE = (RunStatus.QUEUED.value, RunStatus.RUNNING.value)
@@ -92,6 +93,12 @@ def clean_filename(name: str | None) -> str:
     text = text.replace("\\", "/").rsplit("/", 1)[-1]
     text = _CONTROL.sub("", text).strip()
     return text[:_MAX_NAME] or "tai-lieu"
+
+
+def clean_title(title: str | None) -> str | None:
+    """Tiêu đề người dùng gõ: giữ nguyên dấu "/", chỉ bỏ ký tự điều khiển và cắt độ dài."""
+    text = _CONTROL.sub("", unicodedata.normalize("NFC", title or "")).strip()
+    return text[:_MAX_NAME] or None
 
 
 async def read_upload(upload: UploadFile, max_bytes: int) -> bytes:
@@ -159,8 +166,8 @@ async def start_run(
         since = datetime.now(UTC) - timedelta(days=1)
         used = await session.scalar(
             select(func.count())
-            .select_from(VerificationRun)
-            .where(VerificationRun.user_id == user.id, VerificationRun.created_at > since)
+            .select_from(UsageEvent)
+            .where(UsageEvent.user_id == user.id, UsageEvent.created_at > since)
         )
         if int(used or 0) >= settings.runs_per_day:
             raise RateLimitedError(
@@ -172,6 +179,7 @@ async def start_run(
     config: dict[str, Any] = {"variant": chosen.value}
     if demo is not None and settings.env == "local":
         config["demo"] = demo.to_json()
+    session.add(UsageEvent(user_id=user.id, kind=RUN_USAGE))
     return await create_run(session, document_id=locked.id, user_id=user.id, config=config)
 
 
@@ -258,7 +266,7 @@ async def create_text_document(
             f"{_vn_number(settings.max_reference_chars)} ký tự.",
             code="TEXT_TOO_LONG",
         )
-    name = clean_filename(title) if title and title.strip() else None
+    name = clean_title(title)
     if name is None:
         name = "Đoạn văn " + datetime.now(_VN_TZ).strftime("%d/%m/%Y %H:%M")
     data = json.dumps({"body": body, "references": references}, ensure_ascii=False).encode()

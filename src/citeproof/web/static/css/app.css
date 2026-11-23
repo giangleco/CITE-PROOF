@@ -297,7 +297,8 @@ fieldset.demo legend { padding: 0 6px; font-weight: 500; }
 .ref .raw { font-family: var(--font-source); color: var(--ink); line-height: 1.5; }
 .ref .why { font-size: var(--fs-small); color: var(--ink-2); margin-top: 8px; display: grid; gap: 6px; }
 .ref .why p { margin: 0; }
-.diff { display: grid; grid-template-columns: auto auto auto; gap: 4px 16px; justify-content: start; font-size: var(--fs-small); margin: 2px 0; }
+.diff { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); gap: 4px 16px; font-size: var(--fs-small); margin: 2px 0; }
+.diff del, .diff ins { overflow-wrap: anywhere; }
 .diff .k { color: var(--ink-3); }
 .diff del { color: var(--contra); text-decoration-thickness: 1px; }
 .diff ins { color: var(--ok); text-decoration: none; font-weight: 500; }

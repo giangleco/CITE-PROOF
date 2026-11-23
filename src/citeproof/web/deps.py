@@ -106,6 +106,14 @@ UserDep = Annotated[CurrentUser, Depends(require_user)]
 ConsentedUser = Annotated[CurrentUser, Depends(require_consented)]
 
 
+async def rollback_keeping_user(db: AsyncSession, current: CurrentUser) -> None:
+    """Rollback rồi nạp lại người dùng và phiên: rollback làm hết hạn mọi đối tượng, và
+    template còn cần tên người dùng, token CSRF để render trang báo lỗi."""
+    await db.rollback()
+    await db.refresh(current.user)
+    await db.refresh(current.web_session)
+
+
 def anonymous_csrf_token(request: Request) -> tuple[str, bool]:
     """Token CSRF cho người chưa đăng nhập; trả về (token, cần đặt cookie mới)."""
     existing = request.cookies.get(CSRF_COOKIE)
@@ -115,6 +123,9 @@ def anonymous_csrf_token(request: Request) -> tuple[str, bool]:
 
 
 async def verify_csrf(request: Request, current: MaybeUser) -> None:
+    if current is None and request.cookies.get(SESSION_COOKIE):
+        # Phiên đã hết hạn: đưa người dùng tới trang đăng nhập thay vì báo biểu mẫu hỏng.
+        raise LoginRequired
     given = request.headers.get(CSRF_HEADER)
     if not given:
         form = await request.form()

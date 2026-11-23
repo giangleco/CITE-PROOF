@@ -1,5 +1,16 @@
 {% from "partials/ui.html" import csrf %}
-<div id="progress" class="progress-wrap" aria-live="polite"{% if view.is_active %} hx-get="/runs/{{ view.id }}/progress" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+<div id="progress" aria-live="polite"{% if view.is_active %} hx-get="/runs/{{ view.id }}/progress" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+<div class="page-head">
+  <div>
+    <h1>{{ heading }}</h1>
+    <p class="lede break">{{ view.document_name }}</p>
+  </div>
+  <div class="row">
+    {% if view.is_active %}<a class="btn small ghost" href="/runs/{{ view.id }}">Làm mới</a>{% endif %}
+    <a class="btn small danger" href="/documents/{{ view.document_id }}/delete">Xóa bài</a>
+  </div>
+</div>
+<div class="progress-wrap">
   <div class="panel">
     <ol class="steps">
     {% for step in view.steps %}
@@ -23,12 +34,20 @@
     <div class="panel side-block">
       {% set msg = view.error_message or '' %}
       <div class="notice err">{{ msg }}{% if msg and msg[-1] not in '.!?' %}.{% endif %} Các bước trước vẫn giữ nguyên.</div>
-      {% if view.failed_stage %}
-      <form method="post" action="/runs/{{ view.id }}/resume">
-        {{ csrf(csrf_token) }}
-        <button class="btn small primary" type="submit">Tiếp tục từ bước {{ view.failed_stage.value[1:] }}</button>
-      </form>
-      {% endif %}
+      <div class="row">
+        {% if view.failed_stage %}
+        <form method="post" action="/runs/{{ view.id }}/resume">
+          {{ csrf(csrf_token) }}
+          <button class="btn small primary" type="submit">Tiếp tục từ bước {{ view.failed_stage.value[1:] }}</button>
+        </form>
+        {% endif %}
+        {% if not view.is_sample %}
+        <form method="post" action="/documents/{{ view.document_id }}/runs">
+          {{ csrf(csrf_token) }}
+          <button class="btn small" type="submit" name="action" value="rerun">Kiểm tra lại cả bài</button>
+        </form>
+        {% endif %}
+      </div>
     </div>
     {% elif view.status in finished %}
     <div class="panel side-block">
@@ -46,4 +65,5 @@
     </div>
     {% endif %}
   </div>
+</div>
 </div>

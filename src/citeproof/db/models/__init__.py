@@ -11,6 +11,7 @@ from citeproof.db.models.references import ReferenceCheck, ReferenceEntry, Work
 from citeproof.db.models.retrieval import RetrievalResult
 from citeproof.db.models.runs import ClaimVerification, Evidence, VerificationRun
 from citeproof.db.models.sources import SourceChunk, SourceFile
+from citeproof.db.models.usage import UsageEvent
 from citeproof.db.models.users import User
 
 __all__ = [
@@ -33,6 +34,7 @@ __all__ = [
     "RetrievalResult",
     "SourceChunk",
     "SourceFile",
+    "UsageEvent",
     "User",
     "VerificationRun",
     "WebSession",
