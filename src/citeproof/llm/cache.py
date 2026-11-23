@@ -1,16 +1,17 @@
 """Khoá cache xác định, cache store (memory / PostgreSQL) cho gọi LLM (07a §4.7.2-4.7.3)."""
 
+import copy
 import hashlib
 import json
 import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -19,7 +20,7 @@ from citeproof.db.models.llm import LLMCacheEntry
 
 def _normalize(value: Any) -> Any:
     if isinstance(value, BaseModel):
-        return _normalize(value.model_dump(mode="json"))
+        return _normalize(value.model_dump(mode="python"))
     if isinstance(value, str):
         return unicodedata.normalize("NFC", value)
     if value is None or isinstance(value, bool | int | float):
@@ -29,7 +30,7 @@ def _normalize(value: Any) -> Any:
     if isinstance(value, datetime):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("datetime phải có timezone để khoá cache không phụ thuộc máy chủ")
-        return value.isoformat()
+        return value.astimezone(UTC).isoformat()
     if isinstance(value, Mapping):
         result: dict[str, Any] = {}
         for key, item in value.items():
@@ -62,6 +63,7 @@ def _digest(payload: Mapping[str, Any]) -> str:
 
 def worker_cache_key(
     *,
+    namespace: str,
     provider: str,
     model: str,
     task: str,
@@ -72,6 +74,7 @@ def worker_cache_key(
 ) -> str:
     return _digest(
         {
+            "namespace": namespace,
             "provider": provider,
             "model": model,
             "task": task,
@@ -85,6 +88,7 @@ def worker_cache_key(
 
 def agent_step_cache_key(
     *,
+    namespace: str,
     agent: str,
     agent_version: str,
     tool_catalog_version: str,
@@ -93,6 +97,7 @@ def agent_step_cache_key(
 ) -> str:
     return _digest(
         {
+            "namespace": namespace,
             "agent": agent,
             "agent_version": agent_version,
             "tool_catalog_version": tool_catalog_version,
@@ -121,8 +126,33 @@ class CacheEntryMeta:
 
 
 def _check_meta(meta: CacheEntryMeta) -> None:
-    if meta.namespace.startswith("doc:") and meta.document_id is None:
-        raise ValueError("namespace 'doc:' bắt buộc có document_id")
+    """Hợp lệ: `doc:<uuid>` khớp document_id, hoặc `eval:<dataset>@<hash>` (không document_id)."""
+    ns = meta.namespace
+    if ns.startswith("doc:"):
+        part = ns[len("doc:") :]
+        try:
+            canonical = str(UUID(part))
+        except ValueError:
+            raise ValueError(f"namespace doc: có UUID không hợp lệ: {ns!r}") from None
+        if canonical != part:
+            raise ValueError(f"UUID trong namespace phải ở dạng chuẩn: {ns!r}")
+        if meta.document_id is None or str(meta.document_id) != part:
+            raise ValueError("namespace 'doc:' phải khớp document_id")
+        return
+    if ns.startswith("eval:"):
+        dataset, sep, digest = ns[len("eval:") :].partition("@")
+        invalid = (
+            not sep
+            or not dataset
+            or not digest
+            or any(c in x for x in (dataset, digest) for c in ":@")
+        )
+        if invalid:
+            raise ValueError(f"namespace eval: không hợp lệ: {ns!r}")
+        if meta.document_id is not None:
+            raise ValueError("namespace 'eval:' không được có document_id")
+        return
+    raise ValueError(f"namespace không hợp lệ: {ns!r}")
 
 
 class CacheStore(Protocol):
@@ -136,11 +166,12 @@ class InMemoryCacheStore:
         self._entries: dict[str, dict[str, Any]] = {}
 
     async def get(self, key: str) -> dict[str, Any] | None:
-        return self._entries.get(key)
+        entry = self._entries.get(key)
+        return copy.deepcopy(entry) if entry is not None else None
 
     async def put(self, key: str, meta: CacheEntryMeta, response: dict[str, Any]) -> None:
         _check_meta(meta)
-        self._entries.setdefault(key, response)
+        self._entries.setdefault(key, copy.deepcopy(response))
 
 
 class PgCacheStore:
@@ -150,11 +181,10 @@ class PgCacheStore:
     async def get(self, key: str) -> dict[str, Any] | None:
         async with self._session_factory() as session:
             result = await session.execute(
-                text(
-                    "UPDATE llm_cache SET hit_count = hit_count + 1 "
-                    "WHERE cache_key = :key RETURNING response"
-                ),
-                {"key": key},
+                update(LLMCacheEntry)
+                .where(LLMCacheEntry.cache_key == key)
+                .values(hit_count=LLMCacheEntry.hit_count + 1)
+                .returning(LLMCacheEntry.response)
             )
             row = result.first()
             await session.commit()

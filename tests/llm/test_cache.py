@@ -1,5 +1,5 @@
 import unicodedata
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -22,6 +22,7 @@ from citeproof.llm.cache import (
 from tests.db.factories import make_document
 
 BASE: dict[str, Any] = {
+    "namespace": "eval:D@h",
     "provider": "p",
     "model": "m",
     "task": "t",
@@ -53,6 +54,7 @@ def test_key_ignores_dict_order_but_tracks_versions_and_attempt() -> None:
 
 def test_agent_step_key_tracks_messages() -> None:
     kw: dict[str, Any] = {
+        "namespace": "eval:D@h",
         "agent": "a",
         "agent_version": "1",
         "tool_catalog_version": "c1",
@@ -156,3 +158,86 @@ async def test_pg_doc_namespace_cascades_on_document_delete(
         await session.commit()
     async with session_factory() as session:
         assert (await session.execute(select(LLMCacheEntry))).first() is None
+
+
+def test_namespace_is_part_of_keys() -> None:
+    d1, d2 = UUID(int=1), UUID(int=2)
+    keys = {
+        worker_cache_key(**{**BASE, "namespace": ns}, inputs={"a": 1}, attempt=1)
+        for ns in (doc_namespace(d1), doc_namespace(d2), "eval:D2@x")
+    }
+    assert len(keys) == 3
+    kw: dict[str, Any] = {
+        "agent": "a",
+        "agent_version": "1",
+        "tool_catalog_version": "c",
+        "model": "m",
+    }
+    assert agent_step_cache_key(namespace="eval:A@x", **kw, messages=[]) != agent_step_cache_key(
+        namespace="eval:B@x", **kw, messages=[]
+    )
+
+
+_D = UUID(int=1)
+_U = UUID(int=0xABCDEF)
+
+
+@pytest.mark.parametrize(
+    ("namespace", "document_id"),
+    [
+        ("foo", None),
+        (f"doc:{_D}", UUID(int=2)),
+        (f"doc:{_D}", None),
+        ("doc:not-a-uuid", _D),
+        (f"doc:{str(_U).upper()}", _U),
+        ("eval:D@h", _D),
+        ("eval:@h", None),
+        ("eval:d@", None),
+        ("eval:d", None),
+        ("eval:a:b@h", None),
+        ("eval:d@h@i", None),
+    ],
+)
+async def test_invalid_namespaces_rejected(namespace: str, document_id: UUID | None) -> None:
+    meta = CacheEntryMeta(namespace, document_id, "t", "m", "v1", "s1")
+    with pytest.raises(ValueError):
+        await InMemoryCacheStore().put("k", meta, {})
+
+
+async def test_valid_namespaces_accepted() -> None:
+    store = InMemoryCacheStore()
+    await store.put("a", CacheEntryMeta(doc_namespace(_D), _D, "t", "m", "v", "s"), {})
+    await store.put("b", CacheEntryMeta("eval:D2@ab", None, "t", "m", "v", "s"), {})
+
+
+class _Dt(BaseModel):
+    at: datetime
+
+
+class _St(BaseModel):
+    s: set[int]
+
+
+def test_model_values_are_strictly_normalised() -> None:
+    with pytest.raises(ValueError):
+        canonical_json(_Dt(at=datetime(2026, 1, 1)))
+    with pytest.raises(TypeError):
+        canonical_json(_St(s={1}))
+    with pytest.raises(TypeError):
+        canonical_json({"a": frozenset({1})})
+    utc = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+    plus7 = datetime(2026, 1, 1, 7, 0, tzinfo=timezone(timedelta(hours=7)))
+    assert canonical_json({"t": utc}) == canonical_json({"t": plus7})
+
+
+async def test_in_memory_store_isolates_responses() -> None:
+    store = InMemoryCacheStore()
+    meta = CacheEntryMeta("eval:D@h", None, "t", "m", "v1", "s1")
+    original: dict[str, Any] = {"a": [1]}
+    await store.put("k", meta, original)
+    original["a"].append(2)
+    got = await store.get("k")
+    assert got == {"a": [1]}
+    assert got is not None
+    got["a"].append(3)
+    assert await store.get("k") == {"a": [1]}

@@ -51,4 +51,15 @@ async def test_pg_call_logger_roundtrip(
     assert row.cost_estimate == Decimal("0.001234")
     assert row.cache_hit is True
     assert (row.cache_key, row.cache_namespace) == ("k", "eval:D@h")
+    assert row.stage == "extract"
     assert row.run_id is None and row.agent_run_id is None and row.step_index is None
+
+
+@pytest.mark.db
+@pytest.mark.usefixtures("clean_db")
+async def test_pg_call_logger_stores_null_stage(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await PgCallLogger(session_factory).log(_record(stage=None))
+    async with session_factory() as session:
+        assert (await session.execute(select(LLMCall.stage))).scalar_one() is None

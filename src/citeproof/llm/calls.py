@@ -51,8 +51,7 @@ class PgCallLogger:
             run_id=record.run_id,
             agent_run_id=record.agent_run_id,
             step_index=record.step_index,
-            # Cột stage là NOT NULL; bản ghi không thuộc stage nào lưu chuỗi rỗng.
-            stage=record.stage or "",
+            stage=record.stage,
             task=record.task,
             provider=record.provider,
             model=record.model,

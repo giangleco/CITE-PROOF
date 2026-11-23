@@ -23,7 +23,7 @@ class LLMCall(IdCreatedMixin, Base):
         ForeignKey("agent_runs.id", ondelete="SET NULL"), index=True
     )
     step_index: Mapped[int | None]
-    stage: Mapped[str] = mapped_column(Text)
+    stage: Mapped[str | None] = mapped_column(Text)
     task: Mapped[str] = mapped_column(Text)
     provider: Mapped[str] = mapped_column(Text)
     model: Mapped[str] = mapped_column(Text)
