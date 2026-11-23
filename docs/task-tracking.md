@@ -2,7 +2,7 @@
 
 | Thuộc tính | Giá trị |
 |---|---|
-| Cập nhật | 20/11/2026 |
+| Cập nhật | 23/11/2026 |
 | Trạng thái | Bản nháp trước (Phase 4) |
 | Tài liệu liên quan | `11-development-roadmap.md` |
 
@@ -29,15 +29,15 @@ Trạng thái: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `IN_REVIEW`, `COMPLETED`
 
 | ID | Task | Mô tả | Ưu tiên | Phụ thuộc | Trạng thái | Acceptance criteria |
 |---|---|---|---|---|---|---|
-| T-101 | Repo và tooling | Cấu trúc theo `12` §4.1; Ruff, mypy, pytest, pre-commit | P0 | T-010 | NOT_STARTED | `make check` chạy sạch trên repo rỗng |
-| T-102 | Docker Compose | App, worker, PostgreSQL + pgvector, GROBID | P0 | T-101 | NOT_STARTED | Một lệnh khởi động toàn bộ; health check đạt |
-| T-103 | Cấu hình và logging | Settings theo môi trường; log JSON có `run_id` | P0 | T-101 | NOT_STARTED | Không có bí mật trong repo; log có correlation ID |
-| T-104 | Lược đồ DB | Model SQLAlchemy và migration đầu tiên theo `08` | P0 | T-102 | NOT_STARTED | Migration chạy lên và xuống được; test constraint đạt |
-| T-105 | Job runner | Hàng đợi trên PostgreSQL, retry, backoff, tiếp tục theo giai đoạn | P0 | T-104 | NOT_STARTED | Job lỗi được thử lại; run tiếp tục từ giai đoạn lỗi |
-| T-106 | CI | Lint, type check, test, quét bí mật | P0 | T-101 | NOT_STARTED | CI chạy trên mọi push |
-| T-107 | `LLMClient` | Đầu ra có cấu trúc, cache theo namespace (`llm_cache`, khóa ở `07a` §4.7.2), retry, ghi `llm_calls`, chế độ ghi/phát lại cho test | P0 | T-104 | NOT_STARTED | Test chạy không cần gọi mạng; mọi lời gọi được ghi log; cùng đầu vào cho cùng khóa cache |
-| T-108 | `PromptParts` và `ContextBuilder` | Nạp prompt có phiên bản; phần cố định và phần thay đổi; khối dữ liệu không tin cậy; ánh xạ ID ngắn ↔ UUID (`07a` §4.8) | P0 | T-107 | NOT_STARTED | ID ngắn gán tất định; prompt render giống hệt qua nhiều lần chạy |
-| T-109 | `http_safe` | HTTP client chống SSRF (`07a` §4.9, SR-11) | P0 | T-101 | NOT_STARTED | Bộ test SSRF ở `13` §A.4 đạt |
+| T-101 | Repo và tooling | Cấu trúc theo `12` §4.1; Ruff, mypy, pytest, pre-commit | P0 | T-010 | COMPLETED | `make check` chạy sạch trên repo rỗng |
+| T-102 | Docker Compose | App, worker, PostgreSQL + pgvector, GROBID | P0 | T-101 | COMPLETED | Một lệnh khởi động toàn bộ; health check đạt |
+| T-103 | Cấu hình và logging | Settings theo môi trường; log JSON có `run_id` | P0 | T-101 | COMPLETED | Không có bí mật trong repo; log có correlation ID |
+| T-104 | Lược đồ DB | Model SQLAlchemy và migration đầu tiên theo `08` | P0 | T-102 | COMPLETED | Migration chạy lên và xuống được; test constraint đạt |
+| T-105 | Job runner | Hàng đợi trên PostgreSQL, retry, backoff, tiếp tục theo giai đoạn | P0 | T-104 | COMPLETED | Job lỗi được thử lại; run tiếp tục từ giai đoạn lỗi |
+| T-106 | CI | Lint, type check, test, quét bí mật | P0 | T-101 | COMPLETED | CI chạy trên mọi push |
+| T-107 | `LLMClient` | Đầu ra có cấu trúc, cache theo namespace (`llm_cache`, khóa ở `07a` §4.7.2), retry, ghi `llm_calls`, chế độ ghi/phát lại cho test | P0 | T-104 | COMPLETED | Test chạy không cần gọi mạng; mọi lời gọi được ghi log; cùng đầu vào cho cùng khóa cache |
+| T-108 | `PromptParts` và `ContextBuilder` | Nạp prompt có phiên bản; phần cố định và phần thay đổi; khối dữ liệu không tin cậy; ánh xạ ID ngắn ↔ UUID (`07a` §4.8) | P0 | T-107 | COMPLETED | ID ngắn gán tất định; prompt render giống hệt qua nhiều lần chạy |
+| T-109 | `http_safe` | HTTP client chống SSRF (`07a` §4.9, SR-11) | P0 | T-101 | COMPLETED | Bộ test SSRF ở `13` §A.4 đạt |
 
 ## M2 — Nhận và parse tài liệu
 
@@ -95,7 +95,7 @@ Trạng thái: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `IN_REVIEW`, `COMPLETED`
 | T-602 | Xem bằng chứng | Đoạn trích, trang, mục, liên kết (FR-51) | P0 | T-601 | NOT_STARTED | US-06 đạt |
 | T-603 | Phản hồi | FR-70 | P0 | T-601 | NOT_STARTED | US-09 đạt |
 | T-604 | Xuất báo cáo | Markdown/HTML (FR-53) | P1 | T-601 | NOT_STARTED | File xuất mở được, đủ nội dung |
-| T-605 | Xóa dữ liệu | FR-62 theo `08` §4.5 | P0 | T-104 | NOT_STARTED | US-10 đạt; không còn file trong storage |
+| T-605 | Xóa dữ liệu | FR-62 theo `08` §4.5. Kèm: xóa `feedback` theo mục tiêu và đặt `llm_calls.cache_key` về NULL khi xóa tài liệu (quyết định ở nhánh M1) | P0 | T-104 | NOT_STARTED | US-10 đạt; không còn file trong storage |
 | T-606 | Triển khai pilot | Theo `14` | P0 | T-601 | NOT_STARTED | Checklist `14` §5 đạt |
 | T-607 | Pilot-β | Mời người dùng pilot | P0 | T-606, checklist `10` §5 | NOT_STARTED | Ít nhất một lần chạy hoàn chỉnh từ mỗi người dùng tham gia |
 
