@@ -51,3 +51,20 @@ async def test_create_user_error_exit_code(
 ) -> None:
     monkeypatch.setattr(cli, "_read_password", lambda: "ngan")
     assert await cli.run(["create-user", "--email", "a@b.vn", "--name", "A"]) == 1
+
+
+@pytest.mark.db
+async def test_seed_sample_command(
+    cli_env: None,
+    clean_db: None,
+    session_factory: async_sessionmaker[AsyncSession],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from citeproof.services import auth
+
+    async with session_factory() as s:
+        await auth.create_user(s, email="u@b.vn", password="mat-khau-du-dai", display_name="U")
+        await s.commit()
+    assert await cli.run(["seed-sample", "--email", "U@b.vn"]) == 0
+    assert "/report" in capsys.readouterr().out
+    assert await cli.run(["seed-sample", "--email", "khong@b.vn"]) == 1

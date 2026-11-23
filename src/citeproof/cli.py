@@ -11,11 +11,16 @@ import getpass
 import sys
 from collections.abc import Sequence
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from citeproof.core.enums import UserRole
 from citeproof.core.errors import CiteProofError
 from citeproof.core.settings import get_settings
+from citeproof.db.models import User
 from citeproof.db.session import make_engine, make_session_factory
 from citeproof.services import auth
+from citeproof.services.sample import seed_sample
 
 
 def _read_password() -> str:
@@ -72,9 +77,18 @@ async def run(argv: Sequence[str]) -> int:
     return 0
 
 
-async def _seed_sample(session: object, email: str) -> int:
-    print("Lệnh seed-sample chưa có.", file=sys.stderr)
-    return 1
+async def _seed_sample(session: AsyncSession, email: str) -> int:
+    settings = get_settings()
+    user = (
+        await session.execute(select(User).where(User.email == auth.normalize_email(email)))
+    ).scalar_one_or_none()
+    if user is None:
+        print(f"Lỗi: không có tài khoản {email}.", file=sys.stderr)
+        return 1
+    _, run_id = await seed_sample(session, settings, user_id=user.id)
+    await session.commit()
+    print(f"Đã thêm bài mẫu. Mở: /runs/{run_id}/report")
+    return 0
 
 
 def main() -> None:
