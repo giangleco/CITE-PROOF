@@ -5,12 +5,14 @@ from datetime import timedelta
 
 import pytest
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from citeproof.core.enums import JobStatus, RunStatus, StageName
 from citeproof.core.errors import InputError, RetryableError
 from citeproof.core.logging import ALLOWED_LOG_FIELDS, configure_logging
 from citeproof.db.models import Job, VerificationRun
+from citeproof.pipeline import worker as worker_module
 from citeproof.pipeline.jobs import ClaimedJob, claim_next, enqueue
 from citeproof.pipeline.runs import complete_stage, create_run, fail_stage, resume_run
 from citeproof.pipeline.stages import STAGE_DEPENDENCIES, NoopStage, StageRegistry, StageResult
@@ -55,6 +57,51 @@ async def _jobs(session_factory: SessionFactory, run_id: uuid.UUID) -> dict[Stag
     async with session_factory() as session:
         rows = (await session.execute(select(Job).where(Job.run_id == run_id))).scalars()
         return {StageName(job.stage): job for job in rows}
+
+
+async def _s5_rows(session_factory: SessionFactory, run_id: uuid.UUID) -> int | None:
+    async with session_factory() as session:
+        return await session.scalar(
+            select(func.count())
+            .select_from(Job)
+            .where(Job.run_id == run_id, Job.stage == S.S5.value)
+        )
+
+
+async def _until_status(
+    session_factory: SessionFactory, run_id: uuid.UUID, status: RunStatus
+) -> None:
+    while True:
+        if (await _run(session_factory, run_id)).status == status.value:
+            return
+        await asyncio.sleep(0.01)
+
+
+async def _work_until_terminal(
+    session_factory: SessionFactory,
+    registry: StageRegistry,
+    run_id: uuid.UUID,
+    worker_ids: tuple[str, ...] = ("w1", "w2"),
+) -> None:
+    """Chạy song song một vòng `work_once` cho mỗi worker đến khi run kết thúc."""
+    settings = pipeline_settings()
+
+    async def loop(worker_id: str) -> None:
+        while True:
+            if await work_once(session_factory, registry, worker_id, settings):
+                continue
+            if RunStatus((await _run(session_factory, run_id)).status) in TERMINAL:
+                return
+            await asyncio.sleep(0.01)
+
+    await asyncio.wait_for(asyncio.gather(*(loop(w) for w in worker_ids)), timeout=30)
+
+
+def _log_records(err: str) -> list[dict[str, object]]:
+    records = [json.loads(line) for line in err.splitlines() if line.startswith("{")]
+    base_fields = {"timestamp", "level", "module", "event"}
+    assert all(set(record) <= ALLOWED_LOG_FIELDS | base_fields for record in records)
+    return records
 
 
 # --- DAG và registry -------------------------------------------------------------
@@ -234,15 +281,21 @@ async def test_warnings_make_completed_with_warnings(
 
 
 class BarrierStage(CountingStage):
-    """Chỉ trả kết quả khi đủ số stage cùng chờ ở barrier (buộc chạy song song)."""
+    """Lần gọi đầu chờ đủ bên ở barrier (buộc chạy song song) rồi ném `error` nếu có."""
 
-    def __init__(self, name: StageName, barrier: asyncio.Barrier) -> None:
+    def __init__(
+        self, name: StageName, barrier: asyncio.Barrier, error: Exception | None = None
+    ) -> None:
         super().__init__(name)
         self.barrier = barrier
+        self.error = error
 
     async def run(self, run_id: uuid.UUID) -> StageResult:
         result = await super().run(run_id)
-        await self.barrier.wait()
+        if len(self.calls) == 1:
+            await self.barrier.wait()
+            if self.error is not None:
+                raise self.error
         return result
 
 
@@ -250,33 +303,47 @@ class BarrierStage(CountingStage):
 async def test_concurrent_workers_enqueue_s5_once(
     session_factory: SessionFactory, clean_db: None
 ) -> None:
-    settings = pipeline_settings()
     barrier = asyncio.Barrier(2)
     registry, stages = counting_registry(BarrierStage(S.S3, barrier), BarrierStage(S.S4, barrier))
     run_id = await _new_run(session_factory)
 
-    async def worker(worker_id: str) -> None:
-        while True:
-            if await work_once(session_factory, registry, worker_id, settings):
-                continue
-            if RunStatus((await _run(session_factory, run_id)).status) in TERMINAL:
-                return
-            await asyncio.sleep(0.01)
+    await _work_until_terminal(session_factory, registry, run_id)
 
-    await asyncio.wait_for(asyncio.gather(worker("w1"), worker("w2")), timeout=30)
-
-    async with session_factory() as session:
-        s5_rows = await session.scalar(
-            select(func.count())
-            .select_from(Job)
-            .where(Job.run_id == run_id, Job.stage == S.S5.value)
-        )
-    assert s5_rows == 1
+    assert await _s5_rows(session_factory, run_id) == 1
     run = await _run(session_factory, run_id)
     assert run.status == RunStatus.COMPLETED.value
     jobs = await _jobs(session_factory, run_id)
     assert {job.status for job in jobs.values()} == {JobStatus.DONE.value}
     assert all(len(stage.calls) == 1 for stage in stages.values())
+
+
+@pytest.mark.db
+async def test_s3_fails_while_s4_completes_then_resume_completes(
+    session_factory: SessionFactory, clean_db: None
+) -> None:
+    barrier = asyncio.Barrier(2)
+    registry, stages = counting_registry(
+        BarrierStage(S.S3, barrier, error=InputError("ref hỏng")),
+        BarrierStage(S.S4, barrier),
+    )
+    run_id = await _new_run(session_factory)
+
+    await _work_until_terminal(session_factory, registry, run_id)
+    run = await _run(session_factory, run_id)
+    assert run.status == RunStatus.FAILED.value
+    assert run.error is not None and run.error["stage"] == "S3"
+    jobs = await _jobs(session_factory, run_id)
+    assert (jobs[S.S3].status, jobs[S.S4].status) == (JobStatus.FAILED.value, JobStatus.DONE.value)
+    assert S.S5 not in jobs
+
+    async with session_factory() as session:
+        assert await resume_run(session, run_id) == 1
+        await session.commit()
+    assert await drain(session_factory, registry, pipeline_settings()) == 6
+    run = await _run(session_factory, run_id)
+    assert (run.status, run.error) == (RunStatus.COMPLETED.value, None)
+    assert await _s5_rows(session_factory, run_id) == 1
+    assert (len(stages[S.S3].calls), len(stages[S.S4].calls)) == (2, 1)
 
 
 @pytest.mark.db
@@ -315,8 +382,10 @@ async def test_completing_stage_of_terminal_run_does_not_advance_it(
     assert S.S5 not in jobs
 
 
-async def _claim_then_lose_lease(session_factory: SessionFactory) -> ClaimedJob:
-    """Worker cũ nhận S1, quá hạn khóa, worker mới nhận lại; trả về lease cũ."""
+async def _claim_then_lose_lease(
+    session_factory: SessionFactory,
+) -> tuple[ClaimedJob, ClaimedJob]:
+    """Worker cũ nhận S1, quá hạn khóa, worker mới nhận lại; trả về (lease cũ, lease mới)."""
     async with session_factory() as session:
         old = await claim_next(session, "w-old", timedelta(minutes=15), max_attempts=3)
         assert old is not None
@@ -327,7 +396,7 @@ async def _claim_then_lose_lease(session_factory: SessionFactory) -> ClaimedJob:
         new = await claim_next(session, "w-new", timedelta(minutes=15), max_attempts=3)
         await session.commit()
     assert new is not None and (new.id, new.attempts) == (old.id, 2)
-    return old
+    return old, new
 
 
 @pytest.mark.db
@@ -335,9 +404,9 @@ async def test_completion_after_lost_lease_is_ignored(
     session_factory: SessionFactory, clean_db: None
 ) -> None:
     run_id = await _new_run(session_factory)
-    old = await _claim_then_lose_lease(session_factory)
+    old, new = await _claim_then_lose_lease(session_factory)
     async with session_factory() as session:
-        await complete_stage(session, old, StageResult(warnings=("muộn",)))
+        assert await complete_stage(session, old, StageResult(warnings=("muộn",))) is False
         await session.commit()
     run = await _run(session_factory, run_id)
     assert (run.status, run.warnings) == (RunStatus.QUEUED.value, [])
@@ -345,20 +414,126 @@ async def test_completion_after_lost_lease_is_ignored(
     assert list(jobs) == [S.S1]
     assert (jobs[S.S1].status, jobs[S.S1].locked_by) == (JobStatus.RUNNING.value, "w-new")
 
+    async with session_factory() as session:
+        assert await complete_stage(session, new, StageResult()) is True
+        await session.commit()
+    jobs = await _jobs(session_factory, run_id)
+    assert (jobs[S.S1].status, jobs[S.S2].status) == (JobStatus.DONE.value, JobStatus.QUEUED.value)
+    assert (await _run(session_factory, run_id)).status == RunStatus.RUNNING.value
+
 
 @pytest.mark.db
 async def test_failure_after_lost_lease_is_ignored(
     session_factory: SessionFactory, clean_db: None
 ) -> None:
     run_id = await _new_run(session_factory)
-    old = await _claim_then_lose_lease(session_factory)
+    old, _ = await _claim_then_lose_lease(session_factory)
     async with session_factory() as session:
-        await fail_stage(session, old, InputError("muộn"), pipeline_settings())
+        assert await fail_stage(session, old, InputError("muộn"), pipeline_settings()) is False
         await session.commit()
     run = await _run(session_factory, run_id)
     assert (run.status, run.error, run.finished_at) == (RunStatus.QUEUED.value, None, None)
     job = (await _jobs(session_factory, run_id))[S.S1]
     assert (job.status, job.locked_by, job.last_error) == (JobStatus.RUNNING.value, "w-new", None)
+
+
+@pytest.mark.db
+async def test_stale_lease_from_before_resume_is_fenced(
+    session_factory: SessionFactory, clean_db: None
+) -> None:
+    # Hồi quy ABA: resume đặt attempts=0 nên attempts không đủ làm lease token.
+    run_id = await _new_run(session_factory)
+    stale, current = await _claim_then_lose_lease(session_factory)
+    async with session_factory() as session:
+        assert await fail_stage(session, current, InputError("x"), pipeline_settings()) is True
+        await session.commit()
+    async with session_factory() as session:
+        assert await resume_run(session, run_id) == 1
+        await session.commit()
+    async with session_factory() as session:
+        resumed = await claim_next(session, "w-C", timedelta(minutes=15), max_attempts=3)
+        await session.commit()
+    assert resumed is not None and resumed.attempts == stale.attempts == 1
+
+    # Worker A (treo từ trước resume) xong với lease cũ: phải bị chặn.
+    async with session_factory() as session:
+        assert await complete_stage(session, stale, StageResult()) is False
+        assert await fail_stage(session, stale, InputError("muộn"), pipeline_settings()) is False
+        await session.commit()
+    jobs = await _jobs(session_factory, run_id)
+    assert list(jobs) == [S.S1]
+    assert (jobs[S.S1].status, jobs[S.S1].locked_by) == (JobStatus.RUNNING.value, "w-C")
+    run = await _run(session_factory, run_id)
+    assert (run.status, run.error) == (RunStatus.RUNNING.value, None)
+
+
+@pytest.mark.db
+async def test_resume_rejects_failed_run_without_failed_jobs(
+    session_factory: SessionFactory, clean_db: None
+) -> None:
+    run_id = await _new_run(session_factory)
+    error = {"stage": "S1", "type": "InputError", "message": "InputError: x"}
+    async with session_factory() as session:
+        await session.execute(
+            update(VerificationRun)
+            .where(VerificationRun.id == run_id)
+            .values(status=RunStatus.FAILED.value, error=error)
+        )
+        await session.commit()
+    async with session_factory() as session:
+        with pytest.raises(InputError):
+            await resume_run(session, run_id)
+        await session.commit()
+    run = await _run(session_factory, run_id)
+    assert (run.status, run.error) == (RunStatus.FAILED.value, error)
+    assert (await _jobs(session_factory, run_id))[S.S1].status == JobStatus.QUEUED.value
+
+
+class LeaseLosingStage(CountingStage):
+    """Trong lúc stage chạy, worker khác nhận lại job (lease token đổi)."""
+
+    def __init__(
+        self, name: StageName, session_factory: SessionFactory, error: Exception | None
+    ) -> None:
+        super().__init__(name)
+        self.session_factory = session_factory
+        self.error = error
+
+    async def run(self, run_id: uuid.UUID) -> StageResult:
+        result = await super().run(run_id)
+        async with self.session_factory() as session:
+            await session.execute(
+                update(Job)
+                .where(Job.run_id == run_id, Job.stage == self.name.value)
+                .values(locked_at=func.now(), locked_by="w2")
+            )
+            await session.commit()
+        if self.error is not None:
+            raise self.error
+        return result
+
+
+@pytest.mark.db
+@pytest.mark.parametrize("error", [None, InputError("x")], ids=["completed", "failed"])
+async def test_result_of_lost_lease_is_discarded_and_logged(
+    session_factory: SessionFactory,
+    clean_db: None,
+    capsys: pytest.CaptureFixture[str],
+    error: Exception | None,
+) -> None:
+    configure_logging("INFO")
+    registry, _ = counting_registry(LeaseLosingStage(S.S1, session_factory, error))
+    run_id = await _new_run(session_factory)
+
+    assert await work_once(session_factory, registry, "w1", pipeline_settings()) is True
+    jobs = await _jobs(session_factory, run_id)
+    assert list(jobs) == [S.S1]
+    assert (jobs[S.S1].status, jobs[S.S1].locked_by) == (JobStatus.RUNNING.value, "w2")
+    run = await _run(session_factory, run_id)
+    assert (run.status, run.error) == (RunStatus.QUEUED.value, None)
+    events = [record["event"] for record in _log_records(capsys.readouterr().err)]
+    assert "stage_result_discarded" in events
+    assert "stage_completed" not in events
 
 
 @pytest.mark.db
@@ -379,9 +554,7 @@ async def test_unexpected_stage_error_fails_run_without_leaking_message(
 
     err = capsys.readouterr().err
     assert "bí mật" not in err
-    records = [json.loads(line) for line in err.splitlines() if line.startswith("{")]
-    base_fields = {"timestamp", "level", "module", "event"}
-    assert all(set(record) <= ALLOWED_LOG_FIELDS | base_fields for record in records)
+    records = _log_records(err)
     failed = [record for record in records if record["event"] == "stage_failed"]
     assert len(failed) == 1
     assert failed[0]["error_type"] == "ValueError"
@@ -451,12 +624,54 @@ async def test_run_worker_completes_run_and_stops(
         run_worker(session_factory, StageRegistry.noop(), "w1", settings, stop)
     )
 
-    async def until_completed() -> None:
-        while True:
-            if (await _run(session_factory, run_id)).status == RunStatus.COMPLETED.value:
-                return
-            await asyncio.sleep(0.01)
-
-    await asyncio.wait_for(until_completed(), timeout=30)
+    await asyncio.wait_for(_until_status(session_factory, run_id, RunStatus.COMPLETED), 30)
     stop.set()
     await asyncio.wait_for(task, timeout=5)
+
+
+@pytest.mark.db
+async def test_run_worker_survives_iteration_error(
+    session_factory: SessionFactory,
+    clean_db: None,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configure_logging("INFO")
+    run_id = await _new_run(session_factory)
+    real_work_once = worker_module.work_once
+    calls = 0
+
+    async def flaky_work_once(*args: object, **kwargs: object) -> bool:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OperationalError(
+                "SELECT bí mật", {"p": "tham số bí mật"}, Exception("mất kết nối")
+            )
+        return await real_work_once(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(worker_module, "work_once", flaky_work_once)
+    stop = asyncio.Event()
+    task = asyncio.create_task(
+        run_worker(session_factory, StageRegistry.noop(), "w1", pipeline_settings(), stop)
+    )
+    await asyncio.wait_for(_until_status(session_factory, run_id, RunStatus.COMPLETED), 30)
+    stop.set()
+    await asyncio.wait_for(task, timeout=5)
+
+    err = capsys.readouterr().err
+    assert "bí mật" not in err and "mất kết nối" not in err
+    failures = [r for r in _log_records(err) if r["event"] == "worker_iteration_failed"]
+    assert len(failures) == 1
+    assert (failures[0]["error_type"], failures[0]["worker_id"]) == ("OperationalError", "w1")
+
+
+async def test_run_worker_propagates_cancellation(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def cancelled_work_once(*args: object, **kwargs: object) -> bool:
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(worker_module, "work_once", cancelled_work_once)
+    with pytest.raises(asyncio.CancelledError):
+        await run_worker(
+            async_sessionmaker(), StageRegistry.noop(), "w1", pipeline_settings(), asyncio.Event()
+        )

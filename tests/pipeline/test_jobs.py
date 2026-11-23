@@ -16,6 +16,7 @@ from citeproof.pipeline.jobs import (
     expire_stale_jobs,
     mark_done,
     mark_failed,
+    stale_exhausted,
 )
 from tests.db.factories import make_document, make_run
 
@@ -81,6 +82,7 @@ async def test_claim_marks_running_and_returns_payload(
         job = await _get(session, run_id, StageName.S1)
         assert (job.status, job.locked_by) == (JobStatus.RUNNING.value, "w1")
         assert job.locked_at is not None
+        assert claimed.locked_at == job.locked_at
 
 
 @pytest.mark.db
@@ -227,10 +229,12 @@ async def test_exhausted_stale_job_is_expired_not_reclaimed(
         job = await claim_next(session, "w1", timedelta(minutes=15), max_attempts=1)
         assert job is not None
         await _make_stale(session, job.id)
+        stale_locked_at = (await _get(session, run_id, StageName.S1)).locked_at
         assert await claim_next(session, "w2", timedelta(minutes=15), max_attempts=1) is None
         expired = await expire_stale_jobs(session, timedelta(minutes=15), 1)
         await session.commit()
         assert [e.id for e in expired] == [job.id]
+        assert expired[0].locked_at == stale_locked_at
         row = await _get(session, run_id, StageName.S1)
         assert row.status == JobStatus.FAILED.value
         assert row.last_error == "LeaseExpired"
@@ -263,6 +267,7 @@ async def test_stale_worker_writes_are_fenced(
         await _make_stale(session, old.id)
         new = await claim_next(session, "w2", timedelta(minutes=15), max_attempts=3)
         assert new is not None and new.attempts == 2
+        assert new.locked_at != old.locked_at
         assert await mark_done(session, old) is False
         status = await mark_failed(
             session,
@@ -277,3 +282,62 @@ async def test_stale_worker_writes_are_fenced(
         row = await _get(session, run_id, StageName.S1)
         assert (row.status, row.locked_by, row.attempts) == (JobStatus.RUNNING.value, "w2", 2)
         assert await mark_done(session, new) is True
+
+
+@pytest.mark.db
+async def test_fence_uses_lease_token_not_attempts(
+    session_factory: async_sessionmaker[AsyncSession], clean_db: None
+) -> None:
+    async with session_factory() as session:
+        run_id = await _run_id(session)
+        await enqueue(session, run_id, StageName.S1)
+        old = await claim_next(session, "w1", timedelta(minutes=15), max_attempts=3)
+        assert old is not None
+        # Giống resume_run: đưa job về QUEUED với attempts=0 rồi nhận lại.
+        await session.execute(
+            update(Job)
+            .where(Job.id == old.id)
+            .values(status=JobStatus.QUEUED.value, attempts=0, locked_at=None, locked_by=None)
+        )
+        await session.commit()
+        new = await claim_next(session, "w2", timedelta(minutes=15), max_attempts=3)
+        await session.commit()
+        assert new is not None and (new.id, new.attempts) == (old.id, old.attempts)
+        assert await mark_done(session, old) is False
+        status = await mark_failed(
+            session,
+            old,
+            RuntimeError("late"),
+            retryable=False,
+            max_attempts=3,
+            backoff_base_seconds=5.0,
+        )
+        assert status is None
+        assert await mark_done(session, new) is True
+        await session.commit()
+
+
+@pytest.mark.db
+async def test_stale_exhausted_matches_only_expired_leases(
+    session_factory: async_sessionmaker[AsyncSession], clean_db: None
+) -> None:
+    async with session_factory() as session:
+        run_id = await _run_id(session)
+        for stage in (StageName.S1, StageName.S2, StageName.S3):
+            await enqueue(session, run_id, stage)
+            assert await claim_next(session, "w1", timedelta(minutes=15), max_attempts=3)
+        # S1: quá hạn và hết lượt; S2: quá hạn còn lượt; S3: hết lượt nhưng còn hạn.
+        await session.execute(
+            update(Job).where(Job.run_id == run_id, Job.stage.in_(["S1", "S3"])).values(attempts=3)
+        )
+        await session.execute(
+            update(Job)
+            .where(Job.run_id == run_id, Job.stage.in_(["S1", "S2"]))
+            .values(locked_at=func.now() - timedelta(hours=1))
+        )
+        matched = (
+            await session.scalars(
+                select(Job.stage).where(stale_exhausted(timedelta(minutes=15), 3))
+            )
+        ).all()
+        assert matched == ["S1"]

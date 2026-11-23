@@ -78,13 +78,19 @@ async def work_once(
                 extra={"error_type": type(exc).__name__, "duration_ms": _elapsed_ms(started)},
             )
             async with session_factory() as session:
-                await fail_stage(session, job, exc, settings)
+                recorded = await fail_stage(session, job, exc, settings)
                 await session.commit()
+            if not recorded:
+                logger.warning("stage_result_discarded")
             return True
-        logger.info("stage_completed", extra={"duration_ms": _elapsed_ms(started)})
+        duration_ms = _elapsed_ms(started)
         async with session_factory() as session:
-            await complete_stage(session, job, result)
+            recorded = await complete_stage(session, job, result)
             await session.commit()
+        if recorded:
+            logger.info("stage_completed", extra={"duration_ms": duration_ms})
+        else:
+            logger.warning("stage_result_discarded", extra={"duration_ms": duration_ms})
     return True
 
 
@@ -95,12 +101,20 @@ async def run_worker(
     settings: Settings,
     stop: asyncio.Event,
 ) -> None:
-    """Lặp `work_once` đến khi `stop` được đặt; nghỉ một nhịp poll khi không có việc."""
+    """Lặp `work_once` đến khi `stop` được đặt; nghỉ một nhịp poll khi không có việc.
+
+    Lỗi của một vòng (ví dụ database mất kết nối) được ghi log rồi thử lại sau một
+    nhịp poll, không làm dừng worker. Chỉ ghi tên kiểu lỗi: thông điệp lỗi của
+    SQLAlchemy có thể chứa câu SQL.
+    """
     with log_context(worker_id=worker_id):
         logger.info("worker_started")
         while not stop.is_set():
-            if await work_once(session_factory, registry, worker_id, settings):
-                continue
+            try:
+                if await work_once(session_factory, registry, worker_id, settings):
+                    continue
+            except Exception as exc:
+                logger.error("worker_iteration_failed", extra={"error_type": type(exc).__name__})
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(stop.wait(), timeout=settings.worker_poll_interval_seconds)
         logger.info("worker_stopped")

@@ -1,7 +1,10 @@
 """Hàng đợi job trên PostgreSQL (claim bằng FOR UPDATE SKIP LOCKED).
 
 Mọi so sánh thời gian dùng đồng hồ của database (`now()`), để worker trên nhiều
-máy luôn thống nhất. Các hàm không commit: caller quyết định ranh giới giao dịch.
+máy luôn thống nhất. Lease token của một lần nhận job là `locked_at` (thời điểm
+claim); mọi ghi kết quả đều được rào bằng token này. Không dùng `attempts` làm
+token vì `resume_run` đặt lại `attempts=0`. Các hàm không commit: caller quyết
+định ranh giới giao dịch.
 """
 
 import uuid
@@ -9,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import ColumnElement, and_, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +30,7 @@ class ClaimedJob:
     stage: StageName
     attempts: int
     payload: dict[str, Any]
+    locked_at: datetime
 
 
 def describe_error(error: BaseException) -> str:
@@ -48,10 +52,11 @@ def _to_claimed(row: Any) -> ClaimedJob:
         stage=StageName(row.stage),
         attempts=row.attempts,
         payload=row.payload or {},
+        locked_at=row.locked_at,
     )
 
 
-_RETURNING = (Job.id, Job.run_id, Job.stage, Job.attempts, Job.payload)
+_RETURNING = (Job.id, Job.run_id, Job.stage, Job.attempts, Job.payload, Job.locked_at)
 
 
 def backoff_delay(attempts: int, base_seconds: float) -> timedelta:
@@ -123,39 +128,56 @@ async def claim_next(
     return None if row is None else _to_claimed(row)
 
 
+def stale_exhausted(lock_timeout: timedelta, max_attempts: int) -> ColumnElement[bool]:
+    """Job RUNNING đã quá hạn khóa và hết lượt thử (không được claim lại nữa)."""
+    return and_(
+        Job.status == JobStatus.RUNNING.value,
+        Job.locked_at < func.now() - lock_timeout,
+        Job.attempts >= max_attempts,
+    )
+
+
 async def expire_stale_jobs(
     session: AsyncSession, lock_timeout: timedelta, max_attempts: int
 ) -> list[ClaimedJob]:
-    """Đánh dấu FAILED (LeaseExpired) các job RUNNING quá hạn khóa và hết lượt thử."""
-    stmt = (
-        update(Job)
-        .where(
-            Job.status == JobStatus.RUNNING.value,
-            Job.locked_at < func.now() - lock_timeout,
-            Job.attempts >= max_attempts,
+    """Đánh dấu FAILED (LeaseExpired) các job RUNNING quá hạn khóa và hết lượt thử.
+
+    Trả về các lease đã hết hạn, kèm `locked_at` trước khi bị xóa.
+    """
+    rows = (
+        await session.execute(
+            select(*_RETURNING)
+            .where(stale_exhausted(lock_timeout, max_attempts))
+            .order_by(Job.id)
+            .with_for_update()
         )
+    ).all()
+    if not rows:
+        return []
+    await session.execute(
+        update(Job)
+        .where(Job.id.in_([row.id for row in rows]))
         .values(
             status=JobStatus.FAILED.value,
             last_error="LeaseExpired",
             locked_at=None,
             locked_by=None,
         )
-        .returning(*_RETURNING)
         .execution_options(synchronize_session=False)
     )
-    return [_to_claimed(row) for row in (await session.execute(stmt)).all()]
+    return [_to_claimed(row) for row in rows]
 
 
 def _fence(job: ClaimedJob) -> tuple[Any, ...]:
     return (
         Job.id == job.id,
         Job.status == JobStatus.RUNNING.value,
-        Job.attempts == job.attempts,
+        Job.locked_at == job.locked_at,
     )
 
 
 async def mark_done(session: AsyncSession, job: ClaimedJob) -> bool:
-    """Trả về False nếu lease đã mất (job được worker khác nhận lại)."""
+    """Trả về False nếu lease đã mất (job hết hạn hoặc được nhận lại)."""
     result = await session.execute(
         update(Job)
         .where(*_fence(job))

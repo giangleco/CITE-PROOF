@@ -26,6 +26,7 @@ from citeproof.pipeline.jobs import (
     expire_stale_jobs,
     mark_done,
     mark_failed,
+    stale_exhausted,
 )
 from citeproof.pipeline.stages import STAGE_DEPENDENCIES, StageResult
 
@@ -96,37 +97,42 @@ async def _enqueue_ready_successors(session: AsyncSession, run_id: UUID, stage: 
             await enqueue(session, run_id, successor)
 
 
-async def complete_stage(session: AsyncSession, job: ClaimedJob, result: StageResult) -> None:
+async def complete_stage(session: AsyncSession, job: ClaimedJob, result: StageResult) -> bool:
     """Đánh dấu job DONE, ghi cảnh báo, chuyển run sang RUNNING và thêm stage kế tiếp.
 
-    Mất lease thì không làm gì. Run đã kết thúc (FAILED/CANCELLED) chỉ nhận thêm
-    cảnh báo, giữ nguyên trạng thái và không có stage kế tiếp.
+    Trả về False nếu lease đã mất; khi đó không ghi gì. Run đã kết thúc
+    (FAILED/CANCELLED) chỉ nhận thêm cảnh báo, giữ nguyên trạng thái và không có
+    stage kế tiếp.
     """
     run = await _lock_run(session, job.run_id)
     if run is None or not await mark_done(session, job):
-        return
+        return False
     warnings = [*run.warnings, *result.warnings]
     if run.status not in _ACTIVE:
         if result.warnings:
             await _update_run(session, job.run_id, warnings=warnings)
-        return
+        return True
     if job.stage is _FINAL_STAGE:
         status = RunStatus.COMPLETED_WITH_WARNINGS if warnings else RunStatus.COMPLETED
         await _update_run(
             session, job.run_id, status=status.value, warnings=warnings, finished_at=func.now()
         )
-        return
+        return True
     await _update_run(session, job.run_id, status=RunStatus.RUNNING.value, warnings=warnings)
     await _enqueue_ready_successors(session, job.run_id, job.stage)
+    return True
 
 
 async def fail_stage(
     session: AsyncSession, job: ClaimedJob, error: BaseException, settings: Settings
-) -> None:
-    """Đặt lại lịch job (lỗi tạm thời còn lượt thử) hoặc đánh FAILED cả job lẫn run."""
+) -> bool:
+    """Đặt lại lịch job (lỗi tạm thời còn lượt thử) hoặc đánh FAILED cả job lẫn run.
+
+    Trả về False nếu lease đã mất; khi đó không ghi gì.
+    """
     run = await _lock_run(session, job.run_id)
     if run is None:
-        return
+        return False
     status = await mark_failed(
         session,
         job,
@@ -145,6 +151,7 @@ async def fail_stage(
                 "message": describe_error(error),
             },
         )
+    return status is not None
 
 
 async def fail_expired_jobs(
@@ -153,13 +160,11 @@ async def fail_expired_jobs(
     """Đánh FAILED các job RUNNING quá hạn khóa đã hết lượt thử, cùng run của chúng.
 
     Khóa trước các run liên quan (theo thứ tự id) rồi mới cập nhật job, giữ đúng thứ
-    tự khóa run → job như `complete_stage`/`fail_stage`.
+    tự khóa run → job như `complete_stage`/`fail_stage`. Dùng chung điều kiện
+    `stale_exhausted` với `expire_stale_jobs` nên tập job hết hạn luôn nằm trong tập
+    run đã khóa (`now()` cố định trong một giao dịch).
     """
-    stale_run_ids = select(Job.run_id).where(
-        Job.status == JobStatus.RUNNING.value,
-        Job.locked_at < func.now() - lock_timeout,
-        Job.attempts >= max_attempts,
-    )
+    stale_run_ids = select(Job.run_id).where(stale_exhausted(lock_timeout, max_attempts))
     await session.execute(
         select(VerificationRun.id)
         .where(VerificationRun.id.in_(stale_run_ids))
@@ -183,10 +188,13 @@ async def resume_run(session: AsyncSession, run_id: UUID) -> int:
     run = await _lock_run(session, run_id)
     if run is None or run.status != RunStatus.FAILED.value:
         raise InputError("Chỉ tiếp tục được lần chạy đang ở trạng thái FAILED")
+    failed_jobs = (Job.run_id == run_id, Job.status == JobStatus.FAILED.value)
+    if await session.scalar(select(Job.id).where(*failed_jobs).limit(1)) is None:
+        raise InputError("Lần chạy không có giai đoạn FAILED nào để chạy lại")
     requeued = (
         await session.execute(
             update(Job)
-            .where(Job.run_id == run_id, Job.status == JobStatus.FAILED.value)
+            .where(*failed_jobs)
             .values(
                 status=JobStatus.QUEUED.value,
                 attempts=0,
