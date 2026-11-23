@@ -21,5 +21,45 @@ services:
     ports:
       - "8070:8070"
 
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    environment: &app-env
+      CITEPROOF_DATABASE_URL: postgresql+psycopg://citeproof:citeproof@db:5432/citeproof
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    command:
+      - uvicorn
+      - --factory
+      - citeproof.api.app:create_app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    environment: *app-env
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    command: ["python", "-m", "citeproof.pipeline"]
+    environment: *app-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
 volumes:
   citeproof_db:

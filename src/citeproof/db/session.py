@@ -8,10 +8,15 @@ from sqlalchemy.ext.asyncio import (
 )
 
 
-def make_engine(url: str) -> AsyncEngine:
+def make_engine(url: str, *, connect_timeout: int | None = None) -> AsyncEngine:
     # hide_parameters: thông điệp lỗi SQLAlchemy không kèm giá trị tham số (có thể là
     # nội dung tài liệu).
-    return create_async_engine(url, pool_pre_ping=True, hide_parameters=True)
+    connect_args: dict[str, int] = {}
+    if connect_timeout is not None:
+        connect_args["connect_timeout"] = connect_timeout
+    return create_async_engine(
+        url, pool_pre_ping=True, hide_parameters=True, connect_args=connect_args
+    )
 
 
 def make_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
