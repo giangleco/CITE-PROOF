@@ -45,12 +45,13 @@ Trạng thái: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `IN_REVIEW`, `COMPLETED`
 |---|---|---|---|---|---|---|
 | T-201 | Upload và kiểm tra file | MIME, chữ ký file, giới hạn (FR-01) | P0 | T-104 | NOT_STARTED | File sai bị từ chối với mã lỗi đúng |
 | T-202 | Object storage | Lớp trừu tượng: local và S3-compatible | P0 | T-102 | NOT_STARTED | Đổi backend bằng cấu hình |
-| T-203 | Parse PDF | GROBID, PyMuPDF dự phòng | P0 | T-201 | NOT_STARTED | Đạt ngưỡng G-5 trên bộ golden |
-| T-204 | Parse DOCX | python-docx | P0 | T-201 | NOT_STARTED | Tách được đoạn văn và danh mục tài liệu tham khảo trên bộ golden |
-| T-205 | Đầu vào văn bản | FR-02 | P0 | T-104 | NOT_STARTED | Đoạn văn và danh mục được tách đúng |
+| T-203 | Parse PDF | GROBID, PyMuPDF dự phòng | P0 | T-201, T-209 | NOT_STARTED | Đạt ngưỡng G-5 trên bộ golden |
+| T-204 | Parse DOCX | python-docx | P0 | T-201, T-209 | NOT_STARTED | Tách được đoạn văn và danh mục tài liệu tham khảo trên bộ golden |
+| T-205 | Đầu vào văn bản | FR-02 | P0 | T-104, T-209 | NOT_STARTED | Đoạn văn và danh mục được tách đúng |
 | T-206 | Ngôn ngữ và bảng mã | Nhận diện ngôn ngữ; phát hiện bảng mã cũ, PDF scan (FR-03, FR-04) | P0 | T-203 | NOT_STARTED | Cảnh báo đúng trên mẫu kiểm thử |
 | T-207 | Tách tài liệu tham khảo | GROBID, rule, LLM dự phòng; phân loại loại tài liệu | P0 | T-203, T-107 | NOT_STARTED | Trường được tách đúng trên bộ golden |
 | T-208 | Bộ golden parsing | Mẫu PDF/DOCX tiếng Việt, tiếng Anh, bảng mã cũ, nhiều kiểu trích dẫn | P0 | T-003 | NOT_STARTED | Bộ test có kết quả mong đợi đã kiểm tra tay |
+| T-209 | Gia hạn lease cho job chạy lâu | Thêm cột riêng `heartbeat_at`/`lease_expires_at` (không ghi đè `locked_at` vì đó là token fencing); worker gia hạn lease định kỳ khi giai đoạn đang chạy; xác định job stale dựa vào cột mới; giao lease cho stage. Điều kiện tiên quyết của stage thật đầu tiên (S1) | P0 | T-105 | NOT_STARTED | Job chạy lâu hơn `lock_timeout` không bị nhận lại khi worker còn sống; worker dừng thì lease hết hạn và job được nhận lại; mọi ghi kết quả vẫn được rào bằng `locked_at` |
 
 ## M3 — Kiểm tra tài liệu tham khảo và Pilot-α
 
