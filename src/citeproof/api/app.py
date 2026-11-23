@@ -1,4 +1,4 @@
-"""FastAPI app: endpoint health và vòng đời engine."""
+"""FastAPI app: endpoint health, giao diện web và vòng đời engine."""
 
 import logging
 from collections.abc import AsyncIterator
@@ -9,7 +9,9 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from citeproof.core.settings import Settings, get_settings
-from citeproof.db.session import make_engine
+from citeproof.db.session import make_engine, make_session_factory
+from citeproof.storage import make_storage
+from citeproof.web import mount_web
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +25,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine = make_engine(resolved.database_url, connect_timeout=HEALTH_CONNECT_TIMEOUT_SECONDS)
         app.state.engine = engine
+        app.state.session_factory = make_session_factory(engine)
+        app.state.storage = make_storage(resolved)
+        app.state.settings = resolved
         try:
             yield
         finally:
@@ -46,4 +51,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         return JSONResponse(content={"status": "ok", "database": "ok"})
 
+    mount_web(app, resolved)
     return app

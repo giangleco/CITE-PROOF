@@ -1,0 +1,20 @@
+{# Macro thành phần dùng chung (DESIGN.md §4). #}
+{% macro badge(b) -%}
+<span class="st {{ b.tone }}"><svg aria-hidden="true"><use href="#{{ b.glyph }}"/></svg>{{ b.label }}</span>
+{%- endmacro %}
+
+{% macro flag() -%}
+<span class="flag"><svg aria-hidden="true"><use href="#i-flag"/></svg>Nên tự kiểm tra</span>
+{%- endmacro %}
+
+{% macro notice(text, kind="") -%}
+<div class="notice{% if kind %} {{ kind }}{% endif %}">{{ text }}</div>
+{%- endmacro %}
+
+{% macro csrf(token) -%}
+<input type="hidden" name="csrf_token" value="{{ token }}">
+{%- endmacro %}
+
+{% macro field_error(message) -%}
+{% if message %}<p class="field-error"><svg aria-hidden="true"><use href="#i-alert"/></svg>{{ message }}</p>{% endif %}
+{%- endmacro %}
