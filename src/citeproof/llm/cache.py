@@ -125,9 +125,9 @@ class CacheEntryMeta:
     schema_version: str
 
 
-def _check_meta(meta: CacheEntryMeta) -> None:
+def validate_namespace(namespace: str, document_id: UUID | None) -> None:
     """Hợp lệ: `doc:<uuid>` khớp document_id, hoặc `eval:<dataset>@<hash>` (không document_id)."""
-    ns = meta.namespace
+    ns = namespace
     if ns.startswith("doc:"):
         part = ns[len("doc:") :]
         try:
@@ -136,7 +136,7 @@ def _check_meta(meta: CacheEntryMeta) -> None:
             raise ValueError(f"namespace doc: có UUID không hợp lệ: {ns!r}") from None
         if canonical != part:
             raise ValueError(f"UUID trong namespace phải ở dạng chuẩn: {ns!r}")
-        if meta.document_id is None or str(meta.document_id) != part:
+        if document_id is None or str(document_id) != part:
             raise ValueError("namespace 'doc:' phải khớp document_id")
         return
     if ns.startswith("eval:"):
@@ -149,10 +149,14 @@ def _check_meta(meta: CacheEntryMeta) -> None:
         )
         if invalid:
             raise ValueError(f"namespace eval: không hợp lệ: {ns!r}")
-        if meta.document_id is not None:
+        if document_id is not None:
             raise ValueError("namespace 'eval:' không được có document_id")
         return
     raise ValueError(f"namespace không hợp lệ: {ns!r}")
+
+
+def _check_meta(meta: CacheEntryMeta) -> None:
+    validate_namespace(meta.namespace, meta.document_id)
 
 
 class CacheStore(Protocol):
