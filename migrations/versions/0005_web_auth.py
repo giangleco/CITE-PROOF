@@ -20,7 +20,10 @@ def _id_created() -> list[sa.Column[object]]:
     return [
         sa.Column("id", sa.Uuid(), server_default=sa.text("gen_random_uuid()"), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
     ]
 
@@ -63,7 +66,10 @@ def upgrade() -> None:
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         *_id_created(),
         sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], name=op.f("fk_web_sessions_user_id_users"), ondelete="CASCADE"
+            ["user_id"],
+            ["users.id"],
+            name=op.f("fk_web_sessions_user_id_users"),
+            ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_web_sessions")),
         sa.UniqueConstraint("token_hash", name=op.f("uq_web_sessions_token_hash")),
