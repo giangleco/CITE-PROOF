@@ -63,3 +63,4 @@ Phát hiện mới từ desk research (`02` §4.4): R-10 tăng mức độ chú 
 | 20/11/2026 | Soạn trước toàn bộ tài liệu Phase 1–9 theo yêu cầu; desk research sơ bộ cho `02`; cập nhật NC-2 (`00`), thêm Q-10 (`01`) |
 | 23/11/2026 | Thiết kế điều phối, bộ nhớ, công cụ LLM (`07a`) được duyệt (D-11, D-12, D-13); cập nhật `04`, `07`–`13`, task-tracking; ghi ADR-009, ADR-010. Bắt đầu lập kế hoạch và viết mã M1 theo yêu cầu, song song với Phase 1 còn mở |
 | 23/11/2026 | M1 nền tảng hoàn tất trên nhánh feat/m1-foundation (T-101…T-109) |
+| 24/11/2026 | Giao diện web v1 (ADR-005; `.stitch/DESIGN.md`, `.stitch/SITE.md`) hoàn tất trên nhánh feat/web-ui: đăng nhập, đồng ý, tải lên, tiến độ, báo cáo 4 phần, phản hồi, xóa dữ liệu, bài mẫu, chế độ thử. T-305 kéo lên làm trước |

@@ -2,7 +2,7 @@
 
 | Thuộc tính | Giá trị |
 |---|---|
-| Cập nhật | 23/11/2026 |
+| Cập nhật | 24/11/2026 |
 | Trạng thái | Bản nháp trước (Phase 4) |
 | Tài liệu liên quan | `11-development-roadmap.md` |
 
@@ -43,25 +43,26 @@ Trạng thái: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `IN_REVIEW`, `COMPLETED`
 
 | ID | Task | Mô tả | Ưu tiên | Phụ thuộc | Trạng thái | Acceptance criteria |
 |---|---|---|---|---|---|---|
-| T-201 | Upload và kiểm tra file | MIME, chữ ký file, giới hạn (FR-01) | P0 | T-104 | NOT_STARTED | File sai bị từ chối với mã lỗi đúng |
-| T-202 | Object storage | Lớp trừu tượng: local và S3-compatible | P0 | T-102 | NOT_STARTED | Đổi backend bằng cấu hình |
+| T-201 | Upload và kiểm tra file | MIME, chữ ký file, giới hạn (FR-01). Đã có (nhánh `feat/web-ui`): chữ ký PDF/DOCX, giới hạn kích thước. Còn: số trang, kiểm khi parse ở S1. | P0 | T-104 | IN_PROGRESS | File sai bị từ chối với mã lỗi đúng |
+| T-202 | Object storage | Lớp trừu tượng: local và S3-compatible. Đã có backend local (`citeproof.storage`); còn S3-compatible. | P0 | T-102 | IN_PROGRESS | Đổi backend bằng cấu hình |
 | T-203 | Parse PDF | GROBID, PyMuPDF dự phòng | P0 | T-201, T-209 | NOT_STARTED | Đạt ngưỡng G-5 trên bộ golden |
 | T-204 | Parse DOCX | python-docx | P0 | T-201, T-209 | NOT_STARTED | Tách được đoạn văn và danh mục tài liệu tham khảo trên bộ golden |
-| T-205 | Đầu vào văn bản | FR-02 | P0 | T-104, T-209 | NOT_STARTED | Đoạn văn và danh mục được tách đúng |
+| T-205 | Đầu vào văn bản | FR-02. Đã có phần nhận đoạn văn và danh mục trên giao diện (lưu JSON); còn tách ở S1/S2. | P0 | T-104, T-209 | IN_PROGRESS | Đoạn văn và danh mục được tách đúng |
 | T-206 | Ngôn ngữ và bảng mã | Nhận diện ngôn ngữ; phát hiện bảng mã cũ, PDF scan (FR-03, FR-04) | P0 | T-203 | NOT_STARTED | Cảnh báo đúng trên mẫu kiểm thử |
 | T-207 | Tách tài liệu tham khảo | GROBID, rule, LLM dự phòng; phân loại loại tài liệu | P0 | T-203, T-107 | NOT_STARTED | Trường được tách đúng trên bộ golden |
 | T-208 | Bộ golden parsing | Mẫu PDF/DOCX tiếng Việt, tiếng Anh, bảng mã cũ, nhiều kiểu trích dẫn | P0 | T-003 | NOT_STARTED | Bộ test có kết quả mong đợi đã kiểm tra tay |
-| T-209 | Gia hạn lease cho job chạy lâu | Thêm cột riêng `heartbeat_at`/`lease_expires_at` (không ghi đè `locked_at` vì đó là token fencing); worker gia hạn lease định kỳ khi giai đoạn đang chạy; xác định job stale dựa vào cột mới; giao lease cho stage. Điều kiện tiên quyết của stage thật đầu tiên (S1) | P0 | T-105 | NOT_STARTED | Job chạy lâu hơn `lock_timeout` không bị nhận lại khi worker còn sống; worker dừng thì lease hết hạn và job được nhận lại; mọi ghi kết quả vẫn được rào bằng `locked_at` |
+| T-209 | Gia hạn lease cho job chạy lâu | Thêm cột riêng `heartbeat_at`/`lease_expires_at` (không ghi đè `locked_at` vì đó là token fencing); worker gia hạn lease định kỳ khi giai đoạn đang chạy; xác định job stale dựa vào cột mới; giao lease cho stage. Điều kiện tiên quyết của stage thật đầu tiên (S1). Lưu thêm thời điểm bắt đầu và kết thúc của từng job (giao diện admin đang hiện `[chưa có]` cho thời lượng bước). | P0 | T-105 | NOT_STARTED | Job chạy lâu hơn `lock_timeout` không bị nhận lại khi worker còn sống; worker dừng thì lease hết hạn và job được nhận lại; mọi ghi kết quả vẫn được rào bằng `locked_at` |
 
 ## M3 — Kiểm tra tài liệu tham khảo và Pilot-α
 
 | ID | Task | Mô tả | Ưu tiên | Phụ thuộc | Trạng thái | Acceptance criteria |
 |---|---|---|---|---|---|---|
-| T-301 | Connector metadata | Crossref, OpenAlex, Semantic Scholar theo `MetadataConnector` | P0 | T-107 | NOT_STARTED | Test với phản hồi HTTP đã ghi sẵn |
+| T-301 | Connector metadata | Crossref, OpenAlex, Semantic Scholar theo `MetadataConnector`. Dòng `works` có `metadata_source = "sample"` (bài mẫu) được phép bị kết quả tra cứu thật ghi đè. | P0 | T-107 | NOT_STARTED | Test với phản hồi HTTP đã ghi sẵn |
 | T-302 | So khớp và gán trạng thái | Bộ trạng thái `04` §4.5.2; liệt kê trường lệch | P0 | T-301, T-207 | NOT_STARTED | Đúng trạng thái trên tập D5 (`13`) |
 | T-303 | Tài liệu web | URL còn hoạt động, bản lưu trữ (FR-15) | P1 | T-302 | NOT_STARTED | Kết quả đúng trên mẫu URL |
-| T-304 | Cache, giới hạn tốc độ, ngắt mạch | `metadata_cache` theo hash truy vấn, có TTL; backoff; ngắt mạch theo nguồn; `LOOKUP_FAILED` khi không nguồn nào tra được (`07a` §4.3.5) | P0 | T-301 | NOT_STARTED | Lần chạy thứ hai không gọi lại API cho cùng tài liệu; `sources_searched` chỉ chứa nguồn thành công |
-| T-305 | Giao diện tối thiểu | Đăng nhập, đồng ý, tải lên, xem kết quả tài liệu tham khảo | P0 | T-302 | NOT_STARTED | Người dùng hoàn thành luồng mà không cần hướng dẫn |
+| T-304 | Cache, giới hạn tốc độ, ngắt mạch | `metadata_cache` theo hash truy vấn, có TTL; backoff; ngắt mạch theo nguồn; `LOOKUP_FAILED` khi không nguồn nào tra được (`07a` §4.3.5). Dòng `works` có `metadata_source = "sample"` được phép bị ghi đè. | P0 | T-301 | NOT_STARTED | Lần chạy thứ hai không gọi lại API cho cùng tài liệu; `sources_searched` chỉ chứa nguồn thành công |
+| T-305 | Giao diện tối thiểu | Đăng nhập, đồng ý, tải lên, xem kết quả tài liệu tham khảo. Làm trước theo yêu cầu (web UI v1, spec `superpowers/specs/2026-11-24-web-ui-design.md`); hiển thị kết quả thật khi T-302 ghi `reference_checks`. | P0 | T-302 | COMPLETED | Người dùng hoàn thành luồng mà không cần hướng dẫn |
+| T-307 | Bài mẫu, CLI, chế độ thử | `seed-sample`, `create-user`, `create-invite`; bước giả lập ở local (spec web UI §7.8, §7.11) | P1 | T-305 | COMPLETED | Bài mẫu phủ mọi trạng thái; thử được lỗi và tiếp tục ở trang tiến độ |
 | T-306 | Pilot-α | 2–5 người dùng thử phần kiểm tra tài liệu tham khảo | P1 | T-305 | NOT_STARTED | Ghi nhận phản hồi; cập nhật `04` nếu cần |
 
 ## M4 — Claim và nguồn
@@ -92,13 +93,14 @@ Trạng thái: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `IN_REVIEW`, `COMPLETED`
 
 | ID | Task | Mô tả | Ưu tiên | Phụ thuộc | Trạng thái | Acceptance criteria |
 |---|---|---|---|---|---|---|
-| T-601 | Báo cáo | Các phần ở `04` §4.8 | P0 | T-503 | NOT_STARTED | Báo cáo đủ phần trên bài thật |
-| T-602 | Xem bằng chứng | Đoạn trích, trang, mục, liên kết (FR-51) | P0 | T-601 | NOT_STARTED | US-06 đạt |
-| T-603 | Phản hồi | FR-70 | P0 | T-601 | NOT_STARTED | US-09 đạt |
-| T-604 | Xuất báo cáo | Markdown/HTML (FR-53) | P1 | T-601 | NOT_STARTED | File xuất mở được, đủ nội dung |
-| T-605 | Xóa dữ liệu | FR-62 theo `08` §4.5. Kèm: xóa `feedback` theo mục tiêu và đặt `llm_calls.cache_key` về NULL khi xóa tài liệu (quyết định ở nhánh M1) | P0 | T-104 | NOT_STARTED | US-10 đạt; không còn file trong storage |
+| T-601 | Báo cáo | Các phần ở `04` §4.8. Phần giao diện và xuất Markdown đã có (web UI v1); chờ dữ liệu thật từ T-503. | P0 | T-503 | IN_PROGRESS | Báo cáo đủ phần trên bài thật |
+| T-602 | Xem bằng chứng | Đoạn trích, trang, mục, liên kết (FR-51). Tờ đối chiếu đã có (web UI v1); chờ dữ liệu thật. | P0 | T-601 | IN_PROGRESS | US-06 đạt |
+| T-603 | Phản hồi | FR-70. Web UI v1. | P0 | T-601 | COMPLETED | US-09 đạt |
+| T-604 | Xuất báo cáo | Markdown/HTML (FR-53). Markdown đã có; HTML in được để sau. | P1 | T-601 | IN_PROGRESS | File xuất mở được, đủ nội dung |
+| T-605 | Xóa dữ liệu | FR-62 theo `08` §4.5. Kèm: xóa `feedback` theo mục tiêu và đặt `llm_calls.cache_key` về NULL khi xóa tài liệu (quyết định ở nhánh M1). Web UI v1: xóa tài liệu và tài khoản, kèm dọn storage. | P0 | T-104 | COMPLETED | US-10 đạt; không còn file trong storage |
 | T-606 | Triển khai pilot | Theo `14` | P0 | T-601 | NOT_STARTED | Checklist `14` §5 đạt |
 | T-607 | Pilot-β | Mời người dùng pilot | P0 | T-606, checklist `10` §5 | NOT_STARTED | Ít nhất một lần chạy hoàn chỉnh từ mỗi người dùng tham gia |
+| T-608 | Giới hạn số yêu cầu mỗi phút | Gia cố trước pilot cho toàn bộ web/API (`09` §4.5) | P0 | T-606 | NOT_STARTED | Vượt ngưỡng trả 429 |
 
 ## M7 — Thực nghiệm
 

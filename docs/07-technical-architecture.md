@@ -206,7 +206,7 @@ claim_verification → verification_run.config (biến thể, model, prompt vers
 | ADR-002 | Pipeline tự viết thay cho LangGraph trong MVP | Đề xuất |
 | ADR-003 | Hàng đợi trên PostgreSQL thay cho Redis | Đề xuất |
 | ADR-004 | GROBID cho parse PDF | Chờ SPK-01 |
-| ADR-005 | Giao diện server-rendered cho pilot | Đề xuất |
+| ADR-005 | Giao diện server-rendered cho pilot | Accepted |
 | ADR-006 | Lớp truy cập LLM | Đề xuất |
 | ADR-007 | Embedding và chiến lược xuyên ngôn ngữ | Chờ SPK-04 |
 | ADR-008 | Tái sử dụng hay tự xây kiểm tra tài liệu tham khảo | Chờ T-002 |

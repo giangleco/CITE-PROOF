@@ -49,7 +49,8 @@ async def test_run_page_shows_failure_and_resume(
             error={"stage": "S1", "type": "InputError", "message": "Lỗi mô phỏng ở bước 1"},
         )
     html = (await client.get(f"/runs/{run_id}")).text
-    assert "Lỗi mô phỏng ở bước 1" in html and "Tiếp tục từ bước 1" in html
+    assert "Lỗi mô phỏng ở bước 1. Các bước trước vẫn giữ nguyên." in html
+    assert "Tiếp tục từ bước 1" in html
     response = await client.post(
         f"/runs/{run_id}/resume", data={"csrf_token": await page_csrf(client, f"/runs/{run_id}")}
     )

@@ -55,34 +55,34 @@ src/citeproof/
 
 **Trang**
 - [x] Bản thử tham chiếu `prototype-v1.html` (toàn bộ luồng, dữ liệu mẫu, không nối backend)
-- [ ] `/login` Đăng nhập
-- [ ] `/register` Đăng ký bằng mã mời
-- [ ] `/consent` Đồng ý gửi nội dung tới nhà cung cấp mô hình ngôn ngữ
-- [ ] `/` chuyển tới `/documents`
-- [ ] `/documents` Tài liệu của tôi (lần chạy mới nhất của mỗi bài; nhãn "Bài mẫu"; trạng thái rỗng kèm "Kiểm tra bài mới" và, ở local, "Thêm bài mẫu")
-- [ ] `/documents/new` Kiểm tra bài mới (tab tải file PDF/DOCX, tab dán đoạn văn; admin chọn biến thể; ở local có khối "Chế độ thử" đặt thời gian mỗi bước và bước giả lập lỗi)
-- [ ] `/runs/{id}` Tiến độ 9 bước (tự cập nhật; tiếp tục sau lỗi; admin thấy chi tiết kỹ thuật)
-- [ ] `/runs/{id}/report` Báo cáo, tab Tổng quan
-- [ ] `/runs/{id}/references` Tài liệu tham khảo (`?status=`)
-- [ ] `/runs/{id}/claims` Nhận định và tờ đối chiếu (`?status=`, `?ref=`, `?flag=1`, `?c=`)
-- [ ] `/runs/{id}/missing` Thiếu toàn văn (chỉ liệt kê ở v1)
-- [ ] `/runs/{id}/report.md` Tải báo cáo Markdown
-- [ ] `/account` Tài khoản (thông tin, xóa tài khoản)
-- [ ] Trang lỗi 403, 404, 413, 429, 500
+- [x] `/login` Đăng nhập
+- [x] `/register` Đăng ký bằng mã mời
+- [x] `/consent` Đồng ý gửi nội dung tới nhà cung cấp mô hình ngôn ngữ
+- [x] `/` chuyển tới `/documents`
+- [x] `/documents` Tài liệu của tôi (lần chạy mới nhất của mỗi bài; nhãn "Bài mẫu"; trạng thái rỗng kèm "Kiểm tra bài mới" và, ở local, "Thêm bài mẫu")
+- [x] `/documents/new` Kiểm tra bài mới (tab tải file PDF/DOCX, tab dán đoạn văn; admin chọn biến thể; ở local có khối "Chế độ thử" đặt thời gian mỗi bước và bước giả lập lỗi)
+- [x] `/runs/{id}` Tiến độ 9 bước (tự cập nhật; tiếp tục sau lỗi; admin thấy chi tiết kỹ thuật)
+- [x] `/runs/{id}/report` Báo cáo, tab Tổng quan
+- [x] `/runs/{id}/references` Tài liệu tham khảo (`?status=`)
+- [x] `/runs/{id}/claims` Nhận định và tờ đối chiếu (`?status=`, `?ref=`, `?flag=1`, `?c=`)
+- [x] `/runs/{id}/missing` Thiếu toàn văn (chỉ liệt kê ở v1)
+- [x] `/runs/{id}/report.md` Tải báo cáo Markdown
+- [x] `/account` Tài khoản (thông tin, xóa tài khoản)
+- [x] Trang lỗi 403, 404, 413, 429, 500
 
 **Hành động (POST)**
-- [ ] `/login`, `/register`, `/logout`, `/consent`
-- [ ] `/documents` (file), `/documents/text` (đoạn văn)
-- [ ] `/documents/{id}/runs` Kiểm tra lại
-- [ ] `/documents/{id}/delete` Xóa bài
-- [ ] `/runs/{id}/resume` Tiếp tục từ bước lỗi
-- [ ] `/claim-verifications/{id}/feedback` Phản hồi
-- [ ] `/account/delete` Xóa tài khoản
-- [ ] `/dev/sample` Thêm bài mẫu (chỉ khi `CITEPROOF_ENV=local`)
+- [x] `/login`, `/register`, `/logout`, `/consent`
+- [x] `/documents` (file), `/documents/text` (đoạn văn)
+- [x] `/documents/{id}/runs` Kiểm tra lại
+- [x] `/documents/{id}/delete` Xóa bài
+- [x] `/runs/{id}/resume` Tiếp tục từ bước lỗi
+- [x] `/claim-verifications/{id}/feedback` Phản hồi
+- [x] `/account/delete` Xóa tài khoản
+- [x] `/dev/sample` Thêm bài mẫu (chỉ khi `CITEPROOF_ENV=local`)
 
 **Mảnh HTMX (GET)**
-- [ ] `/runs/{id}/progress` Khối tiến độ
-- [ ] `/runs/{id}/claims/{claim_verification_id}` Tờ đối chiếu
+- [x] `/runs/{id}/progress` Khối tiến độ
+- [x] `/runs/{id}/claims/{claim_verification_id}` Tờ đối chiếu
 
 ## 5. Lộ trình
 

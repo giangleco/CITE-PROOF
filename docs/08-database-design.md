@@ -365,6 +365,18 @@ Quy ước chung: khóa chính `id UUID`; mọi bảng có `created_at TIMESTAMP
 - File `USER_UPLOAD` bắt buộc có `owner_user_id` và không bao giờ được dùng cho người dùng khác, kể cả khi trùng `sha256`.
 - Lưu model, phiên bản prompt và thời điểm truy xuất cho mọi kết quả.
 
+### 4.4a Dạng dữ liệu JSON mà giao diện đọc
+
+Chốt ngày 24/11/2026 (spec web UI §7.12). Các giai đoạn M2–M5 ghi đúng dạng này để giao diện hiển thị được mà không sửa.
+
+| Trường | Dạng | Ghi chú |
+|---|---|---|
+| `reference_checks.mismatches` | Danh sách `{"field", "in_document", "found"}` như `09` §4.4 | Giá trị mặc định `{}` được hiểu là rỗng. `field` thuộc `title`, `authors`, `year`, `venue`, `doi` |
+| `verification_runs.warnings` | Danh sách mã chuỗi | Khớp `StageResult.warnings`; câu hiển thị ở `.stitch/DESIGN.md` §8.6 |
+| `documents.parse_warnings` | Danh sách `{"code", ...chi tiết}` | Ví dụ `{"code": "SCANNED_PAGES", "pages": [41, 42, 43]}`; `SAMPLE_DOCUMENT` đánh dấu bài mẫu |
+
+Bảng xác thực thêm ở migration `0005`: `invites` (mã mời, lưu SHA-256), `web_sessions` (token phiên lưu SHA-256, token CSRF), `login_attempts` (giới hạn đăng nhập).
+
 ### 4.5 Lưu giữ và xóa dữ liệu
 
 | Dữ liệu | Khi xóa tài liệu | Khi xóa tài khoản |

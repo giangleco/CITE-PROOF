@@ -21,7 +21,8 @@
   <div class="side-blocks">
     {% if view.status == 'FAILED' %}
     <div class="panel side-block">
-      <div class="notice err">{{ view.error_message }} Các bước trước vẫn giữ nguyên.</div>
+      {% set msg = view.error_message or '' %}
+      <div class="notice err">{{ msg }}{% if msg and msg[-1] not in '.!?' %}.{% endif %} Các bước trước vẫn giữ nguyên.</div>
       {% if view.failed_stage %}
       <form method="post" action="/runs/{{ view.id }}/resume">
         {{ csrf(csrf_token) }}

@@ -98,6 +98,8 @@ Rủi ro dự án (R-xx) nằm ở `01` §8; sổ này chỉ chứa rủi ro b�
 - [ ] Không còn nội dung tài liệu trong log (kiểm tra log mẫu).
 - [ ] Bí mật nằm ngoài repo; quét bí mật trong CI đạt.
 - [ ] Màn hình đồng ý và chức năng xóa dữ liệu hoạt động.
+- [ ] Màn hình đồng ý hiển thị tên nhà cung cấp LLM và liên kết chính sách dữ liệu (`CITEPROOF_LLM_PROVIDER_NAME`, `CITEPROOF_LLM_PROVIDER_POLICY_URL`).
+- [ ] Giới hạn số yêu cầu mỗi phút đã bật cho web và API (T-608).
 - [ ] Đã đọc chính sách dữ liệu của nhà cung cấp LLM và ghi kết luận vào Decision Log.
 - [ ] Hạn mức và cảnh báo ngân sách đã cấu hình.
 - [ ] Đã thử khôi phục từ bản sao lưu ít nhất một lần.
