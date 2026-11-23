@@ -110,6 +110,9 @@ async def test_job_unique_per_run_stage(
         assert job.status == JobStatus.QUEUED.value
         assert job.attempts == 0
         assert job.run_after is not None
+        assert job.locked_at is None
+        assert job.locked_by is None
+        assert job.last_error is None
         s.add(Job(run_id=run.id, stage=StageName.S2.value))
         await s.flush()
         s.add(Job(run_id=run.id, stage=StageName.S1.value))

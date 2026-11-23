@@ -153,6 +153,9 @@ def upgrade() -> None:
         sa.Column(
             "run_after", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False
         ),
+        sa.Column("locked_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("locked_by", sa.Text(), nullable=True),
+        sa.Column("last_error", sa.Text(), nullable=True),
         sa.Column("id", sa.Uuid(), server_default=sa.text("gen_random_uuid()"), nullable=False),
         sa.Column(
             "created_at",
