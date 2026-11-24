@@ -1,14 +1,15 @@
 """Ghép stage thật thành registry cho worker (spec §6.3)."""
 
 from citeproof.core.enums import StageName
+from citeproof.modules.documents.stage import ParseStage
 from citeproof.pipeline.demo import DemoStage
 from citeproof.pipeline.deps import PipelineDeps
 from citeproof.pipeline.stages import NoopStage, PipelineStage, StageRegistry
 
 
 def _real_stages(deps: PipelineDeps) -> dict[StageName, PipelineStage]:
-    """Stage đã có cài đặt thật; task sau thêm vào đây (ví dụ S1: `ParseStage(deps)`)."""
-    return {}
+    """Stage đã có cài đặt thật; task sau thêm vào đây."""
+    return {StageName.S1: ParseStage(deps)}
 
 
 def build_registry(deps: PipelineDeps) -> StageRegistry:

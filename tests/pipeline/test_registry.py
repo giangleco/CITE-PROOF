@@ -9,13 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from citeproof.core.enums import RunStatus, StageName
 from citeproof.core.settings import Settings
-from citeproof.db.models import VerificationRun
+from citeproof.db.models import Document, VerificationRun
+from citeproof.modules.documents.stage import ParseStage
 from citeproof.pipeline.demo import DemoStage
 from citeproof.pipeline.registry import build_registry
-from citeproof.pipeline.runs import create_run
 from citeproof.pipeline.stages import NoopStage
-from tests.db.factories import make_document
+from citeproof.services import documents
+from citeproof.storage import LocalStorage
 from tests.pipeline.helpers import drain, make_test_deps, pipeline_settings
+from tests.services.helpers import new_user
 
 SessionFactory = async_sessionmaker[AsyncSession]
 
@@ -26,11 +28,14 @@ def _settings(tmp_path: Path, **overrides: Any) -> Settings:
 
 def test_build_registry_wraps_demo_only_in_local(tmp_path: Path) -> None:
     local = build_registry(make_test_deps(_settings(tmp_path, env="local"), async_sessionmaker()))
-    assert isinstance(local.get(StageName.S1), DemoStage)
+    wrapped = local.get(StageName.S1)
+    assert isinstance(wrapped, DemoStage)
+    assert isinstance(wrapped.inner, ParseStage)
     for env in ("pilot", "test"):
         other = build_registry(make_test_deps(_settings(tmp_path, env=env), async_sessionmaker()))
         assert not isinstance(other.get(StageName.S1), DemoStage)
-        assert isinstance(other.get(StageName.S1), NoopStage)
+        assert isinstance(other.get(StageName.S1), ParseStage)
+        assert isinstance(other.get(StageName.S2), NoopStage)
 
 
 @pytest.mark.parametrize("env", ["local", "pilot"])
@@ -44,16 +49,25 @@ def test_build_registry_covers_every_stage(tmp_path: Path, env: str) -> None:
 async def test_built_registry_completes_run(
     session_factory: SessionFactory, clean_db: None, tmp_path: Path
 ) -> None:
+    settings = _settings(tmp_path, env="pilot")
     async with session_factory() as session:
-        doc = await make_document(session)
-        run_id = await create_run(
-            session, document_id=doc.id, user_id=doc.user_id, config={"variant": "V2"}
+        user = await new_user(session)
+        doc, run_id = await documents.create_text_document(
+            session,
+            LocalStorage(settings.storage_dir),
+            settings,
+            user=user,
+            title=None,
+            body="Mô hình đạt độ chính xác cao hơn [1].",
+            references="[1] Nguyễn Văn An (2020), Phân loại văn bản tiếng Việt.",
         )
         await session.commit()
-    registry = build_registry(make_test_deps(_settings(tmp_path, env="pilot"), session_factory))
+    registry = build_registry(make_test_deps(settings, session_factory))
     assert await drain(session_factory, registry, pipeline_settings()) == len(StageName)
     async with session_factory() as session:
         status = await session.scalar(
             select(VerificationRun.status).where(VerificationRun.id == run_id)
         )
+        parsed_key = await session.scalar(select(Document.parsed_key).where(Document.id == doc.id))
     assert status == RunStatus.COMPLETED.value
+    assert parsed_key is not None

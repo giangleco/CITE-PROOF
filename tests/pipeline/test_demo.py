@@ -13,8 +13,9 @@ from citeproof.db.models import User, VerificationRun
 from citeproof.pipeline.demo import DemoStage
 from citeproof.pipeline.registry import build_registry
 from citeproof.pipeline.stages import StageResult
-from citeproof.services import runs_view
+from citeproof.services import documents, runs_view
 from citeproof.services.documents import DemoConfig
+from citeproof.storage import LocalStorage
 from tests.pipeline.helpers import (
     CountingStage,
     drain,
@@ -22,7 +23,7 @@ from tests.pipeline.helpers import (
     pipeline_settings,
     stage_context,
 )
-from tests.services.helpers import new_run, new_user
+from tests.services.helpers import new_user
 
 SessionFactory = async_sessionmaker[AsyncSession]
 
@@ -38,9 +39,21 @@ class FakeSleep:
 async def _run(
     session_factory: SessionFactory, settings: Settings, cfg: DemoConfig | None
 ) -> tuple[User, uuid.UUID]:
+    # Tài liệu văn bản: S1 thật parse được (PDF chờ Task 6).
     async with session_factory() as s:
         user = await new_user(s)
-        return user, await new_run(s, settings, user, config_demo=cfg)
+        _, run_id = await documents.create_text_document(
+            s,
+            LocalStorage(settings.storage_dir),
+            settings,
+            user=user,
+            title=None,
+            body="Mô hình đạt độ chính xác cao hơn [1].",
+            references="[1] Nguyễn Văn An (2020), Phân loại văn bản tiếng Việt.",
+            demo=cfg,
+        )
+        await s.commit()
+        return user, run_id
 
 
 async def _status(session_factory: SessionFactory, run_id: uuid.UUID) -> VerificationRun:
