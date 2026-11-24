@@ -324,6 +324,9 @@ async def test_s1_golden_pdf_via_grobid(
     parsed = ParsedDocument.model_validate_json(await deps.storage.get(stored.parsed_key))
     assert parsed.source == "grobid"
     assert parsed.page_count == case.expected.page_count
+    # `vi_mixed_apa`: GROBID trả listBibl rỗng, danh mục lấy từ văn bản pypdfium2.
+    assert parsed.references_raw is not None
+    assert len(parsed.references_raw) == len(case.expected.references)
 
 
 @pytest.mark.db

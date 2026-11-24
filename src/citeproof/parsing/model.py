@@ -52,6 +52,15 @@ def _clean(text: str) -> str:
     return unicodedata.normalize("NFC", text).strip()
 
 
+def _clean_references(references_raw: Sequence[RawReference]) -> list[RawReference]:
+    references: list[RawReference] = []
+    for ref in references_raw:
+        raw = _clean(ref.raw)
+        if raw:
+            references.append(ref.model_copy(update={"raw": raw}))
+    return references
+
+
 class ParsedDocument(BaseModel):
     schema_version: SchemaVersion = SCHEMA_VERSION
     source: ParsedSource
@@ -96,18 +105,15 @@ class ParsedDocument(BaseModel):
                 )
             )
             offset += len(text)
-        references: list[RawReference] | None = None
-        if references_raw is not None:
-            references = []
-            for ref in references_raw:
-                raw = _clean(ref.raw)
-                if raw:
-                    references.append(ref.model_copy(update={"raw": raw}))
         return cls(
             schema_version=SCHEMA_VERSION,
             source=source,
             page_count=page_count,
             language=document_language(paragraphs),
             paragraphs=paragraphs,
-            references_raw=references,
+            references_raw=None if references_raw is None else _clean_references(references_raw),
         )
+
+    def with_references_raw(self, references_raw: Sequence[RawReference]) -> Self:
+        """Bản sao với danh mục thô thay thế (chuẩn hóa như `build`); đoạn giữ nguyên."""
+        return self.model_copy(update={"references_raw": _clean_references(references_raw)})

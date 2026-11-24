@@ -7,7 +7,8 @@ import pytest
 
 from citeproof.core.errors import InputError, RetryableError
 from citeproof.integrations.grobid import GrobidClient
-from citeproof.parsing.model import ParsedDocument
+from citeproof.parsing import pdf as pdf_module
+from citeproof.parsing.model import ParsedDocument, RawReference
 from citeproof.parsing.pdf import (
     document_from_page_texts,
     parse_pdf_document,
@@ -15,10 +16,12 @@ from citeproof.parsing.pdf import (
     pdf_metadata_title,
     pdf_page_count,
     pdf_page_texts,
+    reference_entries_from_page_texts,
     scanned_pages,
 )
+from citeproof.parsing.tei import parse_fulltext_tei
 from tests.files import PDF_BYTES
-from tests.golden.cases import GOLDEN_DIR
+from tests.golden.cases import GOLDEN_DIR, GoldenExpected
 
 Handler = Callable[[httpx.Request], httpx.Response]
 
@@ -239,3 +242,152 @@ async def test_image_only_pdf_has_no_text() -> None:
     assert caught.value.code == "NO_TEXT_EXTRACTED"
     assert str(caught.value) == "Không trích được văn bản từ tệp PDF. Tệp có thể là ảnh quét."
     assert recorder.calls == 0  # không gửi tệp không có chữ cho GROBID
+
+
+# --- Danh mục từ văn bản pypdfium2 khi GROBID trả `listBibl` rỗng (ruling Task 6) -----------
+
+# Chuỗi gốc của `vi_mixed_apa.pdf` (scripts/make_golden_fixtures.py, MIXED_APA_REFS).
+VI_MIXED_APA_RAWS = [
+    "Devlin, J., Chang, M.-W., Lee, K., & Toutanova, K. (2019). BERT: Pre-training of deep "
+    "bidirectional transformers for language understanding. In Proceedings of the 2019 "
+    "Conference of the North American Chapter of the Association for Computational "
+    "Linguistics (pp. 4171-4186). https://doi.org/10.18653/v1/N19-1423",
+    "Nguyễn Văn An (2020). Phân loại văn bản tiếng Việt bằng mạng nơ-ron tích chập. "
+    "Tạp chí Khoa học và Công nghệ Mẫu, 12(3), 45-58.",
+    "Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, L., "
+    "& Polosukhin, I. (2017). Attention is all you need. arXiv preprint arXiv:1706.03762. "
+    "https://doi.org/10.48550/arXiv.1706.03762",
+]
+# Chuỗi gốc của `en_ieee.pdf` (IEEE_REFS), nhãn [n] tách riêng.
+EN_IEEE_RAWS = [
+    'A. Vaswani et al., "Attention is all you need," arXiv:1706.03762, 2017, '
+    "doi: 10.48550/arXiv.1706.03762.",
+    'J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova, "BERT: Pre-training of deep '
+    'bidirectional transformers for language understanding," in Proc. NAACL-HLT, 2019, '
+    "pp. 4171-4186, doi: 10.18653/v1/N19-1423.",
+    'K. He, X. Zhang, S. Ren, and J. Sun, "Deep residual learning for image recognition," '
+    "in Proc. IEEE CVPR, 2016, pp. 770-778, doi: 10.1109/CVPR.2016.90.",
+    'S. Hochreiter and J. Schmidhuber, "Long short-term memory," Neural Comput., vol. 9, '
+    "no. 8, pp. 1735-1780, 1997, doi: 10.1162/neco.1997.9.8.1735.",
+]
+
+
+def _expected(name: str) -> GoldenExpected:
+    path = GOLDEN_DIR / f"{name}.expected.json"
+    return GoldenExpected.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+class EntriesSpy:
+    """Bọc `reference_entries_from_page_texts` để đếm số lần đường pypdfium2 được gọi."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self, page_texts: list[str]) -> list[RawReference]:
+        self.calls += 1
+        return reference_entries_from_page_texts(page_texts)
+
+
+async def test_empty_listbibl_takes_references_from_pdfium(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    spy = EntriesSpy()
+    monkeypatch.setattr(pdf_module, "reference_entries_from_page_texts", spy)
+    tei = _tei("vi_mixed_apa")  # GROBID 0.8.1 trả <listBibl/> rỗng cho tệp này
+    recorder = Recorder(lambda request: httpx.Response(200, text=tei))
+    doc, warnings = await parse_pdf_document(
+        _pdf("vi_mixed_apa"), grobid=_grobid(recorder), allow_fallback=False
+    )
+    assert spy.calls == 1
+    assert warnings == []
+    # Thân bài, mục và trang vẫn lấy từ GROBID; chỉ danh mục lấy từ pypdfium2.
+    assert doc.source == "grobid"
+    assert doc.paragraphs == parse_fulltext_tei(tei, page_count=2).paragraphs
+    assert doc.references_raw is not None
+    assert [ref.raw for ref in doc.references_raw] == VI_MIXED_APA_RAWS
+    # Chưa có trường parse: S2 xử lý như danh mục DOCX/văn bản (processCitationList, rule).
+    assert all(ref.parsed is None and ref.label is None for ref in doc.references_raw)
+    assert [ref.page for ref in doc.references_raw] == [2, 2, 2]
+    for ref, want in zip(doc.references_raw, _expected("vi_mixed_apa").references, strict=True):
+        assert want.title is not None and want.title in ref.raw
+        assert str(want.year) in ref.raw
+        assert want.doi is None or want.doi in ref.raw
+        assert want.first_author_family is not None
+        assert ref.raw.startswith(want.first_author_family)
+
+
+async def test_grobid_references_skip_pdfium_reference_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    spy = EntriesSpy()
+    monkeypatch.setattr(pdf_module, "reference_entries_from_page_texts", spy)
+    recorder = Recorder(lambda request: httpx.Response(200, text=_tei("en_ieee")))
+    doc, _ = await parse_pdf_document(
+        _pdf("en_ieee"), grobid=_grobid(recorder), allow_fallback=False
+    )
+    assert spy.calls == 0
+    assert doc.references_raw is not None and len(doc.references_raw) == 4
+    assert all(ref.parsed is not None for ref in doc.references_raw)
+
+
+async def test_empty_listbibl_without_reference_heading_keeps_no_references() -> None:
+    recorder = Recorder(lambda request: httpx.Response(200, text=_tei("vi_scanned_pages")))
+    doc, _ = await parse_pdf_document(
+        _pdf("vi_scanned_pages"), grobid=_grobid(recorder), allow_fallback=False
+    )
+    assert doc.source == "grobid"
+    assert doc.references_raw == []  # S2 giữ cảnh báo NO_REFERENCE_SECTION
+
+
+def test_reference_entries_labelled_list() -> None:
+    entries = reference_entries_from_page_texts(pdf_page_texts(_pdf("en_ieee")))
+    assert [ref.label for ref in entries] == ["1", "2", "3", "4"]
+    assert [ref.raw for ref in entries] == EN_IEEE_RAWS
+    assert {ref.page for ref in entries} == {2}
+    # Dòng bắt đầu bằng số nhỏ hơn nhãn trước là dòng bị ngắt, không phải mục mới.
+    numbered = reference_entries_from_page_texts(
+        ["References\n[3] C. Author, vol. 12, no.\n2. pp. 1-9, 2021.\n[4] D. Author, 2022."]
+    )
+    assert [(ref.label, ref.raw) for ref in numbered] == [
+        ("3", "C. Author, vol. 12, no. 2. pp. 1-9, 2021."),
+        ("4", "D. Author, 2022."),
+    ]
+    zero = reference_entries_from_page_texts(["References\n[0] Z. Author, 2020.\n[1] Y. B, 2021."])
+    assert [(ref.label, ref.raw) for ref in zero] == [
+        ("0", "Z. Author, 2020."),
+        ("1", "Y. B, 2021."),
+    ]
+
+
+def test_reference_entries_unlabelled_rules() -> None:
+    pages = [
+        "Mục lục\nTài liệu tham khảo\n1. Giới thiệu\nNội dung.",
+        "Tài liệu tham khảo\n"
+        "Smith, J., Brown, A.\n"  # kết thúc bằng chữ viết tắt tên: còn tiếp
+        "& Lee, K. (2016).\n"  # kết thúc bằng (năm).: dòng sau là tiêu đề
+        "Deep Residual Learning for Image Recognition.\n"
+        "In Proceedings of CVPR (pp. 770-778). https://doi.org/\n"  # "In" không mở mục mới
+        "10.1109/CVPR.2016.90\n"  # URL bị ngắt sau "/": nối liền
+        "12\n"  # số trang ở chân trang
+        "Nguyễn Văn An (2020). Phân loại văn bản. Tạp chí Mẫu,\n"
+        "12(3), 45-58.\n"
+        "Devlin, J. (2019). Some title.\n"
+        "BERT: Pre-training revisited. NAACL.\n"  # "BERT:" không phải tên tác giả
+        "\n"
+        "bộ dữ liệu mở (2021). Không có tác giả.\n"  # sau dòng trống: mục mới
+        "Phụ lục A\n"
+        "Câu hỏi 1.",
+    ]
+    entries = reference_entries_from_page_texts(pages)
+    assert [ref.raw for ref in entries] == [
+        "Smith, J., Brown, A. & Lee, K. (2016). Deep Residual Learning for Image Recognition. "
+        "In Proceedings of CVPR (pp. 770-778). https://doi.org/10.1109/CVPR.2016.90",
+        "Nguyễn Văn An (2020). Phân loại văn bản. Tạp chí Mẫu, 12(3), 45-58.",
+        "Devlin, J. (2019). Some title. BERT: Pre-training revisited. NAACL.",
+        "bộ dữ liệu mở (2021). Không có tác giả.",
+    ]
+    assert all(ref.label is None and ref.page == 2 for ref in entries)
+
+
+def test_reference_entries_without_heading() -> None:
+    assert reference_entries_from_page_texts(pdf_page_texts(_pdf("vi_scanned_pages"))) == []
