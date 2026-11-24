@@ -58,7 +58,15 @@ class VerificationRun(IdCreatedMixin, Base):
 class ClaimVerification(IdCreatedMixin, Base):
     __tablename__ = "claim_verifications"
     __table_args__ = (
-        UniqueConstraint("run_id", "claim_id", "verifier"),
+        # Mỗi cặp claim-reference một dòng cho mỗi verifier; cặp chưa liên kết (reference NULL)
+        # cũng chỉ một dòng (spec QĐ-14, migration 0009).
+        UniqueConstraint(
+            "run_id",
+            "claim_id",
+            "reference_entry_id",
+            "verifier",
+            postgresql_nulls_not_distinct=True,
+        ),
         enum_check("status", ClaimStatus),
         enum_check("unverifiable_reason", UnverifiableReason, nullable=True),
         enum_check("content_level_used", ContentLevelUsed),
@@ -66,6 +74,13 @@ class ClaimVerification(IdCreatedMixin, Base):
         CheckConstraint(
             "status <> 'UNVERIFIABLE' OR unverifiable_reason IS NOT NULL",
             name="unverifiable_needs_reason",
+        ),
+        # So sánh an toàn với NULL: `unverifiable_reason = '…'` cho NULL khi lý do trống và
+        # CHECK coi NULL là đạt, nên dòng SUPPORTED không reference sẽ lọt qua.
+        CheckConstraint(
+            "reference_entry_id IS NOT NULL "
+            "OR unverifiable_reason IS NOT DISTINCT FROM 'REFERENCE_UNRESOLVED'",
+            name="unresolved_needs_reason",
         ),
     )
 
@@ -75,7 +90,8 @@ class ClaimVerification(IdCreatedMixin, Base):
     claim_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("claims.id", ondelete="CASCADE"), index=True
     )
-    reference_entry_id: Mapped[uuid.UUID] = mapped_column(
+    # NULL khi marker không liên kết được tài liệu nào (`REFERENCE_UNRESOLVED`).
+    reference_entry_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("reference_entries.id", ondelete="CASCADE"), index=True
     )
     status: Mapped[str] = mapped_column(Text)

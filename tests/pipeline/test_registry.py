@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from citeproof.core.enums import RunStatus, StageName
 from citeproof.core.settings import Settings
 from citeproof.db.models import Document, VerificationRun
+from citeproof.modules.citations.stage import CitationsStage
 from citeproof.modules.documents.stage import ParseStage
 from citeproof.modules.references.stage_check import CheckReferencesStage
 from citeproof.modules.references.stage_extract import ExtractReferencesStage
@@ -40,7 +41,8 @@ def test_build_registry_wraps_demo_only_in_local(tmp_path: Path) -> None:
         assert isinstance(other.get(StageName.S1), ParseStage)
         assert isinstance(other.get(StageName.S2), ExtractReferencesStage)
         assert isinstance(other.get(StageName.S3), CheckReferencesStage)
-        assert isinstance(other.get(StageName.S4), NoopStage)
+        assert isinstance(other.get(StageName.S4), CitationsStage)
+        assert isinstance(other.get(StageName.S5), NoopStage)
 
 
 @pytest.mark.parametrize("env", ["local", "pilot"])

@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import ForeignKey, Text
+from sqlalchemy import ForeignKey, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from citeproof.core.enums import LinkMethod
@@ -49,3 +49,5 @@ class Claim(IdCreatedMixin, Base):
     context_text: Mapped[str] = mapped_column(Text)
     language: Mapped[str] = mapped_column(Text)
     extraction_method: Mapped[str] = mapped_column(Text)
+    # W2 trả `is_claim = false` → S8 cho `NOT_A_CLAIM` (spec QĐ-15).
+    is_claim: Mapped[bool] = mapped_column(server_default=text("true"))

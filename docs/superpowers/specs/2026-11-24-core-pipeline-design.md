@@ -346,7 +346,7 @@ Prompt bằng tiếng Anh, phiên bản `v1`, theo khung `07a` §4.8.3: phần c
 |---|---|
 | 0007 `job_leases` | `jobs`: `heartbeat_at`, `lease_expires_at`, `started_at`, `finished_at`; index (`status`, `lease_expires_at`); điền `lease_expires_at` cho job RUNNING sẵn có |
 | 0008 `works_field` | `works.field TEXT NULL` |
-| 0009 `claim_pairs` | `claims.is_claim BOOL NOT NULL DEFAULT true`; `claim_verifications.reference_entry_id` NULL được + CHECK `reference_entry_id IS NOT NULL OR unverifiable_reason = 'REFERENCE_UNRESOLVED'`; thay khóa duy nhất (QĐ-14) |
+| 0009 `claim_pairs` | `claims.is_claim BOOL NOT NULL DEFAULT true`; `claim_verifications.reference_entry_id` NULL được + CHECK `reference_entry_id IS NOT NULL OR unverifiable_reason IS NOT DISTINCT FROM 'REFERENCE_UNRESOLVED'` (so sánh an toàn với NULL: với `=`, lý do NULL cho biểu thức NULL và CHECK vẫn đạt); thay khóa duy nhất (QĐ-14) |
 | 0010 `source_access` | CHECK `access_status` theo QĐ-18; index duy nhất một phần (`work_id`, `sha256`) WHERE `origin = 'OPEN_ACCESS'` |
 
 ## 15. Cấu hình mới (`Settings`, `.env.example`)

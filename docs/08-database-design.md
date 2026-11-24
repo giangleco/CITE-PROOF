@@ -204,7 +204,8 @@ Quy ước chung: khóa chính `id UUID`; mọi bảng có `created_at TIMESTAMP
 | claim_text | TEXT | Phải là chuỗi con của `sentence_text` |
 | context_text | TEXT | Câu trước và sau, nếu cần |
 | language | TEXT | |
-| extraction_method | TEXT | |
+| extraction_method | TEXT | `rule` (span tất định, spec lõi QĐ-16) hoặc `llm:claim.extract/v1` (W2) |
+| is_claim | BOOL, mặc định `true` | W2 trả `is_claim = false` → S8 cho `NOT_A_CLAIM` (spec lõi QĐ-15, migration `0009`) |
 
 **verification_runs**
 
@@ -226,7 +227,7 @@ Quy ước chung: khóa chính `id UUID`; mọi bảng có `created_at TIMESTAMP
 |---|---|---|
 | run_id | FK verification_runs | |
 | claim_id | FK claims | |
-| reference_entry_id | FK reference_entries | |
+| reference_entry_id | FK reference_entries NULL | NULL chỉ khi `unverifiable_reason` là `REFERENCE_UNRESOLVED` (marker không liên kết được; CHECK, spec lõi QĐ-14, migration `0009`) |
 | status | ENUM, theo `04` §4.5.1 | |
 | unverifiable_reason | ENUM NULL | Bắt buộc khi status là `UNVERIFIABLE`; danh mục `04` §4.5.3 (gồm `EVIDENCE_INCONCLUSIVE`, D-11) |
 | content_level_used | ENUM(`NONE`, `ABSTRACT`, `FULL_TEXT`) | FR-43 |
@@ -239,6 +240,8 @@ Quy ước chung: khóa chính `id UUID`; mọi bảng có `created_at TIMESTAMP
 | verifier | TEXT | `V0`…`V4`, `V2+A2` |
 | agent_run_id | FK agent_runs NULL | Khi kết quả đến từ A2 |
 | escalated_from | FK claim_verifications NULL | Kết quả V2 ban đầu, ở chế độ leo thang |
+
+Khóa duy nhất (`run_id`, `claim_id`, `reference_entry_id`, `verifier`) `NULLS NOT DISTINCT`: mỗi cặp claim–tài liệu được trích một dòng cho mỗi verifier (FR-40), claim trích nhiều nguồn có nhiều dòng, cặp chưa liên kết (reference NULL) cũng chỉ một dòng (spec lõi QĐ-14, migration `0009`).
 
 **evidence**
 
@@ -347,7 +350,7 @@ Quy ước chung: khóa chính `id UUID`; mọi bảng có `created_at TIMESTAMP
 | works | UNIQUE(`doi`); index trên `arxiv_id`, `openalex_id`; GIN `pg_trgm` trên `title_norm` |
 | source_chunks | GIN trên `tsv`; index trên `source_file_id`. Tìm vector là tìm chính xác trong một file nguồn, nên MVP không cần HNSW (`07a` TK-19) |
 | jobs | Index trên (`status`, `run_after`), (`status`, `lease_expires_at`) |
-| claim_verifications | Index trên (`run_id`, `status`) |
+| claim_verifications | Index trên (`run_id`, `status`); UNIQUE(`run_id`, `claim_id`, `reference_entry_id`, `verifier`) NULLS NOT DISTINCT |
 | agent_runs | Index trên (`run_id`, `agent`), (`target_type`, `target_id`) |
 | retrieval_results | Index trên (`run_id`, `claim_id`) |
 | llm_cache | Index trên `namespace`, `document_id` |
@@ -361,6 +364,7 @@ Quy ước chung: khóa chính `id UUID`; mọi bảng có `created_at TIMESTAMP
 - DOI chuẩn hóa (chữ thường, bỏ tiền tố URL) trước khi lưu.
 - `evidence.source_chunk_id` bắt buộc; `evidence.quote_text` phải là chuỗi con của chunk (kiểm tra ở tầng ứng dụng).
 - `claim_verifications.unverifiable_reason` bắt buộc khi trạng thái là `UNVERIFIABLE` (CHECK constraint).
+- `claim_verifications.reference_entry_id` chỉ NULL khi `unverifiable_reason` là `REFERENCE_UNRESOLVED` (CHECK constraint, so sánh an toàn với NULL: `IS NOT DISTINCT FROM`).
 - `reference_checks.sources_searched` không rỗng khi trạng thái là `NOT_FOUND_IN_SEARCHED_SOURCES`. Không tra được nguồn nào thì trạng thái là `LOOKUP_FAILED` (CHECK constraint).
 - Bằng chứng tối thiểu theo trạng thái claim (`07a` §4.6.3): `SUPPORTED` cần ≥1 `SUPPORTS`; `PARTIALLY_SUPPORTED` cần ≥1 `SUPPORTS` hoặc `PARTIALLY_SUPPORTS`; `CONTRADICTED` cần ≥1 `CONTRADICTS`; `UNSUPPORTED` cần ≥1 `RELATED`. Kiểm tra ở tầng ứng dụng.
 - `claim_verifications.agent_run_id` bắt buộc khi `verifier` là `V4` hoặc `V2+A2` và kết quả cuối đến từ A2.

@@ -209,6 +209,83 @@ async def test_claim_verification_unique_per_run_claim_verifier(
 
 
 @pytest.mark.db
+async def test_null_reference_requires_unresolved_reason(
+    session_factory: async_sessionmaker[AsyncSession], clean_db: None
+) -> None:
+    """Cặp claim-reference không có reference chỉ được ghi với `REFERENCE_UNRESOLVED` (QĐ-14)."""
+    async with session_factory() as s:
+        doc = await make_document(s)
+        run = await make_run(s, doc)
+        claim = await make_claim(s, doc)
+        s.add(
+            _verification(
+                run,
+                claim.id,
+                None,
+                status=ClaimStatus.UNVERIFIABLE.value,
+                reason=UnverifiableReason.REFERENCE_UNRESOLVED.value,
+            )
+        )
+        await s.flush()
+        s.add(_verification(run, claim.id, None, verifier=Verifier.V3.value))
+        with pytest.raises(IntegrityError):
+            await s.flush()
+    async with session_factory() as s:
+        doc = await make_document(s)
+        run = await make_run(s, doc)
+        claim = await make_claim(s, doc)
+        s.add(
+            _verification(
+                run,
+                claim.id,
+                None,
+                status=ClaimStatus.UNVERIFIABLE.value,
+                reason=UnverifiableReason.NO_ACCESSIBLE_TEXT.value,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            await s.flush()
+
+
+@pytest.mark.db
+async def test_same_claim_two_references_allowed(
+    session_factory: async_sessionmaker[AsyncSession], clean_db: None
+) -> None:
+    """Khóa (run, claim, reference, verifier) NULLS NOT DISTINCT: claim trích hai nguồn có hai
+    dòng; hai dòng NULL cho cùng claim và verifier vẫn là trùng.
+    """
+    unresolved = {
+        "status": ClaimStatus.UNVERIFIABLE.value,
+        "reason": UnverifiableReason.REFERENCE_UNRESOLVED.value,
+    }
+    async with session_factory() as s:
+        doc = await make_document(s)
+        run = await make_run(s, doc)
+        claim = await make_claim(s, doc)
+        first = await make_reference_entry(s, doc)
+        second = await make_reference_entry(s, doc)
+        s.add(_verification(run, claim.id, first.id))
+        s.add(_verification(run, claim.id, second.id))
+        s.add(_verification(run, claim.id, None, **unresolved))
+        s.add(_verification(run, claim.id, None, verifier=Verifier.V3.value, **unresolved))
+        await s.flush()
+        s.add(_verification(run, claim.id, None, **unresolved))
+        with pytest.raises(IntegrityError):
+            await s.flush()
+
+
+@pytest.mark.db
+async def test_claim_is_claim_defaults_true(
+    session_factory: async_sessionmaker[AsyncSession], clean_db: None
+) -> None:
+    async with session_factory() as s:
+        doc = await make_document(s)
+        claim = await make_claim(s, doc)
+        await s.commit()
+        assert await s.scalar(select(Claim.is_claim).where(Claim.id == claim.id)) is True
+
+
+@pytest.mark.db
 async def test_invalid_enum_value_rejected(
     session_factory: async_sessionmaker[AsyncSession], clean_db: None
 ) -> None:

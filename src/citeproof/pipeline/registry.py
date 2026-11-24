@@ -1,6 +1,7 @@
 """Ghép stage thật thành registry cho worker (spec §6.3)."""
 
 from citeproof.core.enums import StageName
+from citeproof.modules.citations.stage import CitationsStage
 from citeproof.modules.documents.stage import ParseStage
 from citeproof.modules.references.stage_check import CheckReferencesStage
 from citeproof.modules.references.stage_extract import ExtractReferencesStage
@@ -15,6 +16,7 @@ def _real_stages(deps: PipelineDeps) -> dict[StageName, PipelineStage]:
         StageName.S1: ParseStage(deps),
         StageName.S2: ExtractReferencesStage(deps),
         StageName.S3: CheckReferencesStage(deps),
+        StageName.S4: CitationsStage(deps),
     }
 
 
