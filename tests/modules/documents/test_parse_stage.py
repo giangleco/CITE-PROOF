@@ -21,7 +21,7 @@ from citeproof.pipeline.stages import StageContext, StageRegistry, StageResult
 from citeproof.services import documents
 from citeproof.services.runs_view import get_run_view
 from citeproof.storage import LocalStorage
-from tests.files import PDF_BYTES
+from tests.files import PDF_BYTES, stamped_pdf
 from tests.golden.cases import GOLDEN_DIR, GoldenCase, load_cases
 from tests.pipeline.helpers import CountingStage, drain, make_test_deps, stage_context
 from tests.services.helpers import new_user
@@ -410,6 +410,30 @@ async def test_image_only_pdf_fails_with_no_text_extracted(
     assert view.error_message.startswith("Không trích được văn bản")
     stored = await _document(session_factory, document.id)
     assert stored.parsed_key is None
+
+
+@pytest.mark.db
+async def test_all_scanned_pdf_fails_with_no_text_extracted(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    # Ruling: mọi trang đều là trang scan (lớp chữ chỉ có số trang/dấu ứng dụng quét) thì
+    # cũng là "không trích được văn bản", không được ra báo cáo hoàn tất rỗng.
+    stub = GrobidStub(status=500)
+    data = stamped_pdf()
+    user, document, run_id = await _queued_file_document(session_factory, settings, data, "s.pdf")
+    deps = make_test_deps(settings, session_factory, transport=stub.transport)
+    await drain(session_factory, _s1_registry(deps), settings)
+    run = await _run(session_factory, run_id)
+    assert run.status == RunStatus.FAILED.value
+    assert run.error is not None
+    assert run.error["stage"] == "S1"
+    assert run.error["type"] == "InputError"
+    async with session_factory() as session:
+        view = await get_run_view(session, user=user, run_id=run_id)
+    assert view.error_message == "Không trích được văn bản từ tệp PDF. Tệp có thể là ảnh quét."
+    assert (await _s1_job(session_factory, run_id)).attempts == 1
+    assert (await _document(session_factory, document.id)).parsed_key is None
+    assert stub.calls == 0
 
 
 @pytest.mark.db

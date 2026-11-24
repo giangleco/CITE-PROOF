@@ -61,12 +61,16 @@ _WHITESPACE = re.compile(r"\s+")
 # PDFium đánh dấu gạch nối mềm ở cuối dòng bằng U+0002.
 _SOFT_HYPHEN_MARK = "\x02"
 # Tách mục danh mục không nhãn: mục mới khi dòng trước kết thúc mục (dấu chấm, URL/DOI) và
-# dòng này mở đầu bằng tên tác giả ("Họ," hoặc hai từ viết hoa liền nhau, hay "Tên. (năm)").
+# dòng này có dạng tác giả: "Họ, X." (tên đảo kèm chữ viết tắt) hoặc tên người/tổ chức rồi
+# "(năm" / "(n.d." trong 80 ký tự đầu, phần trước năm không có chữ số hay dấu hai chấm.
 _PAGE_NUMBER_LINE = re.compile(r"\d{1,4}")
 _LINK_END = re.compile(r"(?:https?://|doi:\s*|\b10\.\d{4,9}/)\S*$", re.IGNORECASE)
 _INITIAL_END = re.compile(r"(?:^|[\s,&(])(?:[^\W\d_]\.-?)+$")
 _YEAR_END = re.compile(r"\(\d{4}[a-z]?\)[.,]?$")
 _AUTHOR_TOKEN = re.compile(r"[^\W\d_][\w'\u2019-]*[,.]?")  # U+2019: nháy cong trong họ kiểu O'Brien
+_INITIAL = re.compile(r"(?:[^\W\d_]\.-?)+,?")
+_YEAR_MARK = re.compile(r"\((?:\d{4}[a-z]?|n\.\s?d\.)")
+_MAX_AUTHOR_PREFIX = 80
 _CONTINUATION_WORDS = frozenset(
     {"in", "trong", "retrieved", "available", "accessed", "truy", "nxb", "nhà", "trường"}
 )
@@ -245,15 +249,29 @@ def _ends_entry(line: str) -> bool:
 
 
 def _starts_entry(line: str) -> bool:
+    """Dòng mở đầu một mục: có dạng tác giả, không phải nơi xuất bản hay tên tạp chí.
+
+    "Hà Nội: NXB…", "TP. Hồ Chí Minh: NXB…" (dấu hai chấm, không có năm) và "Neural
+    Computation, 9(8), …" (không có chữ viết tắt tên, không có năm) là dòng tiếp theo.
+    """
     tokens = line.split()
     first = tokens[0]
     if not first[0].isupper() or first.rstrip(",.").lower() in _CONTINUATION_WORDS:
         return False
-    if _AUTHOR_TOKEN.fullmatch(first) is None:
+    if _AUTHOR_TOKEN.fullmatch(first) is None or any(":" in token for token in tokens[:2]):
         return False
-    if first.endswith(","):
-        return True
-    return len(tokens) > 1 and (tokens[1][0].isupper() or tokens[1].startswith("("))
+    if (
+        first.endswith(",")
+        and len(tokens) > 1
+        and tokens[1][0].isupper()
+        and _INITIAL.fullmatch(tokens[1]) is not None
+    ):
+        return True  # "Devlin, J.", "Nguyễn, V. A.", "Chang, M.-W."
+    year = _YEAR_MARK.search(line)
+    if year is None or year.start() > _MAX_AUTHOR_PREFIX:
+        return False
+    prefix = line[: year.start()]
+    return ":" not in prefix and not any(ch.isdigit() for ch in prefix)
 
 
 def _join_lines(lines: Sequence[str]) -> str:
@@ -335,13 +353,14 @@ async def parse_pdf_document(
 ) -> tuple[ParsedDocument, list[dict[str, Any]]]:
     """Parse PDF của bài; trả tài liệu và cảnh báo (`SCANNED_PAGES`, `PDF_TEXT_FALLBACK`).
 
-    Không trích được ký tự nào → `InputError` `NO_TEXT_EXTRACTED` (không gọi GROBID).
+    Mọi trang đều là trang scan (kể cả lớp chữ chỉ có số trang hay dấu "Scanned with
+    CamScanner") → `InputError` `NO_TEXT_EXTRACTED`, không gọi GROBID.
     GROBID không truy cập được → ném lại `RetryableError`, trừ khi `allow_fallback` (lần
     thử cuối hoặc không cấu hình GROBID); GROBID lỗi xử lý tài liệu → dự phòng ngay.
     """
     page_texts = await asyncio.to_thread(pdf_page_texts, data)
     scanned = await asyncio.to_thread(scanned_pages, page_texts)
-    if len(scanned) == len(page_texts) and not any(map(_visible_chars, page_texts)):
+    if len(scanned) == len(page_texts):
         raise InputError(NO_TEXT_MESSAGE, code="NO_TEXT_EXTRACTED")
     warnings: list[dict[str, Any]] = []
     if scanned:

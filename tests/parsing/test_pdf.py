@@ -20,7 +20,7 @@ from citeproof.parsing.pdf import (
     scanned_pages,
 )
 from citeproof.parsing.tei import parse_fulltext_tei
-from tests.files import PDF_BYTES
+from tests.files import PDF_BYTES, stamped_pdf
 from tests.golden.cases import GOLDEN_DIR, GoldenExpected
 
 Handler = Callable[[httpx.Request], httpx.Response]
@@ -391,3 +391,60 @@ def test_reference_entries_unlabelled_rules() -> None:
 
 def test_reference_entries_without_heading() -> None:
     assert reference_entries_from_page_texts(pdf_page_texts(_pdf("vi_scanned_pages"))) == []
+
+
+async def test_all_scanned_pages_pdf_has_no_text() -> None:
+    data = stamped_pdf()
+    texts = pdf_page_texts(data)
+    assert all(text.strip() for text in texts)  # có lớp chữ, nhưng chỉ là dấu
+    assert scanned_pages(texts) == [1, 2, 3]
+    recorder = Recorder(lambda request: httpx.Response(500, text="[NO_BLOCKS]"))
+    with pytest.raises(InputError) as caught:
+        await parse_pdf_document(data, grobid=_grobid(recorder), allow_fallback=True)
+    assert caught.value.code == "NO_TEXT_EXTRACTED"
+    assert str(caught.value) == "Không trích được văn bản từ tệp PDF. Tệp có thể là ảnh quét."
+    assert recorder.calls == 0
+
+
+def test_reference_entries_reject_place_and_venue_lines() -> None:
+    # Dòng nơi xuất bản và tên tạp chí sau dấu chấm không được thành mục ảo.
+    page = (
+        "Tài liệu tham khảo\n"
+        "Trần Văn Bình (2015). Giáo trình kinh tế học.\n"
+        "Hà Nội: Nhà xuất bản Giáo dục.\n"
+        "Lê Văn Cường (2018). Lịch sử Việt Nam.\n"
+        "TP. Hồ Chí Minh: NXB Tổng hợp.\n"
+        "Hochreiter, S., & Schmidhuber, J. (1997). Long short-term memory.\n"
+        "Neural Computation, 9(8), 1735-1780."
+    )
+    entries = reference_entries_from_page_texts([page])
+    assert [ref.raw for ref in entries] == [
+        "Trần Văn Bình (2015). Giáo trình kinh tế học. Hà Nội: Nhà xuất bản Giáo dục.",
+        "Lê Văn Cường (2018). Lịch sử Việt Nam. TP. Hồ Chí Minh: NXB Tổng hợp.",
+        "Hochreiter, S., & Schmidhuber, J. (1997). Long short-term memory. "
+        "Neural Computation, 9(8), 1735-1780.",
+    ]
+
+
+def test_reference_entries_real_author_lines_start_entries() -> None:
+    page = (
+        "References\n"
+        "Phạm Minh Đức (2019). Mở đầu.\n"
+        "Nguyễn, V. A. (2020). Tiêu đề một.\n"
+        "Lê Thị Thu Hà (2021). Tiêu đề hai.\n"
+        "Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., "
+        "Kaiser, L., &\n"
+        "Polosukhin, I. (2017). Attention is all you need.\n"
+        "Bộ Giáo dục và Đào tạo (2018). Thông tư hướng dẫn.\n"
+        "OpenAI. (2023). GPT-4 technical report."
+    )
+    entries = reference_entries_from_page_texts([page])
+    assert [ref.raw.split(" (")[0] for ref in entries] == [
+        "Phạm Minh Đức",
+        "Nguyễn, V. A.",
+        "Lê Thị Thu Hà",
+        "Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, L., "
+        "& Polosukhin, I.",
+        "Bộ Giáo dục và Đào tạo",
+        "OpenAI.",
+    ]
