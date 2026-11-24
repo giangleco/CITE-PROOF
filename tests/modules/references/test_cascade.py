@@ -180,14 +180,25 @@ async def test_doi_without_title_lookup_errors_give_lookup_failed() -> None:
     assert result.sources_failed == ("crossref", "openalex")
 
 
-async def test_source_failing_one_query_is_not_searched() -> None:
-    # Crossref tra DOI được nhưng lỗi khi tìm kiếm: không được tính là "đã tra" trọn vẹn.
+async def test_source_with_one_successful_query_counts_as_searched() -> None:
+    # Crossref tra DOI được (không thấy) nhưng lỗi khi tìm kiếm: đã tra một phần, cũng là lỗi.
     crossref = FakeConnector("crossref", doi=None, search=_error())
     gateway = _gateway(crossref=crossref, openalex=FakeConnector("openalex", doi=None))
     result = await CascadeResolver(gateway).resolve(_entry(doi=HE_DOI), None)
     assert result.status is ReferenceStatus.NOT_FOUND_IN_SEARCHED_SOURCES
-    assert result.sources_searched == ("openalex", "semantic_scholar")
+    assert result.sources_searched == ("crossref", "openalex", "semantic_scholar")
     assert result.sources_failed == ("crossref",)
+
+
+async def test_matching_source_counts_as_searched_after_doi_errors() -> None:
+    crossref = FakeConnector("crossref", doi=_error(), search=[_he()])
+    openalex = FakeConnector("openalex", doi=_error())
+    gateway = _gateway(crossref=crossref, openalex=openalex)
+    result = await CascadeResolver(gateway).resolve(_entry(doi=HE_DOI), None)
+    assert result.status is ReferenceStatus.MATCHED
+    assert result.record is not None and result.record.source == "crossref"
+    assert result.sources_searched == ("crossref",)  # PRD §4.5.2: MATCHED kèm nguồn đã tra
+    assert result.sources_failed == ("crossref", "openalex")
 
 
 async def test_parse_failed_without_title_and_doi() -> None:

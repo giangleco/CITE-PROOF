@@ -13,21 +13,25 @@ Trường lệch chỉ báo khi cả bài lẫn bản ghi đều có giá trị:
 ở v1 vì tên viết tắt (NeurIPS…) gây báo lệch sai (QĐ-20).
 
 Họ tác giả trong bài theo `family_name` (phần trước dấu phẩy; họ Việt phổ biến đứng đầu; còn
-lại từ cuối). Họ của bản ghi lấy cả trường `family`, từ cuối của nó, và họ đoán lại từ tên đầy
-đủ "given family": OpenAlex và Semantic Scholar đoán họ là từ cuối của tên hiển thị, nên
-"Nguyễn Văn An" có `family = "An"`; đoán lại từ tên đầy đủ cho "Nguyễn".
+lại từ cuối). Họ của bản ghi lấy cả trường `family`, từ cuối của nó, và — chỉ khi phần `given`
+có từ hai từ trở lên — họ đoán lại từ tên đầy đủ "given family": OpenAlex và Semantic Scholar
+đoán họ là từ cuối của tên hiển thị, nên "Nguyễn Văn An" có `family = "An"`, đoán lại cho
+"Nguyễn"; "Le Song" (`given = "Le"`) không đoán lại, nên "Le, Q." vẫn là tác giả khác.
 
 Hai quy tắc thêm (quyết định của controller sau Task 9):
 - DOI trùng nhưng bài có tiêu đề và điểm tiêu đề < `DOI_TITLE_CONFLICT`: vẫn chấp nhận (DOI trỏ
   tới bản ghi này, giữ liên kết work) nhưng `needs_review`; trường lệch `title` làm trạng thái
   thành `METADATA_MISMATCH`.
-- Tiêu đề ngắn (dưới `SHORT_TITLE_TOKENS` từ sau `fold(title_norm(...))`): chấp nhận qua điểm
-  tiêu đề (không có DOI trùng) còn cần năm trùng hoặc cùng họ tác giả đầu, vì `token_set_ratio`
-  cho 100 khi mọi từ của tiêu đề ngắn nằm trong tiêu đề dài hơn.
+- Tiêu đề ngắn hoặc tiêu đề con: khi tiêu đề của bài hay của ứng viên dưới `SHORT_TITLE_TOKENS`
+  từ (sau `fold(title_norm(...))`), hoặc ứng viên có ít hơn `SUBSET_TOKEN_RATIO` số từ của bài,
+  chấp nhận qua điểm tiêu đề (không có DOI trùng) còn cần năm trùng hoặc cùng họ tác giả đầu:
+  `token_set_ratio` cho 100 khi mọi từ của tiêu đề này nằm trong tiêu đề kia ("Deep Learning"
+  so với "A survey on deep learning for natural language processing").
 
-Ứng viên tốt nhất xếp theo `score` rồi ít trường lệch hơn. Sát điểm (`close_call`) khi một
-ứng viên khác cũng được chấp nhận, kém dưới `CLOSE_DELTA` điểm và không lệch nhiều trường hơn
-ứng viên đầu: bản preprint lệch năm so với bài không làm bản chính thức thành mơ hồ.
+Ứng viên tốt nhất xếp theo ít trường lệch hơn, rồi `score` (vòng sửa 1): ứng viên lệch tác giả
+và năm không thắng bài đúng chỉ vì điểm tiêu đề cao hơn. Sát điểm (`close_call`) khi một ứng
+viên khác cũng được chấp nhận, kém dưới `CLOSE_DELTA` điểm và không lệch nhiều trường hơn ứng
+viên đầu: bản preprint lệch năm so với bài không làm bản chính thức thành mơ hồ.
 """
 
 import re
@@ -52,6 +56,10 @@ MAX_YEAR_DELTA = 1
 DOI_TITLE_CONFLICT = 60
 # Tiêu đề có ít từ hơn ngưỡng này cần thêm năm hoặc họ tác giả đầu khớp.
 SHORT_TITLE_TOKENS = 4
+# Ứng viên có ít hơn tỷ lệ này số từ tiêu đề của bài (tiêu đề con) cũng cần như trên.
+SUBSET_TOKEN_RATIO = 0.6
+# Chỉ đoán lại họ đứng đầu (tên Việt) khi phần `given` của bản ghi có ít nhất chừng này từ.
+REGUESS_MIN_GIVEN_TOKENS = 2
 
 MismatchField = Literal["title", "authors", "year", "venue", "doi"]
 _NON_ALNUM = re.compile(r"[\W_]+")
@@ -102,7 +110,7 @@ def _record_family_keys(author: WorkAuthor) -> set[str]:
     tokens = author.family.split()
     if tokens:
         keys.add(_name_key(tokens[-1]))
-    if author.given:
+    if author.given and len(author.given.split()) >= REGUESS_MIN_GIVEN_TOKENS:
         keys.add(_name_key(family_name(f"{author.given} {author.family}")))
     keys.discard("")
     return keys
@@ -122,8 +130,19 @@ def _has_title(ref: ParsedReference) -> bool:
     return bool(ref.title and title_norm(ref.title))
 
 
-def _is_short_title(title: str | None) -> bool:
-    return len(fold(title_norm(title)).split()) < SHORT_TITLE_TOKENS if title else False
+def _token_count(title: str | None) -> int:
+    return len(fold(title_norm(title)).split()) if title else 0
+
+
+def _needs_corroboration(ref_title: str | None, cand_title: str) -> bool:
+    """Tiêu đề ngắn ở một bên, hoặc ứng viên chỉ là phần nhỏ của tiêu đề trong bài."""
+    ref_tokens = _token_count(ref_title)
+    cand_tokens = _token_count(cand_title)
+    return (
+        ref_tokens < SHORT_TITLE_TOKENS
+        or cand_tokens < SHORT_TITLE_TOKENS
+        or cand_tokens < SUBSET_TOKEN_RATIO * ref_tokens
+    )
 
 
 def match_candidate(ref: ParsedReference, cand: WorkRecord) -> MatchResult:
@@ -142,8 +161,10 @@ def match_candidate(ref: ParsedReference, cand: WorkRecord) -> MatchResult:
     year_delta = (
         abs(ref.year - cand.year) if ref.year is not None and cand.year is not None else None
     )
-    # Tiêu đề ngắn: điểm tiêu đề cao chưa đủ, cần thêm năm trùng hoặc cùng họ tác giả đầu.
-    title_corroborated = not _is_short_title(ref.title) or year_delta == 0 or same_author is True
+    # Tiêu đề ngắn hoặc tiêu đề con: điểm tiêu đề cao chưa đủ, cần năm trùng hoặc cùng họ tác giả.
+    title_corroborated = (
+        not _needs_corroboration(ref.title, cand.title) or year_delta == 0 or same_author is True
+    )
     accepted = (
         doi_equal
         or (title_score >= TITLE_ACCEPT and title_corroborated)
@@ -176,11 +197,13 @@ def match_candidate(ref: ParsedReference, cand: WorkRecord) -> MatchResult:
 
 
 def pick_best(ref: ParsedReference, cands: Sequence[WorkRecord]) -> BestMatch | None:
-    """Ứng viên được chấp nhận tốt nhất (thứ tự nguồn giữ khi hòa); không có → None."""
+    """Ứng viên được chấp nhận tốt nhất: ít trường lệch nhất, rồi điểm cao nhất (thứ tự nguồn
+    giữ khi hòa); không có → None.
+    """
     accepted = [(cand, result) for cand in cands if (result := match_candidate(ref, cand)).accepted]
     if not accepted:
         return None
-    accepted.sort(key=lambda item: (-item[1].score, len(item[1].mismatches)))
+    accepted.sort(key=lambda item: (len(item[1].mismatches), -item[1].score))
     record, best = accepted[0]
     close_call = any(
         (best.score - other.score) * 100 < CLOSE_DELTA

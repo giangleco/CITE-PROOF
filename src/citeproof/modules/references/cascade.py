@@ -9,10 +9,12 @@ Thứ tự cho một mục:
    Semantic Scholar theo thứ tự; dừng ở nguồn đầu tiên có ứng viên được chấp nhận. Không có
    tiêu đề thì không tìm kiếm: truy vấn rỗng không gọi API nào nên không được tính là đã tra.
 
-`sources_searched` chỉ gồm nguồn mà mọi lần tra trong mục này đều thành công (`ok` hoặc
-`not_found`, kể cả lấy từ cache); nguồn có một lần lỗi hay bị ngắt mạch nằm trong
-`sources_failed`. Không nguồn nào tra thành công → `LOOKUP_FAILED`, không bao giờ
-`NOT_FOUND_IN_SEARCHED_SOURCES` với danh sách rỗng (CHECK `not_found_needs_sources`).
+`sources_searched` gồm nguồn có ít nhất một lần tra thành công trong mục này (`ok` hoặc
+`not_found`, kể cả lấy từ cache), nên nguồn của bản ghi được chấp nhận luôn có mặt (PRD §4.5.2:
+`MATCHED` kèm nguồn đã tra); `sources_failed` gồm nguồn có một lần lỗi hay bị ngắt mạch. Một
+nguồn tra được một phần nằm ở cả hai danh sách. Không nguồn nào tra thành công →
+`LOOKUP_FAILED`, không bao giờ `NOT_FOUND_IN_SEARCHED_SOURCES` với danh sách rỗng (CHECK
+`not_found_needs_sources`).
 
 Lỗi của nguồn đã thành kết quả `error` trong gateway; lỗi khác (lỗi lập trình, DB, cache)
 lan ra ngoài để stage lỗi.
@@ -110,7 +112,7 @@ class _SourceTally:
 
     @property
     def searched(self) -> tuple[str, ...]:
-        return tuple(s for s in self._order if s in self._ok and s not in self._failed)
+        return tuple(s for s in self._order if s in self._ok)
 
     @property
     def failed(self) -> tuple[str, ...]:

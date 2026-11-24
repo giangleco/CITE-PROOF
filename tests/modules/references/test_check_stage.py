@@ -479,6 +479,61 @@ async def test_doi_hit_with_title_in_other_case_is_matched(
     assert not check.needs_user_review
 
 
+SURVEY_TITLE = "A survey on deep learning for natural language processing"
+
+
+def _goodfellow_item() -> dict[str, Any]:
+    return crossref_item("Deep Learning", "10.1000/dl", family="Goodfellow", given="Ian")
+
+
+@pytest.mark.db
+async def test_subset_title_candidate_is_not_linked(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    api = FakeApis()
+    api.searches["crossref"] = [_goodfellow_item()]
+    deps = api.deps(settings, session_factory)
+    survey = _ref(SURVEY_TITLE, authors=["Trần Văn Bình"], year=2021)
+    _, [check] = await _check(session_factory, deps, [survey])
+    assert check.status == ReferenceStatus.NOT_FOUND_IN_SEARCHED_SOURCES.value
+    assert check.work_id is None
+    assert len(api.metadata_requests) == len(SOURCES)  # chuỗi tra tiếp tục sang nguồn sau
+
+
+@pytest.mark.db
+async def test_genuine_paper_linked_over_subset_title(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    api = FakeApis()
+    genuine = crossref_item(
+        "A Survey of Deep Learning for Natural Language Processing",  # 98.2
+        "10.1000/survey",
+        family="Tran",
+        given="Van Binh",
+        year=2021,
+    )
+    api.searches["crossref"] = [_goodfellow_item(), genuine]
+    deps = api.deps(settings, session_factory)
+    survey = _ref(SURVEY_TITLE, authors=["Trần Văn Bình"], year=2021)
+    _, [check] = await _check(session_factory, deps, [survey])
+    assert check.status == ReferenceStatus.MATCHED.value
+    assert (await _work(session_factory, check.work_id)).doi == "10.1000/survey"
+
+
+@pytest.mark.db
+async def test_matched_after_doi_errors_lists_matching_source(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    api = FakeApis()
+    api.searches["crossref"] = [crossref_item(HE_TITLE, HE_DOI)]
+    api.fail = lambda source, request: "/works/" in request.url.path or "doi:" in request.url.path
+    deps = api.deps(settings, session_factory)
+    _, [check] = await _check(session_factory, deps, [_ref(doi=HE_DOI)])
+    assert check.status == ReferenceStatus.MATCHED.value
+    assert check.sources_searched == ["crossref"]
+    assert check.sources_failed == ["crossref", "openalex"]
+
+
 # --- works ------------------------------------------------------------------------------------
 
 

@@ -302,3 +302,91 @@ def test_short_title_rule_counts_folded_tokens() -> None:
     # Tiêu đề ngắn nhưng DOI trùng: vẫn chấp nhận theo DOI.
     by_doi = _record(title=LONG, year=2019, authors=[WorkAuthor(family="Bahdanau")])
     assert match_candidate(_ref(title=SHORT, year=2015, doi=HE_DOI_PRINTED), by_doi).accepted
+
+
+# --- Vòng sửa 1 (review Task 9) ------------------------------------------------------------------
+
+SURVEY = "A survey on deep learning for natural language processing"
+
+
+def _survey_ref() -> ParsedReference:
+    return ParsedReference(title=SURVEY, authors=["Trần Văn Bình"], year=2021)
+
+
+def _goodfellow(**fields: object) -> WorkRecord:
+    base: dict[str, object] = {
+        "source": "crossref",
+        "source_id": "10.1000/dl",
+        "title": "Deep Learning",
+        "authors": [WorkAuthor(family="Goodfellow", given="Ian")],
+        "year": 2016,
+        "doi": "10.1000/dl",
+    }
+    return WorkRecord.model_validate(base | fields)
+
+
+def test_subset_candidate_title_needs_year_or_author() -> None:
+    candidate = _goodfellow()
+    assert title_similarity(SURVEY, candidate.title) == 100
+    assert not match_candidate(_survey_ref(), candidate).accepted
+    assert pick_best(_survey_ref(), [candidate]) is None
+    # Năm trùng hoặc cùng họ tác giả đầu thì được chấp nhận như trước.
+    assert match_candidate(_survey_ref(), _goodfellow(year=2021)).accepted
+    tran = _goodfellow(authors=[WorkAuthor(family="Trần", given="Văn Bình")])
+    assert match_candidate(_survey_ref(), tran).accepted
+
+
+def test_genuine_paper_wins_over_subset_candidate() -> None:
+    genuine = WorkRecord(
+        source="crossref",
+        source_id="10.1000/survey",
+        title="A Survey of Deep Learning for Natural Language Processing",  # 98.2
+        authors=[WorkAuthor(family="Tran", given="Van Binh")],
+        year=2021,
+        doi="10.1000/survey",
+    )
+    best = pick_best(_survey_ref(), [_goodfellow(), genuine])
+    assert best is not None
+    assert best.result.score < 1.0
+    assert best.record is genuine
+    assert best.result.mismatches == ()
+
+
+def test_fewer_mismatches_rank_before_score() -> None:
+    title = "Deep learning for natural language processing"
+    ref = ParsedReference(title=title, authors=["Trần Văn Bình"], year=2021)
+    other_author = WorkRecord(
+        source="crossref",
+        source_id="10.1000/a",
+        title=title,
+        authors=[WorkAuthor(family="Smith", given="John")],
+        year=2021,
+    )
+    typo = WorkRecord(
+        source="crossref",
+        source_id="10.1000/b",
+        title="Deep learning for natural language procesing",  # 98.9
+        authors=[WorkAuthor(family="Tran", given="Van Binh")],
+        year=2021,
+    )
+    best = pick_best(ref, [other_author, typo])
+    assert best is not None
+    assert best.record is typo
+    assert best.result.score < 1.0
+    assert not best.close_call  # ứng viên còn lại lệch nhiều trường hơn
+
+
+def test_single_token_given_name_is_not_reguessed() -> None:
+    # OpenAlex "Le Song" → family "Song", given "Le": "Le" không phải họ của tác giả này.
+    le_song = WorkAuthor(family="Song", given="Le")
+    assert not first_author_matches("Le, Q.", le_song)
+    assert first_author_matches("Song, L.", le_song)
+    ref = _ref(authors=["Le, Q."])
+    result = match_candidate(ref, _record(authors=[le_song]))
+    assert Mismatch(field="authors", in_document="Le, Q.", found="Le Song") in result.mismatches
+
+
+def test_multi_token_given_name_is_reguessed() -> None:
+    # OpenAlex "Nguyễn Văn An" → family "An", given "Nguyễn Văn": họ thật là "Nguyễn".
+    assert first_author_matches("Nguyễn, V. A.", WorkAuthor(family="An", given="Nguyễn Văn"))
+    assert first_author_matches("Nguyen V. A.", WorkAuthor(family="An", given="Nguyễn Văn"))
