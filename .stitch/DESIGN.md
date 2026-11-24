@@ -243,6 +243,10 @@ Bảng nhãn này là nguồn duy nhất; mã nguồn sinh nhãn từ đây, tem
 | `LEGACY_ENCODING` | Văn bản có dấu hiệu dùng bảng mã cũ (TCVN3, VNI); một số chữ có thể bị đọc sai. |
 | `OUT_OF_DOMAIN` | Bài có vẻ thuộc lĩnh vực khác CS–AI; kết quả có thể kém chính xác hơn. |
 | `NO_REFERENCE_SECTION` | Chưa tách được danh mục tài liệu tham khảo. Bạn có thể dán đoạn văn kèm danh mục ở "Kiểm tra bài mới". |
+| `LLM_NOT_CONFIGURED` | Chưa cấu hình mô hình ngôn ngữ, nên các nhận định chưa được đối chiếu; phần tra cứu tài liệu tham khảo vẫn chạy bình thường. |
+| `CLAIM_LIMIT_REACHED` | Bài có nhiều nhận định hơn giới hạn của một lần kiểm tra; các nhận định vượt giới hạn chưa được đối chiếu. |
+| `COST_LIMIT_REACHED` | Lần kiểm tra đã chạm hạn mức chi phí; các nhận định còn lại chưa được đối chiếu. |
+| `PDF_TEXT_FALLBACK` | Tệp PDF được đọc bằng chế độ dự phòng; tên mục và vị trí trong bài có thể chưa chính xác. |
 | `SAMPLE_DOCUMENT` | Không hiển thị như cảnh báo; giao diện gắn nhãn "Bài mẫu". |
 | Mã khác | Có cảnh báo khi xử lý. (Admin thấy thêm mã gốc.) |
 

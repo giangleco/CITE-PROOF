@@ -31,6 +31,7 @@ from citeproof.core.enums import (
 from citeproof.core.errors import ConflictError, InputError, NotFoundError, RateLimitedError
 from citeproof.core.settings import Settings
 from citeproof.db.models import Document, Job, UsageEvent, User, VerificationRun
+from citeproof.pipeline.config import RunConfig
 from citeproof.pipeline.runs import create_run
 from citeproof.storage import Storage, document_prefix
 
@@ -176,11 +177,19 @@ async def start_run(
                 code="QUOTA_EXCEEDED",
             )
     chosen = variant if _is_admin(user) and variant in ADMIN_VARIANTS else DEFAULT_VARIANT
-    config: dict[str, Any] = {"variant": chosen.value}
-    if demo is not None and settings.env == "local":
-        config["demo"] = demo.to_json()
+    # Đóng băng model, effort, prompt và giới hạn khi tạo lần chạy (QĐ-46).
+    config = RunConfig.resolve(
+        settings,
+        variant=chosen,
+        demo=demo.to_json() if demo is not None and settings.env == "local" else None,
+    )
     session.add(UsageEvent(user_id=user.id, kind=RUN_USAGE))
-    return await create_run(session, document_id=locked.id, user_id=user.id, config=config)
+    return await create_run(
+        session,
+        document_id=locked.id,
+        user_id=user.id,
+        config=config.model_dump(mode="json"),
+    )
 
 
 async def _store_and_start(

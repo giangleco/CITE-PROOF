@@ -1,16 +1,65 @@
-"""Helper cho test runner: chạy cạn hàng đợi và các stage giả lập."""
+"""Helper cho test pipeline: dựng PipelineDeps, chạy cạn hàng đợi, các stage giả lập."""
 
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from citeproof.core.enums import StageName
 from citeproof.core.settings import Settings
+from citeproof.integrations.http_safe import Resolver, SafeHttpClient
+from citeproof.llm.cache import PgCacheStore
+from citeproof.llm.calls import PgCallLogger
+from citeproof.llm.client import LLMClient
+from citeproof.llm.prompts import PromptLoader
+from citeproof.llm.providers.base import LLMProvider
+from citeproof.pipeline.deps import PROMPTS_ROOT, PipelineDeps
 from citeproof.pipeline.jobs import ClaimedJob
 from citeproof.pipeline.stages import StageContext, StageRegistry, StageResult
 from citeproof.pipeline.worker import work_once
+from citeproof.storage import LocalStorage
+
+PUBLIC_IP = "93.184.216.34"
+
+
+async def public_resolver(host: str, port: int) -> list[str]:
+    """Resolver giả: mọi host đều trỏ tới một IP công khai (không tra DNS thật)."""
+    return [PUBLIC_IP]
+
+
+def make_test_deps(
+    settings: Settings,
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    provider: LLMProvider | None = None,
+    transport: httpx.AsyncBaseTransport | None = None,
+    resolver: Resolver | None = None,
+) -> PipelineDeps:
+    """PipelineDeps cho test stage: không mạng thật, LLM chỉ khi truyền `provider`.
+
+    `transport` (ví dụ `httpx.MockTransport`) dùng chung cho `http` và `safe_http`.
+    """
+    llm = (
+        LLMClient(
+            provider,
+            PgCacheStore(session_factory),
+            PgCallLogger(session_factory),
+            prices=settings.llm_prices,
+        )
+        if provider is not None
+        else None
+    )
+    return PipelineDeps(
+        session_factory=session_factory,
+        storage=LocalStorage(settings.storage_dir),
+        settings=settings,
+        llm=llm,
+        prompts=PromptLoader(PROMPTS_ROOT),
+        http=httpx.AsyncClient(transport=transport),
+        safe_http=SafeHttpClient(resolver=resolver or public_resolver, transport=transport),
+    )
 
 
 async def drain(

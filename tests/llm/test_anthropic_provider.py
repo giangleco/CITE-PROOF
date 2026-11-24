@@ -299,3 +299,11 @@ def test_make_llm_client_with_key_uses_anthropic_provider() -> None:
     assert client._prices == settings.llm_prices
     assert isinstance(client._cache, PgCacheStore)
     assert isinstance(client._call_logger, PgCallLogger)
+
+
+async def test_aclose_closes_sdk_client() -> None:
+    sdk = anthropic.AsyncAnthropic(api_key="sk-test")
+    provider = AnthropicProvider(sdk, refusal_fallback=True)
+    assert not sdk.is_closed()
+    await provider.aclose()
+    assert sdk.is_closed()

@@ -150,5 +150,5 @@ async def test_tech_details_sums_llm_calls(
         details = await runs_view.get_tech_details(s, user=user, run_id=run_id)
     assert details.llm_calls == 2 and details.input_tokens == 150 and details.output_tokens == 20
     assert details.models == ["m-1"] and details.prompt_versions == ["judge/v1"]
-    assert details.config == {"variant": "V2"}
+    assert details.config["variant"] == "V2"
     assert second not in [r[0] for r in details.other_runs]  # tài liệu khác

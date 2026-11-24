@@ -66,6 +66,10 @@ class AnthropicProvider:
             model=message.model,
         )
 
+    async def aclose(self) -> None:
+        """Đóng client HTTP của SDK; gọi một lần khi worker dừng (`open_deps`)."""
+        await self._client.close()
+
     def _uses_fallback(self, model: str) -> bool:
         return self._refusal_fallback and model.startswith(_FALLBACK_MODEL_PREFIXES)
 

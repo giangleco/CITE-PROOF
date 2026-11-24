@@ -308,6 +308,36 @@ async def test_warnings_make_completed_with_warnings(
     assert run.finished_at is not None
 
 
+@pytest.mark.db
+async def test_complete_stage_dedupes_warnings(
+    session_factory: SessionFactory, clean_db: None
+) -> None:
+    registry, _ = counting_registry(
+        CountingStage(S.S2, warnings=["LLM_NOT_CONFIGURED"]),
+        CountingStage(S.S4, warnings=["LLM_NOT_CONFIGURED"]),
+    )
+    run_id = await _new_run(session_factory)
+
+    await drain(session_factory, registry, pipeline_settings())
+    run = await _run(session_factory, run_id)
+    assert run.status == RunStatus.COMPLETED_WITH_WARNINGS.value
+    assert run.warnings == ["LLM_NOT_CONFIGURED"]
+
+
+@pytest.mark.db
+async def test_complete_stage_keeps_warning_order_and_drops_repeats(
+    session_factory: SessionFactory, clean_db: None
+) -> None:
+    registry, _ = counting_registry(
+        CountingStage(S.S2, warnings=["A", "B"]),
+        CountingStage(S.S4, warnings=["B", "C", "C", "A"]),
+    )
+    run_id = await _new_run(session_factory)
+
+    await drain(session_factory, registry, pipeline_settings())
+    assert (await _run(session_factory, run_id)).warnings == ["A", "B", "C"]
+
+
 class BarrierStage(CountingStage):
     """Lần gọi đầu chờ đủ bên ở barrier (buộc chạy song song) rồi ném `error` nếu có."""
 

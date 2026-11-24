@@ -5,8 +5,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
 
-from pydantic import SecretStr, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from citeproof.core import defaults
 
 
 class Settings(BaseSettings):
@@ -32,43 +34,18 @@ class Settings(BaseSettings):
     # Worker gọi Sonnet/Opus bị từ chối thì server chạy lại trên model dự phòng.
     anthropic_refusal_fallback: bool = True
     llm_concurrency: int = 4
-    # Theo tác vụ (spec §8.2): W1-W4 dùng Haiku, effort thấp; W5, A1, A2 dùng Sonnet, effort cao.
-    llm_models: dict[str, str] = {
-        "reference.parse": "claude-haiku-5-5",
-        "claim.extract": "claude-haiku-5-5",
-        "claim.translate": "claude-haiku-5-5",
-        "claim.decompose": "claude-haiku-5-5",
-        "verdict.judge": "claude-sonnet-5-5",
-        "verdict.judge_closed_book": "claude-sonnet-5-5",
-        "agent.reference_resolver": "claude-sonnet-5-5",
-        "agent.evidence_investigator": "claude-sonnet-5-5",
-    }
-    llm_effort: dict[str, str] = {
-        "reference.parse": "low",
-        "claim.extract": "low",
-        "claim.translate": "low",
-        "claim.decompose": "low",
-        "verdict.judge": "high",
-        "verdict.judge_closed_book": "high",
-        "agent.reference_resolver": "high",
-        "agent.evidence_investigator": "high",
-    }
-    llm_max_tokens: dict[str, int] = {
-        "reference.parse": 8000,
-        "claim.extract": 4000,
-        "claim.translate": 2000,
-        "claim.decompose": 2000,
-        "verdict.judge": 16000,
-        "verdict.judge_closed_book": 16000,
-        "agent.reference_resolver": 16000,
-        "agent.evidence_investigator": 16000,
-    }
+    # Theo tác vụ (spec §8.2); mặc định ở `core.defaults`, dùng chung với `RunConfig`.
+    llm_models: dict[str, str] = Field(default_factory=lambda: dict(defaults.LLM_MODELS))
+    llm_effort: dict[str, str] = Field(default_factory=lambda: dict(defaults.LLM_EFFORT))
+    llm_max_tokens: dict[str, int] = Field(default_factory=lambda: dict(defaults.LLM_MAX_TOKENS))
     # USD trên 1 triệu token (đầu vào, đầu ra), khóa theo model.
-    llm_prices: dict[str, tuple[float, float]] = {
-        "claude-haiku-5-5": (0.10, 0.50),
-        "claude-sonnet-5-5": (2.0, 10.0),
-        "claude-opus-5-5": (4.0, 20.0),
-    }
+    llm_prices: dict[str, tuple[float, float]] = Field(
+        default_factory=lambda: dict(defaults.LLM_PRICES)
+    )
+    # Giới hạn một lần chạy và số chunk truy xuất; được đóng băng vào `RunConfig` khi tạo run.
+    run_max_claims: int = defaults.RUN_MAX_CLAIMS
+    run_max_cost_usd: float = defaults.RUN_MAX_COST_USD
+    retrieval_k: int = defaults.RETRIEVAL_K
 
     # Giao diện web (spec web UI §7.10). Các giới hạn [ĐX] chốt sau SPK-05.
     storage_dir: Path = Path("var/storage")

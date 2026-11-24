@@ -397,3 +397,24 @@ async def test_empty_output_is_not_echoed_as_assistant_turn(text: str) -> None:
     retry = provider.requests[1].messages
     assert [m["role"] for m in retry] == ["user", "user"]
     assert "stop_reason=refusal" in retry[-1]["content"]
+
+
+class _ClosingProvider(ScriptedProvider):
+    def __init__(self) -> None:
+        super().__init__([])
+        self.closed = 0
+
+    async def aclose(self) -> None:
+        self.closed += 1
+
+
+async def test_aclose_closes_provider() -> None:
+    provider = _ClosingProvider()
+    client = LLMClient(provider, InMemoryCacheStore(), InMemoryCallLogger())
+    await client.aclose()
+    assert provider.closed == 1
+
+
+async def test_aclose_without_provider_close_is_noop() -> None:
+    client = LLMClient(ScriptedProvider([]), InMemoryCacheStore(), InMemoryCallLogger())
+    await client.aclose()

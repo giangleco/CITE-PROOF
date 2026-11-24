@@ -6,10 +6,11 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from citeproof.core.enums import JobStatus, RunStatus, StageName, UserRole, Verifier
+from citeproof.core.enums import JobStatus, LLMTask, RunStatus, StageName, UserRole, Verifier
 from citeproof.core.errors import ConflictError, InputError, RateLimitedError
 from citeproof.core.settings import Settings
 from citeproof.db.models import Document, Job, User, VerificationRun
+from citeproof.pipeline.config import RunConfig
 from citeproof.services import auth, documents
 from citeproof.services.documents import DemoConfig
 from citeproof.storage import LocalStorage
@@ -61,7 +62,7 @@ async def test_create_file_document_stores_and_enqueues(
         assert doc.storage_key.endswith("/original.pdf")
         run = await s.get(VerificationRun, run_id)
         assert run is not None and run.status == RunStatus.QUEUED.value
-        assert run.config == {"variant": "V2"}
+        assert run.config["variant"] == "V2"
         stages = (await s.execute(select(Job.stage).where(Job.run_id == run_id))).scalars().all()
         assert stages == [StageName.S1.value]
 
@@ -205,7 +206,27 @@ async def test_demo_kept_only_in_local(
         )
         configs = {r.id: r.config for r in (await s.execute(select(VerificationRun))).scalars()}
     assert configs[local_run]["demo"] == {"step_delay_s": 1.5, "fail_at": "S5"}
-    assert "demo" not in configs[pilot_run]
+    assert configs[pilot_run]["demo"] is None
+
+
+@pytest.mark.db
+async def test_start_run_stores_resolved_config(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    storage = LocalStorage(settings.storage_dir)
+    async with session_factory() as s:
+        user = await _user(s)
+        _, run_id = await documents.create_file_document(
+            s, storage, settings, user=user, filename="a.pdf", data=PDF_BYTES
+        )
+        await s.commit()
+        run = (
+            await s.execute(select(VerificationRun).where(VerificationRun.id == run_id))
+        ).scalar_one()
+    assert run.config["models"]["verdict.judge"] == "claude-sonnet-5-5"
+    assert run.config["prompts"]["verdict.judge"] == "v1"
+    assert run.config == RunConfig.resolve(settings, variant=Verifier.V2).model_dump(mode="json")
+    assert RunConfig.load(run.config).task(LLMTask.VERDICT_JUDGE).model == "claude-sonnet-5-5"
 
 
 @pytest.mark.db

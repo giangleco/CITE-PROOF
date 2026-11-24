@@ -86,3 +86,19 @@ def test_web_settings_defaults() -> None:
     assert s.session_ttl_days == 14
     assert s.login_max_failures_per_email == 5
     assert s.llm_provider_name is None
+
+
+def test_run_settings_defaults() -> None:
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.run_max_claims == 150
+    assert s.run_max_cost_usd == 5.0
+    assert s.retrieval_k == 6
+
+
+def test_default_tables_are_copied_per_instance() -> None:
+    first = Settings(_env_file=None)  # type: ignore[call-arg]
+    first.llm_models["verdict.judge"] = "x"
+    first.llm_prices["claude-haiku-5-5"] = (9.0, 9.0)
+    second = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert second.llm_models["verdict.judge"] == "claude-sonnet-5-5"
+    assert second.llm_prices["claude-haiku-5-5"] == (0.10, 0.50)

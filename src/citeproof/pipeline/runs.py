@@ -7,6 +7,7 @@ thêm đúng một lần). Run đã FAILED hoặc CANCELLED không bao giờ b�
 thái. Các hàm không commit: caller quyết định ranh giới giao dịch.
 """
 
+from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
@@ -96,19 +97,29 @@ async def _enqueue_ready_successors(session: AsyncSession, run_id: UUID, stage: 
             await enqueue(session, run_id, successor)
 
 
+def _merge_warnings(existing: list[Any], new: Sequence[str]) -> list[Any]:
+    """Nối cảnh báo mới chưa có trong run (giữ thứ tự xuất hiện đầu tiên)."""
+    merged = list(existing)
+    for warning in new:
+        if warning not in merged:
+            merged.append(warning)
+    return merged
+
+
 async def complete_stage(session: AsyncSession, job: ClaimedJob, result: StageResult) -> bool:
     """Đánh dấu job DONE, ghi cảnh báo, chuyển run sang RUNNING và thêm stage kế tiếp.
 
-    Trả về False nếu lease đã mất; khi đó không ghi gì. Run đã kết thúc
+    Trả về False nếu lease đã mất; khi đó không ghi gì. Cảnh báo đã có trong run không
+    được ghi lại (nhiều stage cùng báo `LLM_NOT_CONFIGURED`). Run đã kết thúc
     (FAILED/CANCELLED) chỉ nhận thêm cảnh báo, giữ nguyên trạng thái và không có
     stage kế tiếp.
     """
     run = await _lock_run(session, job.run_id)
     if run is None or not await mark_done(session, job):
         return False
-    warnings = [*run.warnings, *result.warnings]
+    warnings = _merge_warnings(run.warnings, result.warnings)
     if run.status not in _ACTIVE:
-        if result.warnings:
+        if warnings != run.warnings:
             await _update_run(session, job.run_id, warnings=warnings)
         return True
     if job.stage is _FINAL_STAGE:

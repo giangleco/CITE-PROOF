@@ -3,7 +3,7 @@
 import logging
 import time
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import ValidationError
 
@@ -30,6 +30,11 @@ from citeproof.llm.types import (
 logger = logging.getLogger(__name__)
 
 _BAD_STOP_REASONS = frozenset({"max_tokens", "refusal"})
+
+
+@runtime_checkable
+class _Closeable(Protocol):
+    async def aclose(self) -> None: ...
 
 
 def _feedback(errors: list[str]) -> str:
@@ -182,6 +187,11 @@ class LLMClient:
             messages.append({"role": "user", "content": _feedback(problems)})
 
         raise LLMOutputError(f"{parts.task}: output invalid after {max_attempts} attempts")
+
+    async def aclose(self) -> None:
+        """Đóng tài nguyên của provider (ví dụ client HTTP của SDK) nếu provider có."""
+        if isinstance(self._provider, _Closeable):
+            await self._provider.aclose()
 
     def _warn_invalid_entry(self, parts: PromptParts, key: str) -> None:
         logger.warning("llm_cache_entry_invalid", extra={"task": parts.task, "cache_key": key})
