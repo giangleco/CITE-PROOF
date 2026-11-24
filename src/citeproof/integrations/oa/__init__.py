@@ -15,6 +15,7 @@ from citeproof.integrations.oa.acl import AclAccess
 from citeproof.integrations.oa.arxiv import ArxivAccess
 from citeproof.integrations.oa.base import AccessOption, AccessResolver, Provider, WorkRef
 from citeproof.integrations.oa.openalex_oa import OpenAlexAccess
+from citeproof.integrations.oa.ratelimit import OA_HOST_RATES, HostRateLimits
 from citeproof.integrations.oa.unpaywall import UnpaywallAccess
 
 
@@ -24,10 +25,12 @@ def make_resolvers(
     gateway_factory: Callable[[], MetadataGateway],
     contact_email: str | None,
     timeout_s: float = DEFAULT_TIMEOUT_S,
+    limits: HostRateLimits | None = None,
 ) -> list[AccessResolver]:
     """Các nguồn bản mở theo thứ tự thử; Unpaywall chỉ khi có email liên hệ.
 
     Dựng mới cho mỗi lần chạy: `OpenAlexAccess` giữ một gateway (ngắt mạch theo lần chạy).
+    `limits` (dùng chung cả tiến trình) giới hạn tốc độ gọi Unpaywall.
     """
     resolvers: list[AccessResolver] = [
         ArxivAccess(),
@@ -36,15 +39,17 @@ def make_resolvers(
     ]
     email = (contact_email or "").strip()
     if email:
-        resolvers.append(UnpaywallAccess(http, email, timeout_s=timeout_s))
+        resolvers.append(UnpaywallAccess(http, email, timeout_s=timeout_s, limits=limits))
     return resolvers
 
 
 __all__ = [
+    "OA_HOST_RATES",
     "AccessOption",
     "AccessResolver",
     "AclAccess",
     "ArxivAccess",
+    "HostRateLimits",
     "OpenAlexAccess",
     "Provider",
     "UnpaywallAccess",

@@ -11,6 +11,7 @@ from citeproof.core.enums import StageName
 from citeproof.core.settings import Settings
 from citeproof.integrations.http_safe import Resolver, SafeHttpClient
 from citeproof.integrations.metadata import make_gateway_factory
+from citeproof.integrations.oa import HostRateLimits
 from citeproof.llm.cache import PgCacheStore
 from citeproof.llm.calls import PgCallLogger
 from citeproof.llm.client import LLMClient
@@ -105,6 +106,7 @@ def make_test_deps(
             resolver=resolver or public_resolver,
             transport=transport or httpx.MockTransport(refuse_network),
         ),
+        source_limits=HostRateLimits(sleep=no_sleep),
         grobid=make_grobid_client(settings, http) if transport is not None else None,
         metadata=make_gateway_factory(settings, http, session_factory, sleep=no_sleep),
     )

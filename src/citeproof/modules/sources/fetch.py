@@ -18,7 +18,7 @@ from citeproof.integrations.http_safe import (
     SafeHttpClient,
     UnsafeUrlError,
 )
-from citeproof.integrations.oa import AccessOption
+from citeproof.integrations.oa import AccessOption, HostRateLimits
 
 logger = logging.getLogger(__name__)
 
@@ -44,11 +44,17 @@ def sha256_hex(data: bytes) -> str:
 
 
 class FullTextFetcher:
-    def __init__(self, safe_http: SafeHttpClient) -> None:
+    def __init__(self, safe_http: SafeHttpClient, *, limits: HostRateLimits | None = None) -> None:
         self._safe_http = safe_http
+        self._limits = limits
 
     async def fetch(self, option: AccessOption) -> FetchedFile | None:
-        """Bản PDF của `option`, hoặc None nếu không tải được bản PDF đầy đủ."""
+        """Bản PDF của `option`, hoặc None nếu không tải được bản PDF đầy đủ.
+
+        Với `limits`, chờ tới khe của host trước khi tải (arXiv 1 yêu cầu/3 s, ACL 1/s).
+        """
+        if self._limits is not None:
+            await self._limits.acquire(option.url)
         try:
             response = await self._safe_http.get(option.url)
         except _FETCH_ERRORS as exc:

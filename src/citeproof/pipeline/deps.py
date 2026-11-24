@@ -19,6 +19,7 @@ from citeproof.core.settings import Settings
 from citeproof.integrations.grobid import GrobidClient
 from citeproof.integrations.http_safe import Resolver, SafeHttpClient
 from citeproof.integrations.metadata import MetadataGateway, make_gateway_factory
+from citeproof.integrations.oa import HostRateLimits
 from citeproof.llm.cache import doc_namespace
 from citeproof.llm.client import LLMClient
 from citeproof.llm.factory import make_llm_client
@@ -48,6 +49,9 @@ class PipelineDeps:
     safe_http: SafeHttpClient
     # Tải bản mở ở S5 (URL từ metadata): giới hạn `max_source_bytes`, 60 s (preflight F08).
     source_http: SafeHttpClient
+    # Giới hạn tốc độ theo host khi tìm và tải bản mở (arXiv, ACL Anthology, Unpaywall); một
+    # bộ cho cả tiến trình, dùng chung giữa các lần chạy và các work S5 xử lý song song.
+    source_limits: HostRateLimits
     # None: cache LLM theo tài liệu (`doc:<document_id>`); đánh giá đặt `eval:<dataset>@<hash>`.
     cache_namespace: str | None = None
     # None khi không cấu hình GROBID: PDF parse bằng pypdfium2 (cảnh báo `PDF_TEXT_FALLBACK`).
@@ -76,6 +80,7 @@ async def open_deps(
             http=http,
             safe_http=SafeHttpClient(),
             source_http=make_source_http(settings),
+            source_limits=HostRateLimits(),
             grobid=make_grobid_client(settings, http),
             metadata=make_gateway_factory(settings, http, session_factory),
         )

@@ -42,6 +42,7 @@ from citeproof.db.models import (
     VerificationRun,
     Work,
 )
+from citeproof.integrations.oa import HostRateLimits
 from citeproof.modules.references.normalize import title_norm
 from citeproof.modules.sources.stage_fetch import FetchSourcesStage
 from citeproof.pipeline.config import RunScope
@@ -49,6 +50,7 @@ from citeproof.pipeline.deps import PipelineDeps
 from citeproof.pipeline.runs import create_run
 from citeproof.pipeline.stages import StageRegistry
 from citeproof.storage import LocalStorage
+from tests.integrations.metadata.test_metadata_ratelimit import FakeClock
 from tests.integrations.oa.fakes import (
     JUMPER_DOI,
     JUMPER_PDF,
@@ -350,6 +352,32 @@ async def test_resolver_error_skips_only_that_source(
     [source] = await _sources(session_factory)
     assert source.content_level == ContentLevel.ABSTRACT.value
     assert await _run_status(session_factory, run_id) == RunStatus.COMPLETED.value
+
+
+@pytest.mark.db
+async def test_arxiv_downloads_rate_limited_across_works(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    clock = FakeClock()
+    times: list[float] = []
+
+    def page() -> httpx.Response:
+        times.append(clock.now)
+        return pdf_stream()
+
+    second_pdf = "https://export.arxiv.org/pdf/1810.04805"
+    web = FakeWeb(pages={ARXIV_PDF: page, second_pdf: page})
+    deps = dataclasses.replace(
+        web.deps(settings, session_factory),
+        source_limits=HostRateLimits(clock=clock, sleep=clock.sleep),
+    )
+    first = await _work(session_factory, "Attention", arxiv_id=ARXIV_ID)
+    second = await _work(session_factory, "BERT", arxiv_id="1810.04805")
+    await _cite(session_factory, [first, second])
+    await _run_s5(session_factory, deps)
+
+    assert len(await _sources(session_factory)) == 2
+    assert sorted(times) == [0.0, 3.0]  # hai work chạy song song vẫn cách nhau 3 s
 
 
 # --- Abstract ---------------------------------------------------------------------------------

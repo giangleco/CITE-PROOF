@@ -3,14 +3,16 @@
 Mọi request đi qua `SafeHttpClient` với resolver giả và `httpx.MockTransport`.
 """
 
+import asyncio
 import hashlib
 
 import httpx
 import pytest
 
 from citeproof.integrations.http_safe import SafeHttpClient
-from citeproof.integrations.oa import AccessOption
+from citeproof.integrations.oa import AccessOption, HostRateLimits
 from citeproof.modules.sources.fetch import FetchedFile, FullTextFetcher, open_source_key
+from tests.integrations.metadata.test_metadata_ratelimit import FakeClock
 from tests.integrations.oa.fakes import OPEN_PDF, html_stream, pdf_stream
 from tests.modules.references.test_web_check import Recorder
 from tests.pipeline.helpers import public_resolver
@@ -81,3 +83,50 @@ async def test_fetch_private_ip_blocked_without_request() -> None:
     option = AccessOption(url="http://169.254.169.254/x", license=None, provider="openalex")
     assert await FullTextFetcher(_client(recorder)).fetch(option) is None
     assert recorder.requests == []
+
+
+# --- Giới hạn tốc độ theo host ---------------------------------------------------------------
+
+
+def _timed_fetcher(clock: FakeClock) -> tuple[FullTextFetcher, list[tuple[str, float]]]:
+    """Fetcher có giới hạn theo host trên đồng hồ giả; ghi (host, thời điểm) mỗi request."""
+    seen: list[tuple[str, float]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.headers["host"], clock.now))
+        return pdf_stream()
+
+    client = SafeHttpClient(resolver=public_resolver, transport=httpx.MockTransport(handler))
+    limits = HostRateLimits(clock=clock, sleep=clock.sleep)
+    return FullTextFetcher(client, limits=limits), seen
+
+
+def _option(url: str) -> AccessOption:
+    return AccessOption(url=url, license=None, provider="openalex")
+
+
+async def test_concurrent_arxiv_fetches_spaced_and_acl_not_delayed() -> None:
+    clock = FakeClock()
+    fetcher, seen = _timed_fetcher(clock)
+    first, second = await asyncio.gather(
+        fetcher.fetch(OPTION), fetcher.fetch(_option("https://arxiv.org/pdf/1810.04805"))
+    )
+    assert first is not None and second is not None
+    assert [host for host, _ in seen] == ["export.arxiv.org", "arxiv.org"]
+    assert seen[1][1] - seen[0][1] >= 3.0  # hai host của arXiv chung một giới hạn
+    # arXiv chỉ được gọi lại ở t = 6; ACL Anthology dùng giới hạn riêng nên đi ngay.
+    now = clock.now
+    assert await fetcher.fetch(_option("https://aclanthology.org/N19-1423.pdf")) is not None
+    assert seen[-1] == ("aclanthology.org", now)
+    await fetcher.fetch(_option("https://aclanthology.org/2020.acl-main.1.pdf"))
+    assert seen[-1] == ("aclanthology.org", now + 1.0)
+
+
+async def test_unlimited_hosts_not_delayed() -> None:
+    clock = FakeClock()
+    fetcher, seen = _timed_fetcher(clock)
+    await asyncio.gather(
+        *(fetcher.fetch(_option(f"https://www.nature.com/{i}.pdf")) for i in range(3))
+    )
+    assert [at for _, at in seen] == [0.0, 0.0, 0.0]
+    assert clock.sleeps == []

@@ -9,7 +9,9 @@
 2. Toàn văn, khi work chưa có: thử các nguồn theo thứ tự của `integrations.oa.make_resolvers`
    (arXiv, ACL Anthology, OpenAlex, Unpaywall khi có email liên hệ), tải từng lựa chọn qua
    `deps.source_http` và dừng ở bản PDF đầu tiên tải được → `sources/open/<sha256>.pdf`
-   (`FULL_TEXT`, `OPEN_FULL_TEXT`, kèm URL đã chọn và giấy phép).
+   (`FULL_TEXT`, `OPEN_FULL_TEXT`, kèm URL đã chọn và giấy phép). Lời gọi tới arXiv,
+   ACL Anthology và Unpaywall chờ theo `deps.source_limits` (giới hạn theo host, dùng chung
+   cả tiến trình).
 3. Ghi storage trước, rồi chèn `source_files` (`OPEN_ACCESS`, không chủ sở hữu, không
    reference) trong một giao dịch rào lease ngắn cho mỗi work, `ON CONFLICT DO NOTHING` trên
    index duy nhất (`work_id`, `sha256`). Mọi lời gọi mạng xong trước giao dịch đó.
@@ -109,8 +111,9 @@ class FetchSourcesStage:
             gateway_factory=self._deps.metadata,
             contact_email=settings.contact_email,
             timeout_s=settings.metadata_timeout_seconds,
+            limits=self._deps.source_limits,
         )
-        fetcher = FullTextFetcher(self._deps.source_http)
+        fetcher = FullTextFetcher(self._deps.source_http, limits=self._deps.source_limits)
 
         async def handle(work: _WorkView) -> None:
             sources: list[_NewSource] = []

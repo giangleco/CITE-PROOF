@@ -1,5 +1,6 @@
 """PipelineDeps: dựng và đóng client dùng chung, namespace cache cho lời gọi LLM."""
 
+import asyncio
 import dataclasses
 import uuid
 from datetime import timedelta
@@ -16,6 +17,7 @@ from citeproof.core.settings import Settings
 from citeproof.integrations.grobid import GrobidClient
 from citeproof.integrations.http_safe import SafeHttpClient
 from citeproof.integrations.metadata import MetadataCache, MetadataGateway
+from citeproof.integrations.oa import HostRateLimits
 from citeproof.llm.cache import InMemoryCacheStore, validate_namespace
 from citeproof.llm.calls import InMemoryCallLogger
 from citeproof.llm.client import LLMClient
@@ -218,4 +220,19 @@ async def test_make_test_deps_source_http_refuses_network_without_transport(
     assert deps.source_http.max_bytes == 31_457_280
     with pytest.raises(NetworkRefusedError):
         await deps.source_http.get("https://export.arxiv.org/pdf/1706.03762")
+    await deps.http.aclose()
+
+
+async def test_open_deps_builds_shared_source_limits(tmp_path: Path) -> None:
+    async with open_deps(_settings(tmp_path), async_sessionmaker()) as deps:
+        assert isinstance(deps.source_limits, HostRateLimits)
+        arxiv = deps.source_limits.limiter_for("https://export.arxiv.org/pdf/1706.03762")
+        assert arxiv is not None
+        assert arxiv.rate_per_second == pytest.approx(1 / 3)
+
+
+async def test_make_test_deps_source_limits_do_not_wait(tmp_path: Path) -> None:
+    deps = make_test_deps(_settings(tmp_path), async_sessionmaker())
+    for _ in range(3):  # giới hạn vẫn có nhưng test không chờ thật
+        await asyncio.wait_for(deps.source_limits.acquire("https://arxiv.org/pdf/x"), 1.0)
     await deps.http.aclose()
