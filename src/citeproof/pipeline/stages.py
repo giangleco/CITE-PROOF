@@ -8,6 +8,7 @@ from typing import Protocol
 from uuid import UUID
 
 from citeproof.core.enums import StageName
+from citeproof.pipeline.jobs import ClaimedJob
 
 STAGE_DEPENDENCIES: Mapping[StageName, frozenset[StageName]] = MappingProxyType(
     {
@@ -29,10 +30,30 @@ class StageResult:
     warnings: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class StageContext:
+    """Thông tin một lần chạy stage: lần chạy, lease đang giữ và giới hạn lượt thử.
+
+    Stage ghi kết quả theo mục qua `fenced_session(session_factory, ctx.lease)`.
+    """
+
+    run_id: UUID
+    lease: ClaimedJob
+    max_attempts: int
+
+    @property
+    def attempt(self) -> int:
+        return self.lease.attempts
+
+    @property
+    def is_last_attempt(self) -> bool:
+        return self.attempt >= self.max_attempts
+
+
 class PipelineStage(Protocol):
     name: StageName
 
-    async def run(self, run_id: UUID) -> StageResult: ...
+    async def run(self, ctx: StageContext) -> StageResult: ...
 
 
 class NoopStage:
@@ -41,7 +62,7 @@ class NoopStage:
     def __init__(self, name: StageName) -> None:
         self.name = name
 
-    async def run(self, run_id: UUID) -> StageResult:
+    async def run(self, ctx: StageContext) -> StageResult:
         return StageResult()
 
 

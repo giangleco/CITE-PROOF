@@ -7,7 +7,6 @@
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -15,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from citeproof.core.enums import StageName
 from citeproof.core.errors import InputError
 from citeproof.db.models import VerificationRun
-from citeproof.pipeline.stages import StageRegistry, StageResult
+from citeproof.pipeline.stages import StageContext, StageRegistry, StageResult
 
 MAX_DELAY_S = 5.0
 Sleep = Callable[[float], Awaitable[None]]
@@ -33,10 +32,10 @@ class DemoStage:
         self._session_factory = session_factory
         self._sleep = sleep
 
-    async def run(self, run_id: UUID) -> StageResult:
+    async def run(self, ctx: StageContext) -> StageResult:
         async with self._session_factory() as session:
             config = await session.scalar(
-                select(VerificationRun.config).where(VerificationRun.id == run_id)
+                select(VerificationRun.config).where(VerificationRun.id == ctx.run_id)
             )
         demo = (config or {}).get("demo")
         if not isinstance(demo, dict):

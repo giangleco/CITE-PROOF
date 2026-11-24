@@ -1,3 +1,5 @@
+import re
+
 import httpx
 import pytest
 from sqlalchemy import select
@@ -6,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from citeproof.core.enums import JobStatus, RunStatus, StageName, UserRole
 from citeproof.core.settings import Settings
 from citeproof.db.models import User, VerificationRun
+from citeproof.pipeline.stages import StageRegistry
+from tests.pipeline.helpers import drain, pipeline_settings
 from tests.services.helpers import new_run, set_jobs, set_run
 from tests.web.conftest import login, page_csrf
 
@@ -85,6 +89,18 @@ async def test_tech_details_admin_only(
         admin_run = await new_run(s, web_settings, admin)
     html = (await client.get(f"/runs/{admin_run}")).text
     assert "Chi tiết kỹ thuật" in html and "[chưa có]" in html
+
+
+@pytest.mark.db
+async def test_tech_details_show_step_duration(
+    client: httpx.AsyncClient, session_factory: SessionFactory, web_settings: Settings
+) -> None:
+    await login(client, session_factory, email="ad@b.vn", role=UserRole.ADMIN)
+    async with session_factory() as s:
+        run_id = await _run_for(s, web_settings)
+    await drain(session_factory, StageRegistry.noop(), pipeline_settings())
+    html = (await client.get(f"/runs/{run_id}")).text
+    assert len(re.findall(r"<td>\d+\.\d{2} s</td>", html)) == len(StageName)
 
 
 @pytest.mark.db

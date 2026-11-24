@@ -48,6 +48,9 @@ class StepView:
     state: StepState
     attempts: int
     queued_at: datetime | None
+    # Lần nhận job gần nhất (T-209); trang admin hiện thời lượng khi có cả hai.
+    started_at: datetime | None
+    finished_at: datetime | None
     last_error: str | None
 
 
@@ -111,6 +114,8 @@ async def get_run_view(session: AsyncSession, *, user: User, run_id: UUID) -> Ru
                 state=_STATE[job.status] if job else "pending",
                 attempts=job.attempts if job else 0,
                 queued_at=job.created_at if job else None,
+                started_at=job.started_at if job else None,
+                finished_at=job.finished_at if job else None,
                 last_error=job.last_error if job else None,
             )
         )

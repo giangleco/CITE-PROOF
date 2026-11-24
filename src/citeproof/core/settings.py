@@ -3,8 +3,9 @@
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,7 +20,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     job_max_attempts: int = 3
     job_backoff_base_seconds: float = 5.0
-    job_lock_timeout_seconds: int = 900
+    # Độ dài lease của một job; worker gia hạn mỗi `job_heartbeat_seconds` khi stage còn chạy.
+    job_lock_timeout_seconds: int = 120
+    job_heartbeat_seconds: float = 30.0
     worker_poll_interval_seconds: float = 1.0
     # USD trên 1 triệu token (đầu vào, đầu ra), khóa theo model.
     llm_prices: dict[str, tuple[float, float]] = {}
@@ -42,6 +45,13 @@ class Settings(BaseSettings):
     llm_provider_policy_url: str | None = None
     # IP của reverse proxy được tin X-Forwarded-For (phân tách bằng dấu phẩy); rỗng: không tin ai.
     trusted_proxies: str = "127.0.0.1"
+
+    @model_validator(mode="after")
+    def _heartbeat_fits_lease(self) -> Self:
+        # Lỡ một nhịp heartbeat (ví dụ DB chậm) vẫn còn hạn lease cho nhịp sau.
+        if self.job_heartbeat_seconds * 2 >= self.job_lock_timeout_seconds:
+            raise ValueError("job_heartbeat_seconds phải nhỏ hơn nửa job_lock_timeout_seconds")
+        return self
 
     def secure_cookies(self) -> bool:
         if self.cookie_secure is not None:

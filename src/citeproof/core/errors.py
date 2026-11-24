@@ -63,3 +63,9 @@ class LLMOutputError(CiteProofError):
 
 class InternalError(CiteProofError):
     """Lỗi lập trình (500, ghi log ERROR)."""
+
+
+class LeaseLostError(CiteProofError):
+    """Lease của job đã mất (hết hạn rồi bị nhận lại): không được ghi kết quả nữa."""
+
+    code = "LEASE_LOST"

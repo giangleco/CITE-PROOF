@@ -6,7 +6,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from citeproof.core.enums import JobStatus, StageName
-from citeproof.core.errors import InputError
+from citeproof.core.errors import InputError, LeaseLostError
 from citeproof.db.models.jobs import Job
 from citeproof.pipeline.jobs import (
     backoff_delay,
@@ -14,8 +14,10 @@ from citeproof.pipeline.jobs import (
     describe_error,
     enqueue,
     expire_stale_jobs,
+    fenced_session,
     mark_done,
     mark_failed,
+    renew_lease,
     stale_exhausted,
 )
 from tests.db.factories import make_document, make_run
@@ -38,6 +40,16 @@ async def _get(session: AsyncSession, run_id: uuid.UUID, stage: StageName) -> Jo
             .execution_options(populate_existing=True)
         )
     ).scalar_one()
+
+
+async def _expire_lease(session: AsyncSession, job_id: uuid.UUID) -> None:
+    """Cho lease hết hạn (worker giữ job coi như đã chết) rồi commit."""
+    await session.execute(
+        update(Job)
+        .where(Job.id == job_id)
+        .values(lease_expires_at=func.now() - timedelta(seconds=1))
+    )
+    await session.commit()
 
 
 @pytest.mark.db
@@ -105,26 +117,112 @@ async def test_two_sessions_claim_different_jobs(
 
 
 @pytest.mark.db
-async def test_stale_running_job_is_reclaimed(
+async def test_claim_sets_lease_and_started_at(
     session_factory: async_sessionmaker[AsyncSession], clean_db: None
 ) -> None:
     async with session_factory() as session:
         run_id = await _run_id(session)
         await enqueue(session, run_id, StageName.S1)
-        first = await claim_next(session, "w1", timedelta(minutes=15), max_attempts=3)
-        assert first is not None
-        # Còn hạn khóa: chưa được claim lại.
-        assert await claim_next(session, "w2", timedelta(minutes=15), max_attempts=3) is None
-        await session.execute(
-            update(Job).where(Job.id == first.id).values(locked_at=func.now() - timedelta(hours=1))
-        )
         await session.commit()
-        again = await claim_next(session, "w2", timedelta(minutes=15), max_attempts=3)
+        claimed = await claim_next(session, "w1", timedelta(seconds=120), max_attempts=3)
+        await session.commit()
+        assert claimed is not None
+        job = await _get(session, run_id, StageName.S1)
+        assert job.locked_at is not None and job.lease_expires_at is not None
+        lease = job.lease_expires_at - job.locked_at
+        assert timedelta(seconds=119) <= lease <= timedelta(seconds=121)
+        assert job.started_at == job.heartbeat_at == job.locked_at == claimed.locked_at
+        assert job.finished_at is None
+
+
+@pytest.mark.db
+async def test_expired_lease_is_reclaimed(
+    session_factory: async_sessionmaker[AsyncSession], clean_db: None
+) -> None:
+    async with session_factory() as session:
+        run_id = await _run_id(session)
+        await enqueue(session, run_id, StageName.S1)
+        first = await claim_next(session, "w1", timedelta(seconds=120), max_attempts=3)
+        assert first is not None
+        # Còn hạn lease: chưa được claim lại.
+        assert await claim_next(session, "w2", timedelta(seconds=120), max_attempts=3) is None
+        await _expire_lease(session, first.id)
+        again = await claim_next(session, "w2", timedelta(seconds=120), max_attempts=3)
         await session.commit()
         assert again is not None
         assert (again.id, again.attempts) == (first.id, 2)
+        assert again.locked_at != first.locked_at
         job = await _get(session, run_id, StageName.S1)
         assert job.locked_by == "w2"
+        assert job.finished_at is None
+
+
+@pytest.mark.db
+async def test_renew_extends_lease(
+    session_factory: async_sessionmaker[AsyncSession], clean_db: None
+) -> None:
+    async with session_factory() as session:
+        run_id = await _run_id(session)
+        await enqueue(session, run_id, StageName.S1)
+        claimed = await claim_next(session, "w1", timedelta(seconds=120), max_attempts=3)
+        await session.commit()
+        assert claimed is not None
+        before = await _get(session, run_id, StageName.S1)
+        previous_expiry, previous_heartbeat = before.lease_expires_at, before.heartbeat_at
+        assert previous_expiry is not None and previous_heartbeat is not None
+        assert await renew_lease(session, claimed, timedelta(seconds=120)) is True
+        await session.commit()
+        after = await _get(session, run_id, StageName.S1)
+        assert after.lease_expires_at is not None and after.lease_expires_at > previous_expiry
+        assert after.heartbeat_at is not None and after.heartbeat_at > previous_heartbeat
+        # Gia hạn không đổi token fencing.
+        assert (after.locked_at, after.status) == (claimed.locked_at, JobStatus.RUNNING.value)
+
+
+@pytest.mark.db
+async def test_renew_after_reclaim_returns_false(
+    session_factory: async_sessionmaker[AsyncSession], clean_db: None
+) -> None:
+    async with session_factory() as session:
+        run_id = await _run_id(session)
+        await enqueue(session, run_id, StageName.S1)
+        old = await claim_next(session, "w1", timedelta(seconds=120), max_attempts=3)
+        assert old is not None
+        await _expire_lease(session, old.id)
+        new = await claim_next(session, "w2", timedelta(seconds=120), max_attempts=3)
+        await session.commit()
+        assert new is not None and new.id == old.id
+        expiry = (await _get(session, run_id, StageName.S1)).lease_expires_at
+        assert await renew_lease(session, old, timedelta(seconds=120)) is False
+        await session.commit()
+        row = await _get(session, run_id, StageName.S1)
+        assert (row.locked_by, row.lease_expires_at) == ("w2", expiry)
+        assert await renew_lease(session, new, timedelta(seconds=120)) is True
+
+
+@pytest.mark.db
+async def test_fenced_session_raises_after_reclaim(
+    session_factory: async_sessionmaker[AsyncSession], clean_db: None
+) -> None:
+    async with session_factory() as session:
+        run_id = await _run_id(session)
+        await enqueue(session, run_id, StageName.S1)
+        old = await claim_next(session, "w1", timedelta(seconds=120), max_attempts=3)
+        await session.commit()
+        assert old is not None
+    # Lease còn giữ: ghi trong fenced_session được commit khi thoát.
+    async with fenced_session(session_factory, old) as fenced:
+        await fenced.execute(update(Job).where(Job.id == old.id).values(payload={"ghi": 1}))
+    async with session_factory() as session:
+        assert (await _get(session, run_id, StageName.S1)).payload == {"ghi": 1}
+        await _expire_lease(session, old.id)
+        assert await claim_next(session, "w2", timedelta(seconds=120), max_attempts=3)
+        await session.commit()
+    with pytest.raises(LeaseLostError):
+        async with fenced_session(session_factory, old) as fenced:
+            await fenced.execute(update(Job).where(Job.id == old.id).values(payload={"ghi": 2}))
+    async with session_factory() as session:
+        assert (await _get(session, run_id, StageName.S1)).payload == {"ghi": 1}
 
 
 @pytest.mark.db
@@ -139,6 +237,36 @@ async def test_mark_done(session_factory: async_sessionmaker[AsyncSession], clea
         job = await _get(session, run_id, StageName.S1)
         assert job.status == JobStatus.DONE.value
         assert job.locked_at is None
+
+
+@pytest.mark.db
+async def test_done_and_failed_record_finished_at(
+    session_factory: async_sessionmaker[AsyncSession], clean_db: None
+) -> None:
+    async with session_factory() as session:
+        run_id = await _run_id(session)
+        await enqueue(session, run_id, StageName.S1)
+        await enqueue(session, run_id, StageName.S2)
+        await session.commit()
+        done = await claim_next(session, "w1", timedelta(seconds=120), max_attempts=3)
+        failed = await claim_next(session, "w1", timedelta(seconds=120), max_attempts=3)
+        await session.commit()
+        assert done is not None and failed is not None
+        assert await mark_done(session, done) is True
+        status = await mark_failed(
+            session,
+            failed,
+            InputError("x"),
+            retryable=False,
+            max_attempts=3,
+            backoff_base_seconds=5.0,
+        )
+        assert status == JobStatus.FAILED
+        await session.commit()
+        for claimed in (done, failed):
+            job = await _get(session, run_id, claimed.stage)
+            assert job.started_at is not None and job.finished_at is not None
+            assert job.finished_at > job.started_at
 
 
 @pytest.mark.db
@@ -212,13 +340,6 @@ def test_describe_error_only_exposes_citeproof_messages() -> None:
     assert describe_error(InputError("x" * 900)) == "InputError: " + "x" * 500
 
 
-async def _make_stale(session: AsyncSession, job_id: uuid.UUID) -> None:
-    await session.execute(
-        update(Job).where(Job.id == job_id).values(locked_at=func.now() - timedelta(hours=1))
-    )
-    await session.commit()
-
-
 @pytest.mark.db
 async def test_exhausted_stale_job_is_expired_not_reclaimed(
     session_factory: async_sessionmaker[AsyncSession], clean_db: None
@@ -228,10 +349,10 @@ async def test_exhausted_stale_job_is_expired_not_reclaimed(
         await enqueue(session, run_id, StageName.S1)
         job = await claim_next(session, "w1", timedelta(minutes=15), max_attempts=1)
         assert job is not None
-        await _make_stale(session, job.id)
+        await _expire_lease(session, job.id)
         stale_locked_at = (await _get(session, run_id, StageName.S1)).locked_at
         assert await claim_next(session, "w2", timedelta(minutes=15), max_attempts=1) is None
-        expired = await expire_stale_jobs(session, timedelta(minutes=15), 1)
+        expired = await expire_stale_jobs(session, 1)
         await session.commit()
         assert [e.id for e in expired] == [job.id]
         assert expired[0].locked_at == stale_locked_at
@@ -239,7 +360,8 @@ async def test_exhausted_stale_job_is_expired_not_reclaimed(
         assert row.status == JobStatus.FAILED.value
         assert row.last_error == "LeaseExpired"
         assert row.locked_at is None and row.locked_by is None
-        assert await expire_stale_jobs(session, timedelta(minutes=15), 1) == []
+        assert row.finished_at is not None
+        assert await expire_stale_jobs(session, 1) == []
 
 
 @pytest.mark.db
@@ -251,8 +373,8 @@ async def test_non_exhausted_stale_job_not_expired(
         await enqueue(session, run_id, StageName.S1)
         job = await claim_next(session, "w1", timedelta(minutes=15), max_attempts=3)
         assert job is not None
-        await _make_stale(session, job.id)
-        assert await expire_stale_jobs(session, timedelta(minutes=15), 3) == []
+        await _expire_lease(session, job.id)
+        assert await expire_stale_jobs(session, 3) == []
 
 
 @pytest.mark.db
@@ -264,7 +386,7 @@ async def test_stale_worker_writes_are_fenced(
         await enqueue(session, run_id, StageName.S1)
         old = await claim_next(session, "w1", timedelta(minutes=15), max_attempts=3)
         assert old is not None
-        await _make_stale(session, old.id)
+        await _expire_lease(session, old.id)
         new = await claim_next(session, "w2", timedelta(minutes=15), max_attempts=3)
         assert new is not None and new.attempts == 2
         assert new.locked_at != old.locked_at
@@ -333,11 +455,7 @@ async def test_stale_exhausted_matches_only_expired_leases(
         await session.execute(
             update(Job)
             .where(Job.run_id == run_id, Job.stage.in_(["S1", "S2"]))
-            .values(locked_at=func.now() - timedelta(hours=1))
+            .values(lease_expires_at=func.now() - timedelta(seconds=1))
         )
-        matched = (
-            await session.scalars(
-                select(Job.stage).where(stale_exhausted(timedelta(minutes=15), 3))
-            )
-        ).all()
+        matched = (await session.scalars(select(Job.stage).where(stale_exhausted(3)))).all()
         assert matched == ["S1"]

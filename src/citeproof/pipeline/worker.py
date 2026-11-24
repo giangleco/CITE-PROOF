@@ -1,7 +1,9 @@
 """Worker: nhận job, chạy stage ngoài giao dịch, ghi kết quả trong giao dịch mới.
 
-Log chỉ gồm các trường trong allowlist; không bao giờ ghi thông điệp lỗi (có thể
-chứa nội dung tài liệu), chỉ ghi tên kiểu lỗi.
+Trong lúc stage chạy, một vòng heartbeat song song gia hạn lease mỗi
+`job_heartbeat_seconds`; lease mất thì stage bị hủy và kết quả bị bỏ. Log chỉ gồm
+các trường trong allowlist; không bao giờ ghi thông điệp lỗi (có thể chứa nội dung
+tài liệu), chỉ ghi tên kiểu lỗi.
 """
 
 import asyncio
@@ -15,9 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from citeproof.core.errors import CiteProofError, InternalError
 from citeproof.core.logging import log_context
 from citeproof.core.settings import Settings
-from citeproof.pipeline.jobs import claim_next
+from citeproof.pipeline.jobs import ClaimedJob, claim_next, renew_lease
 from citeproof.pipeline.runs import complete_stage, fail_expired_jobs, fail_stage
-from citeproof.pipeline.stages import StageRegistry
+from citeproof.pipeline.stages import PipelineStage, StageContext, StageRegistry, StageResult
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,52 @@ def _failure_level(error: Exception) -> int:
     return logging.WARNING if expected else logging.ERROR
 
 
+async def _keep_lease(
+    session_factory: async_sessionmaker[AsyncSession], job: ClaimedJob, settings: Settings
+) -> None:
+    """Gia hạn lease mỗi `job_heartbeat_seconds`; chỉ trả về khi lease đã mất.
+
+    Lỗi khi gia hạn (ví dụ DB mất kết nối) được ghi log rồi thử lại ở nhịp sau: lease
+    còn hạn thêm ít nhất một nhịp, và mọi ghi kết quả vẫn được rào bằng `locked_at`.
+    """
+    lease = timedelta(seconds=settings.job_lock_timeout_seconds)
+    while True:
+        await asyncio.sleep(settings.job_heartbeat_seconds)
+        try:
+            async with session_factory() as session:
+                renewed = await renew_lease(session, job, lease)
+                await session.commit()
+        except Exception as exc:
+            logger.warning("lease_renewal_failed", extra={"error_type": type(exc).__name__})
+            continue
+        if not renewed:
+            return
+
+
+async def _run_with_lease(
+    session_factory: async_sessionmaker[AsyncSession],
+    stage: PipelineStage,
+    ctx: StageContext,
+    settings: Settings,
+) -> StageResult | None:
+    """Chạy stage song song với vòng heartbeat; trả về None nếu lease mất trước khi xong.
+
+    Lease mất thì task stage bị hủy. Lỗi của stage được ném lại nguyên vẹn. Worker bị
+    hủy thì hủy cả stage lẫn heartbeat.
+    """
+    stage_task = asyncio.create_task(stage.run(ctx))
+    heartbeat = asyncio.create_task(_keep_lease(session_factory, ctx.lease, settings))
+    try:
+        done, _ = await asyncio.wait({stage_task, heartbeat}, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        stage_task.cancel()  # không có tác dụng nếu stage đã xong
+        heartbeat.cancel()
+        await asyncio.wait({stage_task, heartbeat})
+    if stage_task in done:
+        return stage_task.result()
+    return None
+
+
 async def work_once(
     session_factory: async_sessionmaker[AsyncSession],
     registry: StageRegistry,
@@ -38,11 +86,8 @@ async def work_once(
     settings: Settings,
 ) -> bool:
     """Xử lý tối đa một job; trả về False khi không có job nào nhận được."""
-    lock_timeout = timedelta(seconds=settings.job_lock_timeout_seconds)
     async with session_factory() as session:
-        expired = await fail_expired_jobs(
-            session, lock_timeout=lock_timeout, max_attempts=settings.job_max_attempts
-        )
+        expired = await fail_expired_jobs(session, max_attempts=settings.job_max_attempts)
         await session.commit()
     for stale in expired:
         logger.warning(
@@ -56,21 +101,21 @@ async def work_once(
             },
         )
 
+    lease = timedelta(seconds=settings.job_lock_timeout_seconds)
     async with session_factory() as session:
-        job = await claim_next(
-            session, worker_id, lock_timeout, max_attempts=settings.job_max_attempts
-        )
+        job = await claim_next(session, worker_id, lease, max_attempts=settings.job_max_attempts)
         await session.commit()
     if job is None:
         return False
 
+    ctx = StageContext(run_id=job.run_id, lease=job, max_attempts=settings.job_max_attempts)
     with log_context(
         run_id=str(job.run_id), stage=job.stage.value, job_id=str(job.id), worker_id=worker_id
     ):
         started = time.monotonic()
         logger.info("stage_started")
         try:
-            result = await registry.get(job.stage).run(job.run_id)
+            result = await _run_with_lease(session_factory, registry.get(job.stage), ctx, settings)
         except Exception as exc:
             logger.log(
                 _failure_level(exc),
@@ -84,6 +129,10 @@ async def work_once(
                 logger.warning("stage_result_discarded")
             return True
         duration_ms = _elapsed_ms(started)
+        if result is None:
+            # Worker khác đã nhận lại job: không ghi gì, kể cả lỗi.
+            logger.warning("stage_lease_lost", extra={"duration_ms": duration_ms})
+            return True
         async with session_factory() as session:
             recorded = await complete_stage(session, job, result)
             await session.commit()

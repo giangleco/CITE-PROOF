@@ -20,7 +20,7 @@
     <thead><tr><th scope="col">Bước</th><th scope="col">Trạng thái job</th><th scope="col">Lần thử</th><th scope="col">Vào hàng đợi</th><th scope="col">Thời lượng</th><th scope="col">Lỗi cuối</th></tr></thead>
     <tbody>
     {% for step in view.steps %}
-      <tr><td>{{ step.stage.value }}</td><td>{{ step.state }}</td><td>{{ step.attempts }}</td><td>{{ step.queued_at.strftime('%H:%M:%S') if step.queued_at else '[chưa có]' }}</td><td>[chưa có]</td><td class="id">{{ step.last_error or '' }}</td></tr>
+      <tr><td>{{ step.stage.value }}</td><td>{{ step.state }}</td><td>{{ step.attempts }}</td><td>{{ step.queued_at.strftime('%H:%M:%S') if step.queued_at else '[chưa có]' }}</td><td>{{ '%.2f s' | format((step.finished_at - step.started_at).total_seconds()) if step.started_at and step.finished_at else '[chưa có]' }}</td><td class="id">{{ step.last_error or '' }}</td></tr>
     {% endfor %}
     </tbody>
   </table>

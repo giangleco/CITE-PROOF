@@ -8,7 +8,7 @@ from citeproof.db.models import VerificationRun
 from citeproof.pipeline.demo import DemoStage, demo_registry
 from citeproof.services import runs_view
 from citeproof.services.documents import DemoConfig
-from tests.pipeline.helpers import drain, pipeline_settings
+from tests.pipeline.helpers import drain, pipeline_settings, stage_context
 from tests.services.helpers import new_run, new_user
 
 SessionFactory = async_sessionmaker[AsyncSession]
@@ -61,7 +61,7 @@ async def test_demo_delay_clamped(
     async with session_factory() as s:
         _, run_id = await _run(s, settings, DemoConfig(step_delay_s=99, fail_at=None))
     stage = DemoStage(StageName.S1, session_factory, sleep=fake_sleep)
-    await stage.run(run_id)  # type: ignore[arg-type]
+    await stage.run(stage_context(run_id))  # type: ignore[arg-type]
     assert slept == [5.0]
 
 
@@ -78,5 +78,5 @@ async def test_no_demo_key_is_noop(
     async with session_factory() as s:
         _, run_id = await _run(s, settings, None)
     stage = DemoStage(StageName.S4, session_factory, sleep=fake_sleep)
-    result = await stage.run(run_id)  # type: ignore[arg-type]
+    result = await stage.run(stage_context(run_id, stage=StageName.S4))  # type: ignore[arg-type]
     assert result.warnings == () and not called

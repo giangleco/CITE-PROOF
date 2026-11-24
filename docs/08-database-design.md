@@ -333,7 +333,9 @@ Quy ước chung: khóa chính `id UUID`; mọi bảng có `created_at TIMESTAMP
 | status | ENUM(`QUEUED`, `RUNNING`, `DONE`, `FAILED`) | |
 | attempts | INT | |
 | payload | JSONB | |
-| locked_at, locked_by | TIMESTAMPTZ, TEXT | |
+| locked_at, locked_by | TIMESTAMPTZ, TEXT | `locked_at` là token fencing của lần nhận job |
+| heartbeat_at, lease_expires_at | TIMESTAMPTZ NULL | Worker gia hạn lease khi stage còn chạy; job RUNNING hết hạn khi `lease_expires_at < now()` (T-209) |
+| started_at, finished_at | TIMESTAMPTZ NULL | Lần nhận job gần nhất; trang admin hiện thời lượng bước |
 | last_error | TEXT NULL | |
 | run_after | TIMESTAMPTZ | Phục vụ backoff |
 
@@ -343,7 +345,7 @@ Quy ước chung: khóa chính `id UUID`; mọi bảng có `created_at TIMESTAMP
 |---|---|
 | works | UNIQUE(`doi`); index trên `arxiv_id`, `openalex_id`; GIN `pg_trgm` trên `title_norm` |
 | source_chunks | GIN trên `tsv`; index trên `source_file_id`. Tìm vector là tìm chính xác trong một file nguồn, nên MVP không cần HNSW (`07a` TK-19) |
-| jobs | Index trên (`status`, `run_after`) |
+| jobs | Index trên (`status`, `run_after`), (`status`, `lease_expires_at`) |
 | claim_verifications | Index trên (`run_id`, `status`) |
 | agent_runs | Index trên (`run_id`, `agent`), (`target_type`, `target_id`) |
 | retrieval_results | Index trên (`run_id`, `claim_id`) |

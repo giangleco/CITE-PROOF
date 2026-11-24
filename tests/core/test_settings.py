@@ -14,7 +14,8 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.env == "local"
     assert s.log_level == "INFO"
     assert s.job_backoff_base_seconds == 5.0
-    assert s.job_lock_timeout_seconds == 900
+    assert s.job_lock_timeout_seconds == 120
+    assert s.job_heartbeat_seconds == 30.0
     assert s.worker_poll_interval_seconds == 1.0
     assert s.llm_prices == {}
 

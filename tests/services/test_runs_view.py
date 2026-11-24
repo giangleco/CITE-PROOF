@@ -6,8 +6,10 @@ from citeproof.core.enums import JobStatus, RunStatus, StageName
 from citeproof.core.errors import NotFoundError
 from citeproof.core.settings import Settings
 from citeproof.db.models import Job, LLMCall, VerificationRun
+from citeproof.pipeline.stages import StageRegistry
 from citeproof.services import runs_view
 from citeproof.services.documents import DemoConfig
+from tests.pipeline.helpers import drain, pipeline_settings
 from tests.services.helpers import new_run, new_user, set_jobs, set_run
 
 SessionFactory = async_sessionmaker[AsyncSession]
@@ -26,6 +28,23 @@ async def test_steps_derived_from_jobs(
     assert [step.state for step in view.steps] == ["done", "running"] + ["pending"] * 7
     assert view.is_active and not view.references_ready
     assert view.document_name == "bai.pdf"
+    assert all(step.started_at is None and step.finished_at is None for step in view.steps)
+
+
+@pytest.mark.db
+async def test_tech_details_step_duration(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    async with session_factory() as s:
+        user = await new_user(s)
+        run_id = await new_run(s, settings, user)
+    assert await drain(session_factory, StageRegistry.noop(), pipeline_settings()) == 9
+    async with session_factory() as s:
+        view = await runs_view.get_run_view(s, user=user, run_id=run_id)
+    assert [step.state for step in view.steps] == ["done"] * 9
+    for step in view.steps:
+        assert step.started_at is not None and step.finished_at is not None
+        assert step.finished_at >= step.started_at
 
 
 @pytest.mark.db
