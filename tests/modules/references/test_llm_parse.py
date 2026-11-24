@@ -22,6 +22,7 @@ from citeproof.modules.references.llm_parse import (
     build_parse_prompt,
     keep_supported_fields,
     parse_with_llm,
+    parse_with_llm_partial,
 )
 from citeproof.pipeline.config import RunConfig, TaskSpec
 from citeproof.pipeline.deps import PROMPTS_ROOT
@@ -188,6 +189,28 @@ async def test_invalid_output_gives_none_for_the_batch() -> None:
     assert results[:10] == [None] * 10
     assert results[10] is not None and results[10][0].title == "Tiêu đề số 10"
     assert len(provider.requests) == 3
+
+
+async def test_partial_results_kept_when_a_later_batch_is_unavailable() -> None:
+    raws = [f"Tác giả (2020). Tiêu đề số {n}." for n in range(12)]
+    first = [item(f"r{n + 1}", title=f"Tiêu đề số {n}") for n in range(10)]
+    error = RetryableError("quá tải", code="LLM_RATE_LIMITED")
+    llm, provider = client([response(*first), error])
+    outcome = await parse_with_llm_partial(llm, PROMPTS, SPEC, CTX, raws)
+    assert outcome.unavailable is error
+    assert outcome.invalid_batches == 0
+    assert len(outcome.results) == 12
+    assert all(r is not None for r in outcome.results[:10])
+    assert outcome.results[10:] == [None, None]
+    assert len(provider.requests) == 2
+
+
+async def test_partial_counts_invalid_batches() -> None:
+    bad = ProviderResponse('{"items": "nope"}', 10, 5, "end_turn")
+    llm, _ = client([bad, bad])
+    outcome = await parse_with_llm_partial(llm, PROMPTS, SPEC, CTX, [RAW])
+    assert outcome.results == [None]
+    assert outcome.invalid_batches == 1 and outcome.unavailable is None
 
 
 async def test_other_llm_errors_propagate() -> None:

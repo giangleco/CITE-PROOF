@@ -258,3 +258,63 @@ def test_empty_references_raw_falls_back_to_block() -> None:
     assert document_references(doc) == [
         RawReference(raw="Nguyễn Văn An (2020), Bài báo.", label="1")
     ]
+
+
+def test_heading_styled_subheading_resets_numbering_and_is_dropped() -> None:
+    doc = _doc(
+        [
+            ("heading", "Tài liệu tham khảo"),
+            ("body", "[1] Nguyễn Văn An (2020), Bài báo một."),
+            ("body", "[2] Lê Hoàng Cường (2019), Giáo trình."),
+            ("heading", "Sách và giáo trình khác"),  # không khớp mẫu tiêu đề nhóm
+            ("body", "1. Trần Thị Bích (2021), Sách."),
+            ("body", "2. Phạm Minh Đức (2018), Sách hai."),
+        ]
+    )
+    assert [(ref.label, ref.raw) for ref in document_references(doc)] == [
+        ("1", "Nguyễn Văn An (2020), Bài báo một."),
+        ("2", "Lê Hoàng Cường (2019), Giáo trình."),
+        ("1", "Trần Thị Bích (2021), Sách."),
+        ("2", "Phạm Minh Đức (2018), Sách hai."),
+    ]
+
+
+def test_restart_after_unrecognised_text_subheading_in_docx() -> None:
+    doc = _doc(
+        [
+            ("heading", "Tài liệu tham khảo"),
+            ("body", "[1] Nguyễn A (2020). X."),
+            ("body", "[2] Lê B (2019). Y."),
+            ("body", "Tài liệu tiếng nước ngoài"),
+            ("body", "[1] Smith, C. (2017). Z."),
+            ("body", "[2] Doe, D. (2018). W."),
+        ]
+    )
+    entries = document_references(doc)
+    assert [ref.label for ref in entries] == ["1", "2", "1", "2"]
+    assert entries[1].raw == "Lê B (2019). Y."
+
+
+def test_label_only_paragraphs_give_clean_entries() -> None:
+    doc = _doc(
+        [
+            ("heading", "References"),
+            ("body", "[1]"),
+            ("body", "A. Author, “Title one,” 2020."),
+            ("body", "[2] B. Author, “Title two,” 2021."),
+            ("body", "[3]"),
+        ]
+    )
+    assert [(ref.label, ref.raw) for ref in document_references(doc)] == [
+        ("1", "A. Author, “Title one,” 2020."),
+        ("2", "B. Author, “Title two,” 2021."),
+    ]
+
+
+def test_label_only_stored_references_are_dropped() -> None:
+    refs = [
+        RawReference(raw="[3]", label=None),
+        RawReference(raw="A. One, “T1,” 2019.", page=2, parsed=ParsedReference(title="T1")),
+    ]
+    doc = _doc([("body", "Thân bài [1].")], references=refs)
+    assert document_references(doc) == refs[1:]

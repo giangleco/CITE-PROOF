@@ -77,6 +77,11 @@ NEW_WARNINGS = {
     "PDF_TEXT_FALLBACK": (
         "Tệp PDF được đọc bằng chế độ dự phòng; tên mục và vị trí trong bài có thể chưa chính xác."
     ),
+    # Quyết định của controller (Task 7, fix round 1): S2 tách bằng rule vì GROBID/W1 lỗi.
+    "REFERENCE_PARSE_DEGRADED": (
+        "Một số tài liệu tham khảo được tách bằng luật đơn giản vì dịch vụ phân tích tạm thời "
+        "không khả dụng; thông tin có thể chưa đầy đủ."
+    ),
 }
 DESIGN_MD = Path(__file__).resolve().parents[2] / ".stitch" / "DESIGN.md"
 

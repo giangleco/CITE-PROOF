@@ -8,13 +8,16 @@ hai lần chạy song song không ghi trùng.
 Trường mỗi mục:
 1. Trường GROBID: đã có từ S1 (`RawReference.parsed`), hoặc `processCitationList` cho chuỗi
    chưa có cấu trúc (nhãn `[n]` bị bỏ trước khi gửi, vì GROBID làm hỏng chuỗi mở đầu bằng
-   `[`). GROBID tạm thời không truy cập được → job thử lại; ở lần thử cuối, hoặc khi GROBID
-   lỗi xử lý/TEI không khớp số chuỗi, dùng rule.
+   `[`; không bao giờ gửi chuỗi rỗng). GROBID tạm thời không truy cập được → job thử lại; ở
+   lần thử cuối, hoặc khi GROBID lỗi xử lý/TEI không khớp số chuỗi, dùng rule.
 2. Rule lấp trường GROBID thiếu; tác giả ưu tiên khối tác giả của rule (giữ cách viết trong
    bài, GROBID hay tách sai tên người Việt). Tiêu đề bỏ phần xuất bản dính sau dấu phẩy.
 3. W1 cho mục vẫn chưa có tiêu đề lẫn DOI, khi có LLM: trường đã kiểm lấp chỗ trống, loại
    tài liệu của W1 ghi đè rule. Không có LLM → cảnh báo `LLM_NOT_CONFIGURED` (chỉ khi có mục
-   như vậy). LLM tạm thời lỗi ở lần thử cuối → giữ kết quả rule.
+   như vậy). LLM tạm thời lỗi ở lần thử cuối → giữ kết quả các lô W1 đã xong, còn lại rule.
+
+Rule thay GROBID hoặc W1 vì dịch vụ lỗi là vĩnh viễn cho tài liệu (mục tạo một lần), nên lần
+chạy có cảnh báo `REFERENCE_PARSE_DEGRADED` (GROBID không được cấu hình thì không cảnh báo).
 
 `parse_method` là nguồn của tiêu đề (`grobid` | `rule` | `llm`; không có tiêu đề → `rule`).
 Không có danh mục → `{"code": "NO_REFERENCE_SECTION"}` vào `documents.parse_warnings`.
@@ -37,7 +40,7 @@ from citeproof.core.errors import InternalError, NotFoundError, ParseError, Retr
 from citeproof.db.models import Document, ReferenceEntry, VerificationRun
 from citeproof.llm.client import LLMClient
 from citeproof.modules.references.classify import classify_ref_type
-from citeproof.modules.references.llm_parse import parse_with_llm
+from citeproof.modules.references.llm_parse import parse_with_llm_partial
 from citeproof.modules.references.normalize import nfc_reference, normalize_doi
 from citeproof.modules.references.rules import clean_title, parse_reference_rules
 from citeproof.modules.references.sections import document_references
@@ -52,6 +55,7 @@ logger = logging.getLogger(__name__)
 
 NO_REFERENCE_SECTION = "NO_REFERENCE_SECTION"
 LLM_NOT_CONFIGURED = "LLM_NOT_CONFIGURED"
+REFERENCE_PARSE_DEGRADED = "REFERENCE_PARSE_DEGRADED"
 _LEADING_LABEL = re.compile(r"^\s*\[\d{1,4}\]\s*")
 
 
@@ -159,49 +163,54 @@ class ExtractReferencesStage:
 
     async def _grobid_fields(
         self, references: Sequence[RawReference], ctx: StageContext
-    ) -> dict[int, ParsedReference]:
-        """Trường `processCitationList` cho chuỗi chưa có cấu trúc, theo chỉ số mục."""
+    ) -> tuple[dict[int, ParsedReference], bool]:
+        """Trường `processCitationList` cho chuỗi chưa có cấu trúc, theo chỉ số mục; kèm cờ
+        GROBID đã lỗi (rule thay thế).
+        """
         grobid = self._deps.grobid
-        pending = [index for index, ref in enumerate(references) if ref.parsed is None]
-        if grobid is None or not pending:
-            return {}
-        strings = [_LEADING_LABEL.sub("", references[index].raw) for index in pending]
+        strings: dict[int, str] = {}
+        for index, ref in enumerate(references):
+            text = _LEADING_LABEL.sub("", ref.raw).strip()
+            if ref.parsed is None and text:
+                strings[index] = text
+        if grobid is None or not strings:
+            return {}, False
         try:
-            tei = await grobid.process_citations(strings)
+            tei = await grobid.process_citations(list(strings.values()))
             fields = await asyncio.to_thread(parse_citation_list_tei, tei)
         except RetryableError as exc:
             if not ctx.is_last_attempt:
                 raise
             logger.warning("grobid_citations_skipped", extra={"error_type": type(exc).__name__})
-            return {}
+            return {}, True
         except ParseError as exc:
             logger.warning("grobid_citations_skipped", extra={"error_type": type(exc).__name__})
-            return {}
+            return {}, True
         if len(fields) != len(strings):
             logger.warning("grobid_citations_misaligned")
-            return {}
-        return dict(zip(pending, fields, strict=True))
+            return {}, True
+        return dict(zip(strings, fields, strict=True)), False
 
-    async def _apply_llm(self, llm: LLMClient, drafts: list[EntryDraft], ctx: StageContext) -> None:
+    async def _apply_llm(self, llm: LLMClient, drafts: list[EntryDraft], ctx: StageContext) -> bool:
+        """Áp W1 cho mục chưa có tiêu đề lẫn DOI; trả True khi W1 lỗi (rule giữ chỗ đó)."""
         pending = [index for index, draft in enumerate(drafts) if _needs_llm(draft)]
         async with self._deps.session_factory() as session:
             info = await load_run_info(session, ctx.run_id)
-        try:
-            results = await parse_with_llm(
-                llm,
-                self._deps.prompts,
-                info.config.task(LLMTask.REFERENCE_PARSE),
-                call_context(self._deps, info, StageName.S2),
-                [drafts[index].raw for index in pending],
-            )
-        except RetryableError as exc:
+        outcome = await parse_with_llm_partial(
+            llm,
+            self._deps.prompts,
+            info.config.task(LLMTask.REFERENCE_PARSE),
+            call_context(self._deps, info, StageName.S2),
+            [drafts[index].raw for index in pending],
+        )
+        if outcome.unavailable is not None:
             if not ctx.is_last_attempt:
-                raise
-            logger.warning("w1_skipped", extra={"error_type": type(exc).__name__})
-            return
-        for index, result in zip(pending, results, strict=True):
+                raise outcome.unavailable  # lô đã xong nằm trong cache LLM, lần thử sau dùng lại
+            logger.warning("w1_skipped", extra={"error_type": type(outcome.unavailable).__name__})
+        for index, result in zip(pending, outcome.results, strict=True):
             if result is not None:
                 drafts[index] = apply_w1(drafts[index], *result)
+        return outcome.unavailable is not None or outcome.invalid_batches > 0
 
     async def _write_entries(
         self, ctx: StageContext, document_id: UUID, drafts: Sequence[EntryDraft]
@@ -251,13 +260,15 @@ class ExtractReferencesStage:
         if not references:
             await self._write_no_section(ctx, document.id)
             return StageResult()
-        grobid = await self._grobid_fields(references, ctx)
+        grobid, degraded = await self._grobid_fields(references, ctx)
         drafts = await asyncio.to_thread(draft_entries, references, grobid)
-        warnings: tuple[str, ...] = ()
+        warnings: list[str] = []
         if any(_needs_llm(draft) for draft in drafts):
             if self._deps.llm is None:
-                warnings = (LLM_NOT_CONFIGURED,)
-            else:
-                await self._apply_llm(self._deps.llm, drafts, ctx)
+                warnings.append(LLM_NOT_CONFIGURED)
+            elif await self._apply_llm(self._deps.llm, drafts, ctx):
+                degraded = True
+        if degraded:
+            warnings.append(REFERENCE_PARSE_DEGRADED)
         await self._write_entries(ctx, document.id, drafts)
-        return StageResult(warnings=warnings)
+        return StageResult(warnings=tuple(warnings))

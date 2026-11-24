@@ -247,6 +247,7 @@ Bảng nhãn này là nguồn duy nhất; mã nguồn sinh nhãn từ đây, tem
 | `CLAIM_LIMIT_REACHED` | Bài có nhiều nhận định hơn giới hạn của một lần kiểm tra; các nhận định vượt giới hạn chưa được đối chiếu. |
 | `COST_LIMIT_REACHED` | Lần kiểm tra đã chạm hạn mức chi phí; các nhận định còn lại chưa được đối chiếu. |
 | `PDF_TEXT_FALLBACK` | Tệp PDF được đọc bằng chế độ dự phòng; tên mục và vị trí trong bài có thể chưa chính xác. |
+| `REFERENCE_PARSE_DEGRADED` | Một số tài liệu tham khảo được tách bằng luật đơn giản vì dịch vụ phân tích tạm thời không khả dụng; thông tin có thể chưa đầy đủ. |
 | `SAMPLE_DOCUMENT` | Không hiển thị như cảnh báo; giao diện gắn nhãn "Bài mẫu". |
 | Mã khác | Có cảnh báo khi xử lý. (Admin thấy thêm mã gốc.) |
 

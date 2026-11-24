@@ -224,7 +224,10 @@ async def test_golden_reference_fields(
     document = await _golden_document(session_factory, settings, golden_case)
     deps = make_test_deps(settings, session_factory, transport=stub.transport)
     ctx = await _through_s1(session_factory, deps)
-    assert await ExtractReferencesStage(deps).run(ctx) == StageResult()
+    result = await ExtractReferencesStage(deps).run(ctx)
+    # `vi_mixed_apa` không có TEI `processCitationList` đã ghi: GROBID giả trả 500, rule tách.
+    degraded = golden_case.citations_tei is None and bool(stub.citation_requests)
+    assert result.warnings == (("REFERENCE_PARSE_DEGRADED",) if degraded else ())
 
     entries = await _entries(session_factory, document.id)
     assert len(entries) == len(expected.references)
@@ -360,9 +363,51 @@ async def test_w1_retryable_error_degrades_only_on_last_attempt(
     assert await _entries(session_factory, document.id) == []
     last = StageContext(run_id=ctx.run_id, lease=ctx.lease, max_attempts=ctx.attempt)
     assert last.is_last_attempt
-    assert await ExtractReferencesStage(deps).run(last) == StageResult()
+    result = await ExtractReferencesStage(deps).run(last)
+    assert result.warnings == ("REFERENCE_PARSE_DEGRADED",)
     [entry] = await _entries(session_factory, document.id)
     assert entry.parsed["title"] is None and entry.parse_method == ParseMethod.RULE.value
+
+
+@pytest.mark.db
+async def test_w1_partial_batches_kept_on_last_attempt(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    raws = [f"TÁC GIẢ {chr(65 + n)}. CHUỖI KHÔNG CẤU TRÚC SỐ {chr(65 + n)} 2020" for n in range(12)]
+    references = "\n".join(f"[{n}] {raw}" for n, raw in enumerate(raws, start=1))
+    document = (await _text_document(session_factory, settings, references))[1]
+    first_batch = _w1_response(
+        *(
+            {"ref_id": f"r{n + 1}", "title": f"CHUỖI KHÔNG CẤU TRÚC SỐ {chr(65 + n)}"}
+            for n in range(10)
+        )
+    )
+    provider = ScriptedProvider([first_batch, RetryableError("quá tải", code="LLM_RATE_LIMITED")])
+    deps = make_test_deps(settings, session_factory, provider=provider)
+    ctx = await _through_s1(session_factory, deps)
+    last = StageContext(run_id=ctx.run_id, lease=ctx.lease, max_attempts=ctx.attempt)
+    result = await ExtractReferencesStage(deps).run(last)
+    assert result.warnings == ("REFERENCE_PARSE_DEGRADED",)
+    entries = await _entries(session_factory, document.id)
+    assert [e.parse_method for e in entries] == [ParseMethod.LLM.value] * 10 + [
+        ParseMethod.RULE.value
+    ] * 2
+    assert entries[0].parsed["title"] == "CHUỖI KHÔNG CẤU TRÚC SỐ A"
+    assert entries[11].parsed["title"] is None
+
+
+@pytest.mark.db
+async def test_w1_invalid_output_flags_degraded(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    document = (await _text_document(session_factory, settings, f"[1] {UNPARSEABLE}"))[1]
+    bad = ProviderResponse('{"items": "nope"}', 10, 5, "end_turn")
+    deps = make_test_deps(settings, session_factory, provider=ScriptedProvider([bad, bad]))
+    ctx = await _through_s1(session_factory, deps)
+    result = await ExtractReferencesStage(deps).run(ctx)
+    assert result.warnings == ("REFERENCE_PARSE_DEGRADED",)
+    [entry] = await _entries(session_factory, document.id)
+    assert entry.parse_method == ParseMethod.RULE.value
 
 
 # --- GROBID ---------------------------------------------------------------------------------
@@ -412,7 +457,8 @@ async def test_grobid_failure_handling(
             await stage.run(ctx)
         assert await _entries(session_factory, document.id) == []
         ctx = StageContext(run_id=ctx.run_id, lease=ctx.lease, max_attempts=ctx.attempt)
-    assert await stage.run(ctx) == StageResult()
+    # Rule thay GROBID vĩnh viễn cho tài liệu này (QĐ-13): lần chạy có cảnh báo.
+    assert await stage.run(ctx) == StageResult(warnings=("REFERENCE_PARSE_DEGRADED",))
     [entry] = await _entries(session_factory, document.id)
     assert entry.parse_method == ParseMethod.RULE.value
     assert entry.parsed["title"] == "Giáo trình xử lý ngôn ngữ tự nhiên"
@@ -460,11 +506,41 @@ async def test_leading_label_stripped_before_grobid(
     await deps.storage.put(
         key, stored.with_references_raw([RawReference(raw=raw)]).model_dump_json().encode()
     )
-    assert await ExtractReferencesStage(deps).run(ctx) == StageResult()
+    result = await ExtractReferencesStage(deps).run(ctx)
+    assert result.warnings == ("REFERENCE_PARSE_DEGRADED",)  # GROBID giả trả 500
     assert stub.citation_requests == [["Smith, J. (2020). A short title. Journal X, 3(1), 1-9."]]
     [entry] = await _entries(session_factory, document.id)
     assert entry.raw_text == raw
     assert entry.parsed["title"] == "A short title"
+
+
+ONE_CITATION_TEI = (
+    '<TEI xmlns="http://www.tei-c.org/ns/1.0"><text><back><div><listBibl><biblStruct>'
+    '<monogr><title level="m" type="main">Giáo trình xử lý ngôn ngữ tự nhiên</title>'
+    '<imprint><date type="published" when="2019">2019</date></imprint></monogr>'
+    "</biblStruct></listBibl></div></back></text></TEI>"
+)
+
+
+@pytest.mark.db
+async def test_label_only_strings_are_never_posted(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    document = (await _text_document(session_factory, settings, f"[1] {PARSEABLE}"))[1]
+    stub = GrobidStub(citations=ONE_CITATION_TEI)
+    deps = make_test_deps(settings, session_factory, transport=stub.transport)
+    ctx = await _through_s1(session_factory, deps)
+    async with session_factory() as session:
+        key = await session.scalar(select(Document.parsed_key).where(Document.id == document.id))
+    assert key is not None
+    stored = ParsedDocument.model_validate_json(await deps.storage.get(key))
+    refs = [RawReference(raw=PARSEABLE, label="1"), RawReference(raw="[3]", label=None)]
+    await deps.storage.put(key, stored.with_references_raw(refs).model_dump_json().encode())
+    assert await ExtractReferencesStage(deps).run(ctx) == StageResult()
+    # Không gửi chuỗi rỗng (sẽ lệch số mục và bỏ mọi trường GROBID của tài liệu).
+    assert stub.citation_requests == [[PARSEABLE]]
+    [entry] = await _entries(session_factory, document.id)
+    assert entry.raw_text == PARSEABLE and entry.parse_method == ParseMethod.GROBID.value
 
 
 # --- Tài liệu không có danh mục, chạy lại, lease ---------------------------------------------

@@ -5,20 +5,23 @@ mỗi chuỗi nằm trong một data block `<reference id="rN" untrusted="true">
 tất định giữ một trường chỉ khi nó xuất hiện trong chuỗi gốc: tiêu đề (và nơi đăng) có
 `partial_ratio` ≥ 90 sau `title_norm` và không dài hơn chuỗi gốc; năm, DOI (đã chuẩn hóa),
 ISBN, URL là chuỗi con; tác giả có họ (gấp dấu) xuất hiện. Đầu ra hỏng sau số lần thử tối đa
-(`LLMOutputError`) cho kết quả `None` với cả lô; lỗi khác (thử lại được, cache phát lại) lan ra
-ngoài cho stage quyết định. Không log chuỗi tài liệu tham khảo hay đầu ra LLM.
+(`LLMOutputError`) cho kết quả `None` với cả lô. `parse_with_llm_partial` dừng ở lô đầu tiên
+gặp `RetryableError` và trả kèm lỗi đó, giữ kết quả các lô đã xong; `parse_with_llm` ném lại
+lỗi đó. Lỗi khác (cache phát lại, lỗi lập trình) lan ra ngoài. Không log chuỗi tài liệu tham
+khảo hay đầu ra LLM.
 """
 
 import logging
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import ClassVar
 
 from rapidfuzz import fuzz
 
 from citeproof.core.domain import ParsedReference
 from citeproof.core.enums import LLMTask, RefType
-from citeproof.core.errors import LLMOutputError
+from citeproof.core.errors import LLMOutputError, RetryableError
 from citeproof.llm.client import LLMClient
 from citeproof.llm.context import PromptParts, render_data_block
 from citeproof.llm.prompts import PromptLoader
@@ -112,17 +115,28 @@ def keep_supported_fields(item: ParsedReferenceItem, raw: str) -> ParsedReferenc
     )
 
 
-async def parse_with_llm(
+W1Result = tuple[ParsedReference, RefType]
+
+
+@dataclass(frozen=True)
+class W1Outcome:
+    """Kết quả W1 cùng thứ tự đầu vào, kèm lý do các mục không được W1 parse."""
+
+    results: list[W1Result | None]
+    invalid_batches: int  # lô có đầu ra hỏng sau số lần thử tối đa
+    unavailable: RetryableError | None  # lỗi tạm thời; lô đó và các lô sau không được gọi
+
+
+async def parse_with_llm_partial(
     llm: LLMClient,
     prompts: PromptLoader,
     spec: TaskSpec,
     ctx: CallContext,
     raws: Sequence[str],
-) -> list[tuple[ParsedReference, RefType] | None]:
-    """Kết quả W1 cùng thứ tự `raws`: (trường đã kiểm, loại tài liệu) hoặc `None` khi W1 không
-    trả mục hợp lệ (đầu ra hỏng, thiếu id, `unparseable`).
-    """
-    results: list[tuple[ParsedReference, RefType] | None] = []
+) -> W1Outcome:
+    """W1 theo lô 10; dừng ở `RetryableError` đầu tiên nhưng giữ kết quả các lô đã xong."""
+    results: list[W1Result | None] = []
+    invalid = 0
     for start in range(0, len(raws), BATCH_SIZE):
         batch = raws[start : start + BATCH_SIZE]
         parts = build_parse_prompt(prompts, spec.prompt_version, batch)
@@ -138,7 +152,11 @@ async def parse_with_llm(
         except LLMOutputError:
             logger.warning("w1_output_invalid", extra={"error_type": "LLMOutputError"})
             results.extend([None] * len(batch))
+            invalid += 1
             continue
+        except RetryableError as exc:
+            results.extend([None] * (len(raws) - start))
+            return W1Outcome(results, invalid, exc)
         by_id: dict[str, ParsedReferenceItem] = {}
         for returned in result.value.items:
             by_id.setdefault(returned.ref_id, returned)  # id lặp: giữ mục đầu; id lạ: bỏ qua
@@ -148,4 +166,20 @@ async def parse_with_llm(
                 results.append(None)
             else:
                 results.append((keep_supported_fields(item, raw), item.ref_type))
-    return results
+    return W1Outcome(results, invalid, None)
+
+
+async def parse_with_llm(
+    llm: LLMClient,
+    prompts: PromptLoader,
+    spec: TaskSpec,
+    ctx: CallContext,
+    raws: Sequence[str],
+) -> list[W1Result | None]:
+    """Kết quả W1 cùng thứ tự `raws`: (trường đã kiểm, loại tài liệu) hoặc `None` khi W1 không
+    trả mục hợp lệ (đầu ra hỏng, thiếu id, `unparseable`). Ném lại `RetryableError`.
+    """
+    outcome = await parse_with_llm_partial(llm, prompts, spec, ctx, raws)
+    if outcome.unavailable is not None:
+        raise outcome.unavailable
+    return outcome.results

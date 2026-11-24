@@ -164,6 +164,10 @@ WARNINGS: Mapping[str, str] = {
     "PDF_TEXT_FALLBACK": (
         "Tệp PDF được đọc bằng chế độ dự phòng; tên mục và vị trí trong bài có thể chưa chính xác."
     ),
+    "REFERENCE_PARSE_DEGRADED": (
+        "Một số tài liệu tham khảo được tách bằng luật đơn giản vì dịch vụ phân tích tạm thời "
+        "không khả dụng; thông tin có thể chưa đầy đủ."
+    ),
 }
 GENERIC_WARNING = "Có cảnh báo khi xử lý."
 HIDDEN_WARNINGS = frozenset({"SAMPLE_DOCUMENT"})

@@ -331,6 +331,7 @@ Prompt bằng tiếng Anh, phiên bản `v1`, theo khung `07a` §4.8.3: phần c
   - `CLAIM_LIMIT_REACHED`: "Bài có nhiều nhận định hơn giới hạn của một lần kiểm tra; các nhận định vượt giới hạn chưa được đối chiếu."
   - `COST_LIMIT_REACHED`: "Lần kiểm tra đã chạm hạn mức chi phí; các nhận định còn lại chưa được đối chiếu."
   - `PDF_TEXT_FALLBACK`: "Tệp PDF được đọc bằng chế độ dự phòng; tên mục và vị trí trong bài có thể chưa chính xác."
+  - `REFERENCE_PARSE_DEGRADED` (S2 dùng rule vì GROBID hoặc W1 lỗi): "Một số tài liệu tham khảo được tách bằng luật đơn giản vì dịch vụ phân tích tạm thời không khả dụng; thông tin có thể chưa đầy đủ."
 - **Nhãn mới:** khớp tiêu đề (`MATCH` "Tên bài trong tệp khớp với tài liệu tham khảo.", `MISMATCH` "Tên bài trong tệp có vẻ không khớp với tài liệu tham khảo. Kiểm tra lại trước khi dùng.", `UNKNOWN` "Chưa kiểm tra được tên bài trong tệp."); "Không được trích lần nào trong bài."; "[chưa xác định]" cho claim chưa liên kết; nút "Tải lên", "Xóa tệp này", "Kiểm chứng lại các tài liệu đã tải", "Tra lại các tài liệu lỗi kết nối".
 - **`retrieval_results.query_variant`**: `original`, `translated`, `subclaim:s<n>`.
 - **`agent_runs.steps[]`**: `index`, `tool`, `args`, `result_preview` (≤ 2 000 ký tự), `error_code`, `input_tokens`, `output_tokens`, `cache_hit`.
