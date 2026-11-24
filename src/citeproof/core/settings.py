@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     grobid_timeout_seconds: float = 300.0
     # Bài dài hơn bị từ chối ở S1 (`PAGE_LIMIT_EXCEEDED`).
     max_pages: int = 300
+    # PDF nguồn dài hơn không được parse ở S6 (không có chunk, S8 → `SOURCE_PARSE_FAILED`).
+    max_source_pages: int = 200
     # Bản mở tải ở S5 (30 MB): lớn hơn thì bỏ qua bản đó. Chỉ client tải nguồn dùng giới hạn
     # này; client kiểm tra URL của tài liệu web giữ giới hạn nhỏ mặc định.
     max_source_bytes: int = 31_457_280

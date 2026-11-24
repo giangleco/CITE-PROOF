@@ -9,7 +9,7 @@ from citeproof.core.enums import ChunkRegion, Language
 from citeproof.core.errors import ParseError
 from citeproof.parsing.docx import parse_docx
 from citeproof.parsing.model import ParagraphDraft, ParsedDocument, RawReference
-from citeproof.parsing.text import parse_text_payload
+from citeproof.parsing.text import parse_plain_text, parse_text_payload
 from tests.golden.cases import GOLDEN_DIR, load_cases
 
 
@@ -117,3 +117,22 @@ def test_text_payload_invalid(data: bytes) -> None:
         parse_text_payload(data)
     assert info.value.code == "TEXT_PAYLOAD_INVALID"
     assert "not json" not in str(info.value)
+
+
+def test_plain_text_paragraphs() -> None:
+    # Nguồn `.txt` của bộ đánh giá (preflight F10): BOM bỏ, CRLF và dòng trống chứa khoảng trắng.
+    nfd = unicodedata.normalize("NFD", "Mô hình đạt độ chính xác cao.")
+    data = ("\ufeffĐoạn một.\r\ncòn tiếp.\r\n \r\n" + nfd + "\n\n\n").encode()
+    doc = parse_plain_text(data)
+    assert doc.source == "text" and doc.page_count is None and doc.references_raw is None
+    assert [p.text for p in doc.paragraphs] == [
+        "Đoạn một.\ncòn tiếp.",
+        unicodedata.normalize("NFC", nfd),
+    ]
+    _assert_offsets(doc)
+
+
+def test_plain_text_not_utf8() -> None:
+    with pytest.raises(ParseError) as info:
+        parse_plain_text(b"\xff\xfe\x00b")
+    assert info.value.code == "TEXT_DECODE_FAILED"

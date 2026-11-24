@@ -107,12 +107,13 @@ def test_default_tables_are_copied_per_instance() -> None:
 
 
 def test_pdf_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("GROBID_URL", "GROBID_TIMEOUT_SECONDS", "MAX_PAGES"):
+    for name in ("GROBID_URL", "GROBID_TIMEOUT_SECONDS", "MAX_PAGES", "MAX_SOURCE_PAGES"):
         monkeypatch.delenv(f"CITEPROOF_{name}", raising=False)
     s = Settings(_env_file=None)  # type: ignore[call-arg]
     assert s.grobid_url == "http://localhost:8070"
     assert s.grobid_timeout_seconds == 300.0
     assert s.max_pages == 300
+    assert s.max_source_pages == 200  # nguồn dài hơn không được chia đoạn ở S6
 
 
 def test_metadata_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:

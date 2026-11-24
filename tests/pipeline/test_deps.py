@@ -24,6 +24,7 @@ from citeproof.llm.client import LLMClient
 from citeproof.llm.prompts import PromptLoader
 from citeproof.llm.providers.scripted import ScriptedProvider
 from citeproof.llm.types import CacheMode, CallContext
+from citeproof.modules.retrieval.embedding import NoEmbedder
 from citeproof.pipeline import deps as deps_module
 from citeproof.pipeline.config import RunConfig, RunInfo
 from citeproof.pipeline.deps import PROMPTS_ROOT, call_context, open_deps
@@ -236,3 +237,12 @@ async def test_make_test_deps_source_limits_do_not_wait(tmp_path: Path) -> None:
     for _ in range(3):  # giới hạn vẫn có nhưng test không chờ thật
         await asyncio.wait_for(deps.source_limits.acquire("https://arxiv.org/pdf/x"), 1.0)
     await deps.http.aclose()
+
+
+async def test_embedder_defaults_to_no_embedder(tmp_path: Path) -> None:
+    # ADR-007: v1 không dùng embedding; S6 để `embedding`/`embedding_model` NULL.
+    async with open_deps(_settings(tmp_path), async_sessionmaker()) as deps:
+        assert isinstance(deps.embedder, NoEmbedder)
+    test_deps = make_test_deps(_settings(tmp_path), async_sessionmaker())
+    assert isinstance(test_deps.embedder, NoEmbedder)
+    await test_deps.http.aclose()

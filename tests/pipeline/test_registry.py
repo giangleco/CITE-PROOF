@@ -16,6 +16,7 @@ from citeproof.modules.documents.stage import ParseStage
 from citeproof.modules.references.stage_check import CheckReferencesStage
 from citeproof.modules.references.stage_extract import ExtractReferencesStage
 from citeproof.modules.sources.stage_fetch import FetchSourcesStage
+from citeproof.modules.sources.stage_index import IndexSourcesStage
 from citeproof.pipeline.demo import DemoStage
 from citeproof.pipeline.registry import build_registry
 from citeproof.pipeline.stages import NoopStage
@@ -44,7 +45,8 @@ def test_build_registry_wraps_demo_only_in_local(tmp_path: Path) -> None:
         assert isinstance(other.get(StageName.S3), CheckReferencesStage)
         assert isinstance(other.get(StageName.S4), CitationsStage)
         assert isinstance(other.get(StageName.S5), FetchSourcesStage)
-        assert isinstance(other.get(StageName.S6), NoopStage)
+        assert isinstance(other.get(StageName.S6), IndexSourcesStage)
+        assert isinstance(other.get(StageName.S7), NoopStage)
 
 
 @pytest.mark.parametrize("env", ["local", "pilot"])

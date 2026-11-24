@@ -7,7 +7,7 @@ sau thêm trường (GROBID, metadata, embedder, agent) có giá trị mặc đ�
 
 from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import httpx
@@ -25,6 +25,7 @@ from citeproof.llm.client import LLMClient
 from citeproof.llm.factory import make_llm_client
 from citeproof.llm.prompts import PromptLoader
 from citeproof.llm.types import CallContext
+from citeproof.modules.retrieval.embedding import Embedder, NoEmbedder
 from citeproof.pipeline.config import RunInfo
 from citeproof.storage import Storage, make_storage
 
@@ -59,6 +60,8 @@ class PipelineDeps:
     # Mỗi lần gọi trả một gateway mới (ngắt mạch theo lần chạy; cache và giới hạn tốc độ dùng
     # chung). `open_deps` và `make_test_deps` luôn đặt; S3 coi None là lỗi lập trình (F44).
     metadata: Callable[[], MetadataGateway] | None = None
+    # Embedding cho chunk nguồn ở S6 (ADR-007): v1 không dùng, `embedding` để NULL.
+    embedder: Embedder = field(default_factory=NoEmbedder)
 
 
 @asynccontextmanager
