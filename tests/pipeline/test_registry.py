@@ -11,6 +11,7 @@ from citeproof.core.enums import RunStatus, StageName
 from citeproof.core.settings import Settings
 from citeproof.db.models import Document, VerificationRun
 from citeproof.modules.documents.stage import ParseStage
+from citeproof.modules.references.stage_extract import ExtractReferencesStage
 from citeproof.pipeline.demo import DemoStage
 from citeproof.pipeline.registry import build_registry
 from citeproof.pipeline.stages import NoopStage
@@ -35,7 +36,8 @@ def test_build_registry_wraps_demo_only_in_local(tmp_path: Path) -> None:
         other = build_registry(make_test_deps(_settings(tmp_path, env=env), async_sessionmaker()))
         assert not isinstance(other.get(StageName.S1), DemoStage)
         assert isinstance(other.get(StageName.S1), ParseStage)
-        assert isinstance(other.get(StageName.S2), NoopStage)
+        assert isinstance(other.get(StageName.S2), ExtractReferencesStage)
+        assert isinstance(other.get(StageName.S3), NoopStage)
 
 
 @pytest.mark.parametrize("env", ["local", "pilot"])

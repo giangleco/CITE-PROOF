@@ -18,7 +18,8 @@ giữ xuống dòng `"\\n"` (S2 tách mục danh mục theo nhãn đầu dòng).
 GROBID trả `listBibl` rỗng (thường gặp với danh mục APA tiếng Việt): thân bài, mục và
 trang vẫn theo GROBID, còn `references_raw` lấy từ khối sau tiêu đề danh mục cuối cùng
 trong văn bản pypdfium2 (cùng quy tắc tiêu đề), mỗi mục một `RawReference` chưa có trường
-parse, để S2 xử lý như danh mục DOCX/văn bản (`processCitationList`, rồi rule).
+parse, để S2 xử lý như danh mục DOCX/văn bản (`processCitationList`, rồi rule). Tiêu đề danh
+mục và cách tách mục dùng chung với S2 (`citeproof.parsing.references`).
 """
 
 import asyncio
@@ -36,8 +37,13 @@ import pypdfium2.raw as pdfium_c
 from citeproof.core.errors import InputError, ParseError, RetryableError
 from citeproof.integrations.grobid import GrobidClient
 from citeproof.parsing.model import ParagraphDraft, ParsedDocument, RawReference
+from citeproof.parsing.references import (
+    MAX_HEADING_CHARS,
+    is_appendix_heading,
+    is_reference_heading,
+    split_reference_lines,
+)
 from citeproof.parsing.tei import parse_fulltext_tei
-from citeproof.parsing.text import split_reference_label
 
 logger = logging.getLogger(__name__)
 
@@ -48,32 +54,11 @@ NO_TEXT_MESSAGE = "Không trích được văn bản từ tệp PDF. Tệp có t
 
 _PDFIUM_LOCK = threading.Lock()
 _ENCRYPTED_ERRORS = frozenset({pdfium_c.FPDF_ERR_PASSWORD, pdfium_c.FPDF_ERR_SECURITY})
-_MAX_HEADING_CHARS = 100
 _NUMBERED_HEADING = re.compile(
     r"^(?:\d{1,2}(?:\.\d{1,2})*\.?|(?=[IVX])X{0,3}(?:IX|IV|V?I{0,3})\.)\s+(?P<title>\S.*)$"
 )
-_REFERENCE_HEADING = re.compile(
-    r"(?:danh muc )?tai lieu tham khao|references|bibliography|works cited"
-)
-_APPENDIX_HEADING = re.compile(r"(?:phu luc|appendix|appendices)\b")
-_HEADING_NUMBER = re.compile(r"^(?:\d{1,2}(?:\.\d{1,2})*\.?|[IVX]{1,6}\.)\s+")
-_WHITESPACE = re.compile(r"\s+")
 # PDFium đánh dấu gạch nối mềm ở cuối dòng bằng U+0002.
 _SOFT_HYPHEN_MARK = "\x02"
-# Tách mục danh mục không nhãn: mục mới khi dòng trước kết thúc mục (dấu chấm, URL/DOI) và
-# dòng này có dạng tác giả: "Họ, X." (tên đảo kèm chữ viết tắt) hoặc tên người/tổ chức rồi
-# "(năm" / "(n.d." trong 80 ký tự đầu, phần trước năm không có chữ số hay dấu hai chấm.
-_PAGE_NUMBER_LINE = re.compile(r"\d{1,4}")
-_LINK_END = re.compile(r"(?:https?://|doi:\s*|\b10\.\d{4,9}/)\S*$", re.IGNORECASE)
-_INITIAL_END = re.compile(r"(?:^|[\s,&(])(?:[^\W\d_]\.-?)+$")
-_YEAR_END = re.compile(r"\(\d{4}[a-z]?\)[.,]?$")
-_AUTHOR_TOKEN = re.compile(r"[^\W\d_][\w'\u2019-]*[,.]?")  # U+2019: nháy cong trong họ kiểu O'Brien
-_INITIAL = re.compile(r"(?:[^\W\d_]\.-?)+,?")
-_YEAR_MARK = re.compile(r"\((?:\d{4}[a-z]?|n\.\s?d\.)")
-_MAX_AUTHOR_PREFIX = 80
-_CONTINUATION_WORDS = frozenset(
-    {"in", "trong", "retrieved", "available", "accessed", "truy", "nxb", "nhà", "trường"}
-)
 
 
 @contextmanager
@@ -153,23 +138,8 @@ def scanned_pages(page_texts: Sequence[str], *, min_chars: int = SCANNED_MIN_CHA
     ]
 
 
-def _fold(text: str) -> str:
-    decomposed = unicodedata.normalize("NFD", text.replace("đ", "d").replace("Đ", "D"))
-    plain = "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
-    return _WHITESPACE.sub(" ", plain).strip().lower()
-
-
-def _is_reference_heading(line: str) -> bool:
-    title = _fold(_HEADING_NUMBER.sub("", line)).rstrip(" :")
-    return len(line) <= _MAX_HEADING_CHARS and _REFERENCE_HEADING.fullmatch(title) is not None
-
-
-def _is_appendix_heading(line: str) -> bool:
-    return len(line) <= _MAX_HEADING_CHARS and _APPENDIX_HEADING.match(_fold(line)) is not None
-
-
 def _is_numbered_heading(line: str) -> bool:
-    if len(line) > _MAX_HEADING_CHARS or line[-1] in ".,;:":
+    if len(line) > MAX_HEADING_CHARS or line[-1] in ".,;:":
         return False
     match = _NUMBERED_HEADING.match(line)
     if match is None:
@@ -189,7 +159,7 @@ def _last_reference_heading(pages: Sequence[Sequence[str]]) -> tuple[int, int] |
             (page, row)
             for page, lines in enumerate(pages)
             for row, line in enumerate(lines)
-            if line and _is_reference_heading(line)
+            if line and is_reference_heading(line)
         ),
         default=None,
     )
@@ -219,10 +189,10 @@ def document_from_page_texts(page_texts: Sequence[str]) -> ParsedDocument:
                 in_references = True
                 heading = True
             elif in_references:
-                heading = _is_appendix_heading(line)
+                heading = is_appendix_heading(line)
                 in_references = not heading
             else:
-                heading = _is_reference_heading(line) or _is_numbered_heading(line)
+                heading = is_reference_heading(line) or _is_numbered_heading(line)
             if heading:
                 flush(page + 1)
                 section = line
@@ -241,85 +211,6 @@ def parse_pdf_fallback(data: bytes) -> ParsedDocument:
     return document_from_page_texts(pdf_page_texts(data))
 
 
-def _ends_entry(line: str) -> bool:
-    if _LINK_END.search(line):
-        return True
-    # Chữ viết tắt tên ("Brown, A.") và "(2016)." ở cuối dòng: mục còn tiếp.
-    return line.endswith(".") and not _INITIAL_END.search(line) and not _YEAR_END.search(line)
-
-
-def _starts_entry(line: str) -> bool:
-    """Dòng mở đầu một mục: có dạng tác giả, không phải nơi xuất bản hay tên tạp chí.
-
-    "Hà Nội: NXB…", "TP. Hồ Chí Minh: NXB…" (dấu hai chấm, không có năm) và "Neural
-    Computation, 9(8), …" (không có chữ viết tắt tên, không có năm) là dòng tiếp theo.
-    """
-    tokens = line.split()
-    first = tokens[0]
-    if not first[0].isupper() or first.rstrip(",.").lower() in _CONTINUATION_WORDS:
-        return False
-    if _AUTHOR_TOKEN.fullmatch(first) is None or any(":" in token for token in tokens[:2]):
-        return False
-    if (
-        first.endswith(",")
-        and len(tokens) > 1
-        and tokens[1][0].isupper()
-        and _INITIAL.fullmatch(tokens[1]) is not None
-    ):
-        return True  # "Devlin, J.", "Nguyễn, V. A.", "Chang, M.-W."
-    year = _YEAR_MARK.search(line)
-    if year is None or year.start() > _MAX_AUTHOR_PREFIX:
-        return False
-    prefix = line[: year.start()]
-    return ":" not in prefix and not any(ch.isdigit() for ch in prefix)
-
-
-def _join_lines(lines: Sequence[str]) -> str:
-    """Nối dòng bị ngắt bằng một khoảng trắng; URL/từ ngắt sau `/` hoặc `-` nối liền."""
-    text = lines[0]
-    for line in lines[1:]:
-        text += line if text.endswith(("/", "-")) else f" {line}"
-    return text
-
-
-def _split_entries(block: Sequence[tuple[int, str]]) -> list[RawReference]:
-    """Tách khối danh mục (trang, dòng) thành mục.
-
-    Danh mục có nhãn (dòng đầu là `[n]`/`n.`): mục mới ở dòng có nhãn lớn hơn nhãn trước;
-    nhãn được tách khỏi chuỗi. Không nhãn: mục mới sau dòng trống, hoặc khi dòng trước kết
-    thúc mục và dòng này mở đầu bằng tên tác giả. Dòng chỉ có số (số trang) bị bỏ.
-    """
-    lines = [(page, line) for page, line in block if not _PAGE_NUMBER_LINE.fullmatch(line)]
-    first = next((line for _, line in lines if line), None)
-    if first is None:
-        return []
-    labelled = split_reference_label(first).label is not None
-    entries: list[tuple[int, str | None, list[str]]] = []
-    last_number = 0
-    previous: str | None = None
-    for page, line in lines:
-        if not line:
-            previous = None
-            continue
-        if labelled:
-            ref = split_reference_label(line)
-            number = int(ref.label) if ref.label is not None else 0
-            if number > last_number or not entries:
-                last_number = number
-                entries.append((page, ref.label, [ref.raw]))
-            else:
-                entries[-1][2].append(line)
-        elif previous is None or (_ends_entry(previous) and _starts_entry(line)):
-            entries.append((page, None, [line]))
-        else:
-            entries[-1][2].append(line)
-        previous = line
-    return [
-        RawReference(raw=_join_lines(parts), label=label, page=page)
-        for page, label, parts in entries
-    ]
-
-
 def reference_entries_from_page_texts(page_texts: Sequence[str]) -> list[RawReference]:
     """Mục danh mục trong văn bản pypdfium2: khối sau tiêu đề danh mục cuối cùng, tới tiêu
     đề phụ lục; `[]` khi không có tiêu đề danh mục. Trang của mục là trang dòng đầu.
@@ -328,15 +219,15 @@ def reference_entries_from_page_texts(page_texts: Sequence[str]) -> list[RawRefe
     start = _last_reference_heading(pages)
     if start is None:
         return []
-    block: list[tuple[int, str]] = []
+    block: list[tuple[int | None, str]] = []
     for page, lines in enumerate(pages):
         for row, line in enumerate(lines):
             if (page, row) <= start:
                 continue
-            if line and _is_appendix_heading(line):
-                return _split_entries(block)
+            if line and is_appendix_heading(line):
+                return split_reference_lines(block)
             block.append((page + 1, line))
-    return _split_entries(block)
+    return split_reference_lines(block)
 
 
 async def _parse_with_grobid(grobid: GrobidClient, data: bytes, page_count: int) -> ParsedDocument:
