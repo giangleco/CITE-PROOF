@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -9,6 +10,7 @@ from citeproof.core.enums import JobStatus, StageName
 from citeproof.core.errors import InputError, LeaseLostError
 from citeproof.db.models.jobs import Job
 from citeproof.pipeline.jobs import (
+    ClaimedJob,
     backoff_delay,
     claim_next,
     describe_error,
@@ -223,6 +225,68 @@ async def test_fenced_session_raises_after_reclaim(
             await fenced.execute(update(Job).where(Job.id == old.id).values(payload={"ghi": 2}))
     async with session_factory() as session:
         assert (await _get(session, run_id, StageName.S1)).payload == {"ghi": 1}
+
+
+async def _claimed(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> tuple[uuid.UUID, ClaimedJob]:
+    async with session_factory() as session:
+        run_id = await _run_id(session)
+        await enqueue(session, run_id, StageName.S1)
+        lease = await claim_next(session, "w1", timedelta(seconds=120), max_attempts=3)
+        await session.commit()
+    assert lease is not None
+    return run_id, lease
+
+
+@pytest.mark.db
+async def test_heartbeat_not_blocked_by_open_fenced_session(
+    session_factory: async_sessionmaker[AsyncSession], clean_db: None
+) -> None:
+    _, lease = await _claimed(session_factory)
+
+    async def renew() -> bool:
+        async with session_factory() as session:
+            renewed = await renew_lease(session, lease, timedelta(seconds=120))
+            await session.commit()
+            return renewed
+
+    async with fenced_session(session_factory, lease):
+        assert await asyncio.wait_for(renew(), timeout=2) is True
+
+
+@pytest.mark.db
+async def test_open_fenced_session_blocks_reclaim_of_expired_lease(
+    session_factory: async_sessionmaker[AsyncSession], clean_db: None
+) -> None:
+    _, lease = await _claimed(session_factory)
+    async with session_factory() as session:
+        await _expire_lease(session, lease.id)
+    async with fenced_session(session_factory, lease), session_factory() as other:
+        assert await claim_next(other, "w2", timedelta(seconds=120), max_attempts=3) is None
+        await other.commit()
+    # Giao dịch ghi đã đóng: lease hết hạn được nhận lại như thường.
+    async with session_factory() as other:
+        again = await claim_next(other, "w2", timedelta(seconds=120), max_attempts=3)
+        await other.commit()
+    assert again is not None and (again.id, again.attempts) == (lease.id, 2)
+
+
+@pytest.mark.db
+async def test_renew_counts_from_wall_clock_not_transaction_start(
+    session_factory: async_sessionmaker[AsyncSession], clean_db: None
+) -> None:
+    run_id, lease = await _claimed(session_factory)
+    async with session_factory() as session:
+        # Mở giao dịch: now() cố định từ đây, giống heartbeat phải chờ lâu.
+        started = await session.scalar(select(func.now()))
+        await asyncio.sleep(0.5)
+        assert await renew_lease(session, lease, timedelta(seconds=1)) is True
+        await session.commit()
+        job = await _get(session, run_id, StageName.S1)
+    assert started is not None and job.lease_expires_at is not None
+    assert job.lease_expires_at - started >= timedelta(seconds=1.5)
+    assert job.heartbeat_at is not None and job.heartbeat_at - started >= timedelta(seconds=0.5)
 
 
 @pytest.mark.db

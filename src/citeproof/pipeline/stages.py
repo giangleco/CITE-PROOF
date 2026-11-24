@@ -34,7 +34,10 @@ class StageResult:
 class StageContext:
     """Thông tin một lần chạy stage: lần chạy, lease đang giữ và giới hạn lượt thử.
 
-    Stage ghi kết quả theo mục qua `fenced_session(session_factory, ctx.lease)`.
+    Stage ghi kết quả theo mục qua `fenced_session(session_factory, ctx.lease)`, mỗi
+    giao dịch thật ngắn: không gọi mạng, GROBID hay LLM bên trong. Việc chặn luồng
+    hoặc nặng CPU (parse PDF, chia đoạn…) chạy qua `asyncio.to_thread`, để vòng
+    heartbeat trên cùng event loop vẫn gia hạn được lease.
     """
 
     run_id: UUID

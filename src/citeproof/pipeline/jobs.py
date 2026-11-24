@@ -1,12 +1,12 @@
 """Hàng đợi job trên PostgreSQL (claim bằng FOR UPDATE SKIP LOCKED).
 
-Mọi so sánh thời gian dùng đồng hồ của database (`now()`), để worker trên nhiều
-máy luôn thống nhất. Lease token của một lần nhận job là `locked_at` (thời điểm
-claim); mọi ghi kết quả đều được rào bằng token này. Không dùng `attempts` làm
-token vì `resume_run` đặt lại `attempts=0`. Hạn lease nằm ở cột riêng
-`lease_expires_at`, được worker gia hạn (`renew_lease`) khi stage còn chạy; job
-RUNNING chỉ bị coi là hết hạn khi `lease_expires_at < now()`. Các hàm không
-commit (trừ `fenced_session`): caller quyết định ranh giới giao dịch.
+Mọi so sánh thời gian dùng đồng hồ của database (`now()`; riêng gia hạn lease dùng
+`clock_timestamp()`), để worker trên nhiều máy luôn thống nhất. Lease token của một
+lần nhận job là `locked_at` (thời điểm claim); mọi ghi kết quả đều được rào bằng
+token này. Không dùng `attempts` làm token vì `resume_run` đặt lại `attempts=0`.
+Hạn lease nằm ở cột riêng `lease_expires_at`, được worker gia hạn (`renew_lease`)
+khi stage còn chạy; job RUNNING chỉ bị coi là hết hạn khi `lease_expires_at < now()`.
+Các hàm không commit (trừ `fenced_session`): caller quyết định ranh giới giao dịch.
 """
 
 import uuid
@@ -147,12 +147,17 @@ def _fence(job: ClaimedJob) -> tuple[Any, ...]:
 async def renew_lease(session: AsyncSession, job: ClaimedJob, lease: timedelta) -> bool:
     """Gia hạn lease thêm `lease` tính từ bây giờ; caller commit.
 
+    Tính từ `clock_timestamp()` (giờ thật lúc cập nhật), không phải `now()` (giờ bắt
+    đầu giao dịch): heartbeat phải chờ khóa lâu vẫn không ghi một hạn đã ở quá khứ.
     Trả về False nếu lease đã mất (job được nhận lại, kết thúc hoặc bị đánh hết hạn).
     """
     result = await session.execute(
         update(Job)
         .where(*_fence(job))
-        .values(heartbeat_at=func.now(), lease_expires_at=func.now() + lease)
+        .values(
+            heartbeat_at=func.clock_timestamp(),
+            lease_expires_at=func.clock_timestamp() + lease,
+        )
         .returning(Job.id)
         .execution_options(synchronize_session=False)
     )
@@ -165,12 +170,20 @@ async def fenced_session(
 ) -> AsyncIterator[AsyncSession]:
     """Giao dịch ghi kết quả của stage, chỉ khi `lease` vẫn còn giữ job.
 
-    Khóa `FOR SHARE` dòng job theo token `locked_at` đến hết giao dịch, nên không
-    worker nào nhận lại được job trong lúc đang ghi. Ném `LeaseLostError` nếu lease
-    đã mất; commit khi thoát bình thường, rollback khi có lỗi.
+    Khóa `FOR KEY SHARE` dòng job theo token `locked_at` đến hết giao dịch: xung đột
+    với `FOR UPDATE` của claim và của đánh hết hạn, nên không worker nào nhận lại
+    được job trong lúc đang ghi, nhưng không chặn UPDATE heartbeat (không đổi khóa)
+    của chính job này. Ném `LeaseLostError` nếu lease đã mất; commit khi thoát bình
+    thường, rollback khi có lỗi.
+
+    Giữ giao dịch thật ngắn: chỉ ghi DB, không bao giờ gọi mạng, GROBID hay LLM bên
+    trong. Suốt giao dịch, dòng job và các dòng được khóa ngoại tham chiếu (ví dụ dòng
+    run) đều bị khóa.
     """
     async with session_factory() as session, session.begin():
-        held = await session.scalar(select(Job.id).where(*_fence(lease)).with_for_update(read=True))
+        held = await session.scalar(
+            select(Job.id).where(*_fence(lease)).with_for_update(read=True, key_share=True)
+        )
         if held is None:
             raise LeaseLostError("Lease của job đã mất")
         yield session

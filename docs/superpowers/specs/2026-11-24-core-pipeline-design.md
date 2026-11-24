@@ -53,7 +53,7 @@ Nguyên tắc giữ nguyên từ `07a`: pipeline tất định là xương sốn
 | QĐ-18 | Enum `AccessStatus` = `OPEN_FULL_TEXT`, `OPEN_ABSTRACT`, `USER_PROVIDED` (khớp bài mẫu), thêm CHECK | v1.0 §9.3 chưa có trong repo; ánh xạ lại khi có |
 | QĐ-19 | `WEB`, `THESIS`, `OTHER` không có DOI → `UNSUPPORTED_TYPE` không tra cứu (WEB vẫn kiểm tra URL); có DOI thì luôn tra | Độ phủ kém, "chưa tìm thấy" sẽ gây hiểu lầm |
 | QĐ-20 | v1 không báo lệch `venue` | Tên viết tắt (NeurIPS…) gây báo lệch sai |
-| QĐ-21 | Lease dùng lại `job_lock_timeout_seconds` làm độ dài lease (mặc định 120 s), heartbeat 30 s; stage nhận `StageContext`; mọi ghi theo mục đi qua `fenced_session` (khóa `FOR SHARE` dòng job theo `locked_at`) | Rào ghi kết quả bằng token sẵn có |
+| QĐ-21 | Lease dùng lại `job_lock_timeout_seconds` làm độ dài lease (mặc định 120 s), heartbeat 30 s; stage nhận `StageContext`; mọi ghi theo mục đi qua `fenced_session` (khóa `FOR KEY SHARE` dòng job theo `locked_at`) | Rào ghi kết quả bằng token sẵn có |
 | QĐ-22 | GROBID không truy cập được → `RetryableError`; ở lần thử cuối dùng `pypdfium2` và cảnh báo `PDF_TEXT_FALLBACK`. GROBID trả lỗi xử lý tài liệu → dự phòng ngay | Kết quả cấp tài liệu bất biến nên tránh parse kém vì sự cố tạm thời |
 | QĐ-23 | S4 phát hiện marker bằng rule cho mọi loại đầu vào, không dùng `<ref>` của GROBID | Một đường mã, test được không cần GROBID |
 | QĐ-24 | Truy vấn lexical: token của claim bỏ stopword vi/en, tối đa 32 từ, nối OR (`to_tsquery('simple', …)`); gộp các biến thể truy vấn bằng RRF (k=60); nguồn toàn văn mà không có chunk nào khớp → `UNVERIFIABLE`/`EVIDENCE_INCONCLUSIVE` không gọi LLM; mặc định `cross_lingual = X2` | Không có embedding thì claim tiếng Việt cần bản dịch để tìm trên nguồn tiếng Anh |
@@ -142,7 +142,7 @@ Phụ thuộc giữa module theo `07` §4.4: `references`, `sources` dùng `inte
 - Cột mới trong `jobs`: `heartbeat_at`, `lease_expires_at`, `started_at`, `finished_at`. `claim_next` đặt `locked_at = now()`, `lease_expires_at = now() + lease`, `started_at = now()`. Job bị coi là hết hạn khi `lease_expires_at < now()`. `locked_at` vẫn là token fencing.
 - Worker chạy stage trong một task và một vòng heartbeat song song (`renew_lease` mỗi `job_heartbeat_seconds`). Gia hạn thất bại (lease đã mất) → hủy task stage, log `stage_lease_lost`, không ghi kết quả.
 - `PipelineStage.run(ctx: StageContext)`; `StageContext` gồm `run_id`, `lease` (`ClaimedJob`), `max_attempts`, `attempt`, `is_last_attempt`.
-- Mọi ghi theo mục dùng `fenced_session(session_factory, lease)`: mở giao dịch, `SELECT … FOR SHARE` dòng job với điều kiện `status = RUNNING AND locked_at = lease.locked_at`, không thấy thì ném `LeaseLostError`.
+- Mọi ghi theo mục dùng `fenced_session(session_factory, lease)`: mở giao dịch, `SELECT … FOR KEY SHARE` dòng job với điều kiện `status = RUNNING AND locked_at = lease.locked_at`, không thấy thì ném `LeaseLostError`. `FOR KEY SHARE` (không phải `FOR SHARE`) vì vẫn xung đột với `FOR UPDATE` của claim và đánh hết hạn nhưng không chặn UPDATE heartbeat của chính job. Giao dịch rào phải ngắn: không gọi mạng, GROBID hay LLM bên trong; việc chặn luồng hoặc nặng CPU chạy qua `asyncio.to_thread`. `renew_lease` tính hạn mới từ `clock_timestamp()`.
 - `mark_done`/`mark_failed` ghi `finished_at`; trang "Chi tiết kỹ thuật" hiện thời lượng từng bước.
 
 ### 6.2 Cấu hình lần chạy
