@@ -1,6 +1,7 @@
 """S6 — chia đoạn nguồn (spec §7.6, `07a` §4.8.4): theo mục, 250-400 token, chồng lấn một câu."""
 
 import itertools
+import random
 import unicodedata
 from collections import defaultdict
 from collections.abc import Sequence
@@ -225,3 +226,63 @@ def test_reference_list_not_chunked() -> None:
     chunks = chunk_document(doc)
     assert [c.section for c in chunks] == ["1 Introduction", "Appendix A"]
     assert all("BERT" not in c.text for c in chunks)
+
+
+def _words_sentence(tag: str, words: int) -> str:
+    return " ".join([f"{tag}{i}" for i in range(words - 1)] + [f"{tag}end."])
+
+
+def test_no_chunk_is_only_the_overlap_sentence() -> None:
+    # Hồi quy (review Task 13): câu chồng lấn kết thúc đoạn và tự đủ `min_tokens` không được
+    # thành một chunk riêng nằm gọn trong chunk trước; mỗi chunk phải có ít nhất một câu mới.
+    long_sentence = _words_sentence("Sigma", 200)
+    first = _words_sentence("Alpha", 50) + " " + long_sentence
+    second = " ".join(_words_sentence(f"Pk{k}x", 30) for k in range(10))
+    doc = ParsedDocument.build(
+        source="pdfium",
+        drafts=[_draft(first, "X"), _draft(second, "X")],
+        page_count=1,
+    )
+    text = doc.text()
+    chunks = chunk_document(doc)
+    assert len(chunks) >= 3
+    for chunk in chunks:
+        assert text[chunk.char_start : chunk.char_end] == chunk.text
+        assert estimate_tokens(chunk.text) <= 400
+    for current, following in itertools.pairwise(chunks):
+        assert following.char_start >= current.char_start
+        assert following.char_end > current.char_end  # không nằm gọn trong chunk trước
+    # Chồng lấn vẫn đúng một câu: chunk 2 bắt đầu bằng câu dài, rồi sang đoạn sau.
+    assert chunks[0].text.endswith(long_sentence)
+    assert chunks[1].text.startswith(long_sentence + "\n\nPk0x0 ")
+
+
+def test_random_documents_keep_invariants() -> None:
+    # Câu dài ngắn ngẫu nhiên (seed cố định), kể cả câu > 400 token: lát cắt đúng, ≤ 400 token,
+    # mỗi chunk tiến lên so với chunk trước và mọi từ đều nằm trong ít nhất một chunk.
+    rng = random.Random(0)
+    for doc_number in range(200):
+        drafts = []
+        counter = itertools.count()
+        for _ in range(rng.randint(1, 5)):
+            sentences = [
+                " ".join(f"d{doc_number}w{next(counter)}" for _ in range(rng.randint(1, 300)))
+                + " end."
+                for _ in range(rng.randint(1, 8))
+            ]
+            capitalised = [s[0].upper() + s[1:] for s in sentences]
+            drafts.append(_draft(" ".join(capitalised), "Body"))
+        drafts.append(_draft(" ".join(["x"] * rng.randint(1, 900)) + ".", "Body"))
+        doc = ParsedDocument.build(source="pdfium", drafts=drafts, page_count=1)
+        text = doc.text()
+        chunks = chunk_document(doc)
+        for chunk in chunks:
+            assert text[chunk.char_start : chunk.char_end] == chunk.text
+            assert estimate_tokens(chunk.text) <= 400
+        for current, following in itertools.pairwise(chunks):
+            assert current.char_start <= following.char_start
+            assert following.char_end > current.char_end
+            # Chồng lấn, hoặc nối tiếp chỉ cách nhau khoảng trắng: không bỏ sót chữ nào.
+            assert not text[current.char_end : following.char_start].strip()
+        covered = {w for chunk in chunks for w in chunk.text.split()}
+        assert covered == set(text.split())

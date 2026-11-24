@@ -242,7 +242,7 @@ Lỗi một mục: ghi trạng thái lỗi của mục (`LOOKUP_FAILED`, `PROCES
 ### 7.6 S6 — Chia đoạn và lập chỉ mục (T-405)
 
 - **Vào:** `source_files` liên quan đến lần chạy (bản mở của các work, bản `USER_UPLOAD` của các reference trong tài liệu). **Ra:** `source_chunks`, `<storage_key>.parsed.json`.
-- PDF nguồn parse như S1 (không giới hạn trang của bài, dùng `max_source_pages = 200`). Chunk trong từng mục, 250–400 token (ước lượng `ceil(số từ × 1,3)`), chồng lấn một câu; chú thích hình/bảng là chunk riêng; abstract là chunk riêng `section = "Abstract"`. `chunk.text == parsed.text()[char_start:char_end]`. `language` theo heuristic; `embedding` do `Embedder` (`NoEmbedder` → NULL).
+- PDF nguồn parse như S1 (không giới hạn trang của bài, dùng `max_source_pages = 200`). Abstract JSON của S5 là một đoạn mục "Abstract"; nguồn `.txt` (bộ đánh giá) là văn bản UTF-8, đoạn tách theo dòng trống. Tệp không đọc được (mã hóa, ảnh quét, quá dài, hỏng) không có chunk. Chunk trong từng mục, 250–400 token (ước lượng `ceil(số từ × 1,3)`), chồng lấn một câu, mỗi chunk có ít nhất một câu mới; chú thích hình/bảng là chunk riêng; abstract là chunk riêng `section = "Abstract"`; mục danh mục tài liệu tham khảo của nguồn (văn bản `pypdfium2` giữ trong thân bài) không chia đoạn, để tên công trình được trích không thành bằng chứng. `chunk.text == parsed.text()[char_start:char_end]`. `language` theo heuristic; `embedding` do `Embedder` (`NoEmbedder` → NULL).
 
 ### 7.7 S7 — Truy xuất (T-501)
 

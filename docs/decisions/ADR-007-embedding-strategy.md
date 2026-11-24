@@ -32,7 +32,7 @@ Chọn A cho v1:
 - S7 dùng `ts_rank_cd` trên `tsv` với truy vấn OR từ token của claim (bỏ stopword vi/en, tối đa 32 từ), xếp theo điểm rồi `chunk_index`, chỉ trong `source_file_id` của cặp.
 - Mặc định `cross_lingual = X2`: claim không phải tiếng Anh được W3 dịch (bỏ bản dịch nếu làm rơi số liệu), hai biến thể truy vấn `original` và `translated` gộp bằng RRF (k = 60). Không có LLM thì chỉ có X1 lexical.
 - Nguồn toàn văn không có chunk nào khớp → `UNVERIFIABLE`/`EVIDENCE_INCONCLUSIVE`, không gọi LLM.
-- Protocol `Embedder` (`model`, `dim`, `embed(texts)`) và `NoEmbedder` có sẵn; S6 ghi embedding khi embedder trả về vector. `retrieval_results.score_vector` để NULL.
+- Protocol `Embedder` (`model`, `embed(texts)`) và `NoEmbedder` có sẵn; S6 ghi embedding khi embedder trả về vector. Không có thành viên `dim`: S6 kiểm tra mỗi vector có đúng 1024 phần tử (số chiều của cột `embedding`) và số vector bằng số chunk, sai thì stage lỗi. `retrieval_results.score_vector` để NULL.
 
 ## Rationale
 

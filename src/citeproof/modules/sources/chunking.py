@@ -10,7 +10,8 @@
   các câu liền nhau tới `max_tokens` (ước lượng `estimate_tokens`). Khi đã đủ `min_tokens`,
   chunk dừng ở cuối đoạn văn gần nhất; ngược lại dừng ở câu cuối cùng còn vừa.
 - Chunk sau bắt đầu lại ở câu cuối của chunk trước (chồng lấn một câu), trừ khi chunk trước
-  chỉ có một câu hoặc câu đó cộng câu kế tiếp đã vượt `max_tokens`.
+  chỉ có một câu hoặc câu đó cộng câu kế tiếp đã vượt `max_tokens`. Mỗi chunk luôn có ít nhất
+  một câu mới, nên không chunk nào nằm gọn trong chunk trước.
 - `text == doc.text()[char_start:char_end]` (đã NFC từ `ParsedDocument.build`), có thể chứa
   `"\\n\\n"` giữa các đoạn; `page` là trang của đoạn chứa đầu chunk; `language` theo
   `source_language` trên chính chunk.
@@ -161,9 +162,13 @@ def _units(paragraphs: Sequence[Paragraph], max_tokens: int) -> list[_Unit]:
 
 
 def _pack(units: Sequence[_Unit], min_tokens: int, max_tokens: int) -> list[tuple[int, int]]:
-    """Khoảng `[first, last)` các đơn vị của từng chunk (xem docstring module)."""
+    """Khoảng `[first, last)` các đơn vị của từng chunk (xem docstring module).
+
+    `fresh` là đơn vị đầu tiên chưa thuộc chunk trước: điểm cắt luôn sau nó, nên mỗi chunk có
+    ít nhất một đơn vị mới và không bao giờ chỉ là câu chồng lấn (nằm gọn trong chunk trước).
+    """
     ranges: list[tuple[int, int]] = []
-    start = 0
+    start = fresh = 0
     while start < len(units):
         end = start + 1
         words = units[start].words
@@ -173,8 +178,8 @@ def _pack(units: Sequence[_Unit], min_tokens: int, max_tokens: int) -> list[tupl
         if end == len(units):
             ranges.append((start, end))
             break
-        cut = end
-        for candidate in range(end, start, -1):
+        cut = end  # > fresh: câu chồng lấn chỉ được giữ khi vừa cùng đơn vị mới kế tiếp
+        for candidate in range(end, fresh, -1):
             if units[candidate - 1].paragraph_end and _estimate(words) >= min_tokens:
                 cut = candidate
                 break
@@ -183,6 +188,7 @@ def _pack(units: Sequence[_Unit], min_tokens: int, max_tokens: int) -> list[tupl
         overlap = cut - 1
         fits = _estimate(units[overlap].words + units[cut].words) <= max_tokens
         start = overlap if overlap > start and fits else cut
+        fresh = cut
     return ranges
 
 
