@@ -8,6 +8,8 @@ from citeproof.core.domain import ParsedReference
 from citeproof.integrations.metadata import WorkAuthor, WorkRecord
 from citeproof.modules.references.matcher import (
     CLOSE_DELTA,
+    DOI_TITLE_CONFLICT,
+    SHORT_TITLE_TOKENS,
     TITLE_ACCEPT,
     TITLE_EXACT,
     TITLE_WEAK,
@@ -21,6 +23,7 @@ from citeproof.modules.references.matcher import (
 HE_TITLE = "Deep Residual Learning for Image Recognition"
 HE_AUTHORS = [WorkAuthor(family="He", given="Kaiming"), WorkAuthor(family="Zhang", given="Xiangyu")]
 VI_TITLE = "Phân loại văn bản tiếng Việt bằng học sâu"
+HE_DOI_PRINTED = "https://doi.org/10.1109/CVPR.2016.90"
 
 
 def _ref(**fields: object) -> ParsedReference:
@@ -221,3 +224,81 @@ def test_pick_best_none_when_nothing_accepted() -> None:
     other = _record(title="Going deeper with convolutions", authors=[WorkAuthor(family="Szegedy")])
     assert pick_best(_ref(), [other]) is None
     assert pick_best(_ref(), []) is None
+
+
+# --- Quyết định của controller (sau Task 9) ------------------------------------------------------
+
+BERT_TITLE = "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding"
+
+
+def test_ruling_constants() -> None:
+    assert (DOI_TITLE_CONFLICT, SHORT_TITLE_TOKENS) == (60, 4)
+
+
+def test_doi_hit_with_unrelated_title_needs_review() -> None:
+    record = _record(title=BERT_TITLE)
+    result = match_candidate(_ref(doi=HE_DOI_PRINTED), record)
+    assert result.title_score < DOI_TITLE_CONFLICT
+    assert result.accepted  # DOI vẫn trỏ tới bản ghi này: giữ liên kết
+    assert result.needs_review
+    assert result.mismatches == (Mismatch(field="title", in_document=HE_TITLE, found=BERT_TITLE),)
+
+
+def test_doi_hit_with_title_in_other_normalisation_is_matched() -> None:
+    ref = ParsedReference(
+        title=unicodedata.normalize("NFD", VI_TITLE.upper()),
+        authors=["Nguyễn Văn An"],
+        year=2020,
+        doi="10.1000/VI.1",
+    )
+    record = WorkRecord(
+        source="crossref",
+        source_id="10.1000/vi.1",
+        title=VI_TITLE,
+        authors=[WorkAuthor(family="Nguyễn", given="Văn An")],
+        year=2020,
+        doi="10.1000/vi.1",
+    )
+    result = match_candidate(ref, record)
+    assert result.accepted and result.score == 1.0
+    assert result.mismatches == ()
+    assert not result.needs_review
+
+
+def test_doi_hit_with_typo_title_does_not_need_review() -> None:
+    typo = "Deep Residual Networks for Image Recognition"  # 88.6
+    result = match_candidate(_ref(title=typo, doi=HE_DOI_PRINTED), _record())
+    assert not result.needs_review
+
+
+SHORT = "Attention mechanisms"
+LONG = "Attention mechanisms for neural machine translation"
+
+
+def test_short_title_contained_in_longer_title_needs_year_or_author() -> None:
+    record = _record(title=LONG, doi=None, year=2019, authors=[WorkAuthor(family="Bahdanau")])
+    assert title_similarity(SHORT, LONG) == 100
+    rejected = match_candidate(_ref(title=SHORT, year=2015), record)
+    assert not rejected.accepted
+    assert pick_best(_ref(title=SHORT, year=2015), [record]) is None
+
+
+def test_short_title_with_matching_year_is_accepted() -> None:
+    record = _record(title=LONG, doi=None, year=2019, authors=[WorkAuthor(family="Bahdanau")])
+    assert match_candidate(_ref(title=SHORT, year=2019), record).accepted
+
+
+def test_short_title_with_matching_first_author_is_accepted() -> None:
+    record = _record(title=LONG, doi=None, year=2019, authors=[WorkAuthor(family="He")])
+    assert match_candidate(_ref(title=SHORT, year=2015), record).accepted
+
+
+def test_short_title_rule_counts_folded_tokens() -> None:
+    # "Long Short-Term Memory" có 4 từ sau chuẩn hóa: không phải tiêu đề ngắn.
+    record = _record(
+        title="Long Short-Term Memory", doi=None, year=1997, authors=[WorkAuthor(family="X")]
+    )
+    assert match_candidate(_ref(title="Long short-term memory", year=2010), record).accepted
+    # Tiêu đề ngắn nhưng DOI trùng: vẫn chấp nhận theo DOI.
+    by_doi = _record(title=LONG, year=2019, authors=[WorkAuthor(family="Bahdanau")])
+    assert match_candidate(_ref(title=SHORT, year=2015, doi=HE_DOI_PRINTED), by_doi).accepted

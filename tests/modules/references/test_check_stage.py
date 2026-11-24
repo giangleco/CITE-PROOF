@@ -451,6 +451,34 @@ async def test_close_call_flags_review(
     assert check.match_score is not None and Decimal("0.9") < check.match_score < 1
 
 
+@pytest.mark.db
+async def test_doi_hit_with_unrelated_title_flags_review(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    bert = "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding"
+    api = FakeApis()
+    api.dois[("crossref", HE_DOI)] = crossref_item(bert, HE_DOI)
+    deps = api.deps(settings, session_factory)
+    _, [check] = await _check(session_factory, deps, [_ref(doi=HE_DOI)])
+    assert check.status == ReferenceStatus.METADATA_MISMATCH.value
+    assert check.mismatches == [{"field": "title", "in_document": HE_TITLE, "found": bert}]
+    assert check.needs_user_review
+    assert (await _work(session_factory, check.work_id)).doi == HE_DOI  # vẫn liên kết work
+
+
+@pytest.mark.db
+async def test_doi_hit_with_title_in_other_case_is_matched(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    api = FakeApis()
+    api.dois[("crossref", HE_DOI)] = crossref_item(HE_TITLE, HE_DOI)
+    deps = api.deps(settings, session_factory)
+    nfd_upper = unicodedata.normalize("NFD", "DEEP RESIDUAL LEARNING FOR IMAGE RECOGNITION")
+    _, [check] = await _check(session_factory, deps, [_ref(nfd_upper, doi=HE_DOI)])
+    assert check.status == ReferenceStatus.MATCHED.value
+    assert not check.needs_user_review
+
+
 # --- works ------------------------------------------------------------------------------------
 
 

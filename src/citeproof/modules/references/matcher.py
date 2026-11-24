@@ -17,6 +17,14 @@ lại từ cuối). Họ của bản ghi lấy cả trường `family`, từ cu�
 đủ "given family": OpenAlex và Semantic Scholar đoán họ là từ cuối của tên hiển thị, nên
 "Nguyễn Văn An" có `family = "An"`; đoán lại từ tên đầy đủ cho "Nguyễn".
 
+Hai quy tắc thêm (quyết định của controller sau Task 9):
+- DOI trùng nhưng bài có tiêu đề và điểm tiêu đề < `DOI_TITLE_CONFLICT`: vẫn chấp nhận (DOI trỏ
+  tới bản ghi này, giữ liên kết work) nhưng `needs_review`; trường lệch `title` làm trạng thái
+  thành `METADATA_MISMATCH`.
+- Tiêu đề ngắn (dưới `SHORT_TITLE_TOKENS` từ sau `fold(title_norm(...))`): chấp nhận qua điểm
+  tiêu đề (không có DOI trùng) còn cần năm trùng hoặc cùng họ tác giả đầu, vì `token_set_ratio`
+  cho 100 khi mọi từ của tiêu đề ngắn nằm trong tiêu đề dài hơn.
+
 Ứng viên tốt nhất xếp theo `score` rồi ít trường lệch hơn. Sát điểm (`close_call`) khi một
 ứng viên khác cũng được chấp nhận, kém dưới `CLOSE_DELTA` điểm và không lệch nhiều trường hơn
 ứng viên đầu: bản preprint lệch năm so với bài không làm bản chính thức thành mơ hồ.
@@ -40,6 +48,10 @@ TITLE_EXACT = 95
 CLOSE_DELTA = 5.0
 # Năm lệch tối đa khi chấp nhận qua tiêu đề gần đúng (`TITLE_WEAK`).
 MAX_YEAR_DELTA = 1
+# DOI trùng mà điểm tiêu đề dưới ngưỡng này: tiêu đề rõ ràng khác, gắn cờ tự kiểm tra.
+DOI_TITLE_CONFLICT = 60
+# Tiêu đề có ít từ hơn ngưỡng này cần thêm năm hoặc họ tác giả đầu khớp.
+SHORT_TITLE_TOKENS = 4
 
 MismatchField = Literal["title", "authors", "year", "venue", "doi"]
 _NON_ALNUM = re.compile(r"[\W_]+")
@@ -61,6 +73,8 @@ class MatchResult:
     score: float
     title_score: float
     mismatches: tuple[Mismatch, ...]
+    # DOI trùng nhưng tiêu đề rõ ràng khác (`DOI_TITLE_CONFLICT`): người dùng nên tự kiểm tra.
+    needs_review: bool = False
 
 
 @dataclass(frozen=True)
@@ -108,6 +122,10 @@ def _has_title(ref: ParsedReference) -> bool:
     return bool(ref.title and title_norm(ref.title))
 
 
+def _is_short_title(title: str | None) -> bool:
+    return len(fold(title_norm(title)).split()) < SHORT_TITLE_TOKENS if title else False
+
+
 def match_candidate(ref: ParsedReference, cand: WorkRecord) -> MatchResult:
     """So một ứng viên với trường đã parse của tài liệu tham khảo (spec §7.3)."""
     title_score = title_similarity(ref.title, cand.title)
@@ -124,9 +142,11 @@ def match_candidate(ref: ParsedReference, cand: WorkRecord) -> MatchResult:
     year_delta = (
         abs(ref.year - cand.year) if ref.year is not None and cand.year is not None else None
     )
+    # Tiêu đề ngắn: điểm tiêu đề cao chưa đủ, cần thêm năm trùng hoặc cùng họ tác giả đầu.
+    title_corroborated = not _is_short_title(ref.title) or year_delta == 0 or same_author is True
     accepted = (
         doi_equal
-        or title_score >= TITLE_ACCEPT
+        or (title_score >= TITLE_ACCEPT and title_corroborated)
         or (
             title_score >= TITLE_WEAK
             and same_author is True
@@ -151,6 +171,7 @@ def match_candidate(ref: ParsedReference, cand: WorkRecord) -> MatchResult:
         score=1.0 if doi_equal else title_score / 100,
         title_score=title_score,
         mismatches=tuple(mismatches),
+        needs_review=doi_equal and _has_title(ref) and title_score < DOI_TITLE_CONFLICT,
     )
 
 

@@ -174,6 +174,6 @@ def _found(best: BestMatch, tally: _SourceTally) -> CascadeResult:
         match=best.result,
         sources_searched=tally.searched,
         sources_failed=tally.failed,
-        needs_user_review=best.close_call,
+        needs_user_review=best.close_call or best.result.needs_review,
         close_call=best.close_call,
     )

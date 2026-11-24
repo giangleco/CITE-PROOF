@@ -245,3 +245,39 @@ async def test_programming_error_propagates() -> None:
     crossref = FakeConnector("crossref", search=InternalError("lỗi lập trình"))
     with pytest.raises(InternalError):
         await CascadeResolver(_gateway(crossref=crossref)).resolve(_entry(), None)
+
+
+async def test_doi_hit_with_unrelated_title_is_mismatch_for_review() -> None:
+    bert = "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding"
+    crossref = FakeConnector("crossref", doi=_he(title=bert))
+    result = await CascadeResolver(_gateway(crossref=crossref)).resolve(_entry(doi=HE_DOI), None)
+    assert result.status is ReferenceStatus.METADATA_MISMATCH
+    assert result.record is not None and result.record.doi == HE_DOI  # vẫn liên kết bản ghi
+    assert result.needs_user_review
+    assert not result.close_call
+    assert result.match is not None
+    assert [(m.field, m.found) for m in result.match.mismatches] == [("title", bert)]
+
+
+async def test_short_title_contained_in_other_work_continues_cascade() -> None:
+    longer = _he(
+        title="Attention mechanisms for neural machine translation",
+        doi=None,
+        year=2019,
+        authors=[WorkAuthor(family="Bahdanau")],
+    )
+    crossref = FakeConnector("crossref", search=[longer])
+    openalex = FakeConnector("openalex", search=[longer])
+    gateway = _gateway(crossref=crossref, openalex=openalex)
+    entry = _entry(title="Attention mechanisms", year=2015)
+    result = await CascadeResolver(gateway).resolve(entry, None)
+    assert result.status is ReferenceStatus.NOT_FOUND_IN_SEARCHED_SOURCES
+    assert result.sources_searched == SOURCES
+    matching_year = await CascadeResolver(
+        _gateway(crossref=FakeConnector("crossref", search=[longer]))
+    ).resolve(_entry(title="Attention mechanisms", year=2019), None)
+    # Được chấp nhận (năm trùng); tác giả đầu khác nên là METADATA_MISMATCH.
+    assert matching_year.record is not None
+    assert matching_year.status is ReferenceStatus.METADATA_MISMATCH
+    assert matching_year.match is not None
+    assert [m.field for m in matching_year.match.mismatches] == ["authors"]
