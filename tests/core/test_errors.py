@@ -22,3 +22,13 @@ def test_error_codes() -> None:
 def test_new_errors_are_citeproof_errors() -> None:
     for cls in (NotFoundError, ConflictError, RateLimitedError, AuthError):
         assert issubclass(cls, CiteProofError)
+
+
+def test_retryable_error_carries_retry_after() -> None:
+    from citeproof.core.errors import ExternalServiceError, RetryableError
+
+    error = RetryableError("tạm thời", code="METADATA_UNAVAILABLE", retry_after=7.5)
+    assert isinstance(error, ExternalServiceError)
+    assert error.retry_after == 7.5
+    assert error.code == "METADATA_UNAVAILABLE"
+    assert RetryableError("x").retry_after is None

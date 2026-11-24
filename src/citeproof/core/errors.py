@@ -54,7 +54,16 @@ class ExternalServiceError(CiteProofError):
 
 
 class RetryableError(ExternalServiceError):
-    """Timeout, 429, 5xx: thử lại có backoff."""
+    """Timeout, 429, 5xx: thử lại có backoff.
+
+    `retry_after` (giây) lấy từ header `Retry-After` khi dịch vụ ngoài gửi kèm (preflight F06).
+    """
+
+    def __init__(
+        self, message: str = "", *, code: str | None = None, retry_after: float | None = None
+    ) -> None:
+        super().__init__(message, code=code)
+        self.retry_after = retry_after
 
 
 class LLMOutputError(CiteProofError):

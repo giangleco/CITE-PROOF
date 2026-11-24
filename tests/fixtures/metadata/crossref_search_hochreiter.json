@@ -1,0 +1,132 @@
+{
+ "status": "ok",
+ "message-type": "work-list",
+ "message": {
+  "total-results": 5106224,
+  "items": [
+   {
+    "DOI": "10.1162/neco.1997.9.8.1735",
+    "title": [
+     "Long Short-Term Memory"
+    ],
+    "author": [
+     {
+      "given": "Sepp",
+      "family": "Hochreiter",
+      "sequence": "first"
+     },
+     {
+      "given": "Jürgen",
+      "family": "Schmidhuber",
+      "sequence": "additional"
+     }
+    ],
+    "issued": {
+     "date-parts": [
+      [
+       1997,
+       11,
+       1
+      ]
+     ]
+    },
+    "published": {
+     "date-parts": [
+      [
+       1997,
+       11,
+       1
+      ]
+     ]
+    },
+    "container-title": [
+     "Neural Computation"
+    ],
+    "type": "journal-article",
+    "abstract": "<jats:p>Learning to store information over extended time intervals by recurrent backpropagation takes a very long time, mostly because of insufficient, decaying error backflow. We briefly review Hochreiter's (1991) analysis of this problem, then address it by introducing a novel, efficient, gradient based method called long short-term memory (LSTM). Truncating the gradient where this does not do harm, LSTM can learn to bridge minimal time lags in excess of 1000 discrete-time steps by enforcing constant error flow through constant error carousels within special units. Multiplicative gate units learn to open and close access to the constant error flow. LSTM is local in space and time; its computational complexity per time step and weight is O. 1. Our experiments with artificial data involve local, distributed, real-valued, and noisy pattern representations. In comparisons with real-time recurrent learning, back propagation through time, recurrent cascade correlation, Elman nets, and neural sequence chunking, LSTM leads to many more successful runs, and learns much faster. LSTM also solves complex, artificial long-time-lag tasks that have never been solved by previous recurrent network algorithms.</jats:p>"
+   },
+   {
+    "DOI": "10.1162/neco.1997.9.1.1",
+    "title": [
+     "Flat Minima"
+    ],
+    "author": [
+     {
+      "given": "Sepp",
+      "family": "Hochreiter",
+      "sequence": "first"
+     },
+     {
+      "given": "Jürgen",
+      "family": "Schmidhuber",
+      "sequence": "additional"
+     }
+    ],
+    "issued": {
+     "date-parts": [
+      [
+       1997,
+       1,
+       1
+      ]
+     ]
+    },
+    "published": {
+     "date-parts": [
+      [
+       1997,
+       1,
+       1
+      ]
+     ]
+    },
+    "container-title": [
+     "Neural Computation"
+    ],
+    "type": "journal-article",
+    "abstract": "<jats:p>We present a new algorithm for finding low-complexity neural networks with high generalization capability. The algorithm searches for a “flat” minimum of the error function. A flat minimum is a large connected region in weight space where the error remains approximately constant. An MDL-based, Bayesian argument suggests that flat minima correspond to “simple” networks and low expected overfitting. The argument is based on a Gibbs algorithm variant and a novel way of splitting generalization error into underfitting and overfitting error. Unlike many previous approaches, ours does not require gaussian assumptions and does not depend on a “good” weight prior. Instead we have a prior over input output functions, thus taking into account net architecture and training set. Although our algorithm requires the computation of second-order derivatives, it has backpropagation's order of complexity. Automatically, it effectively prunes units, weights, and input lines. Various experiments with feedforward and recurrent nets are described. In an application to stock market prediction, flat minimum search outperforms conventional backprop, weight decay, and “optimal brain surgeon/optimal brain damage.”</jats:p>"
+   },
+   {
+    "DOI": "10.1162/089976699300016629",
+    "title": [
+     "Feature Extraction Through LOCOCODE"
+    ],
+    "author": [
+     {
+      "given": "Sepp",
+      "family": "Hochreiter",
+      "sequence": "first"
+     },
+     {
+      "given": "Jürgen",
+      "family": "Schmidhuber",
+      "sequence": "additional"
+     }
+    ],
+    "issued": {
+     "date-parts": [
+      [
+       1999,
+       4,
+       1
+      ]
+     ]
+    },
+    "published": {
+     "date-parts": [
+      [
+       1999,
+       4,
+       1
+      ]
+     ]
+    },
+    "container-title": [
+     "Neural Computation"
+    ],
+    "type": "journal-article",
+    "abstract": "<jats:p> Low-complexity coding and decoding (LOCOCODE) is a novel approach to sensory coding and unsupervised learning. Unlike previous methods, it explicitly takes into account the information-theoretic complexity of the code generator. It computes lococodes that convey information about the input data and can be computed and decoded by low-complexity mappings. We implement LOCOCODE by training autoassociators with flat minimum search, a recent, general method for discovering low-complexity neural nets. It turns out that this approach can unmix an unknown number of independent data sources by extracting a minimal number of low-complexity features necessary for representing the data. Experiments show that unlike codes obtained with standard autoencoders, lococodes are based on feature detectors, never unstructured, usually sparse, and sometimes factorial or local (depending on statistical properties of the data). Although LOCOCODE is not explicitly designed to enforce sparse or factorial codes, it extracts optimal codes for difficult versions of the “bars” benchmark problem, whereas independent component analysis (ICA) and principal component analysis (PCA) do not. It produces familiar, biologically plausible feature detectors when applied to real-world images and codes with fewer bits per pixel than ICA and PCA. Unlike ICA, it does not need to know the number of independent sources. As a preprocessor for a vowel recognition benchmark problem, it sets the stage for excellent classification performance. Our results reveal an interesting, previously ignored connection between two important fields: regularizer research and ICA-related research. They may represent a first step toward unification of regularization and unsupervised learning. </jats:p>"
+   }
+  ]
+ }
+}

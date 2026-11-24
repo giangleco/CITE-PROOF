@@ -2,6 +2,7 @@
 
 import dataclasses
 import uuid
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,7 @@ from citeproof.core.enums import StageName
 from citeproof.core.settings import Settings
 from citeproof.integrations.grobid import GrobidClient
 from citeproof.integrations.http_safe import SafeHttpClient
+from citeproof.integrations.metadata import MetadataCache, MetadataGateway
 from citeproof.llm.cache import InMemoryCacheStore, validate_namespace
 from citeproof.llm.calls import InMemoryCallLogger
 from citeproof.llm.client import LLMClient
@@ -164,4 +166,24 @@ async def test_make_test_deps_grobid_only_with_transport(tmp_path: Path) -> None
     deps = make_test_deps(settings, async_sessionmaker(), transport=transport)
     assert deps.grobid is not None
     assert await deps.grobid.process_fulltext(b"%PDF-") == "<TEI/>"
+    await deps.http.aclose()
+
+
+async def test_open_deps_builds_metadata_factory(tmp_path: Path) -> None:
+    async with open_deps(_settings(tmp_path), async_sessionmaker()) as deps:
+        assert deps.metadata is not None
+        first, second = deps.metadata(), deps.metadata()
+        assert isinstance(first, MetadataGateway)
+        assert first is not second  # bộ ngắt mạch theo lần chạy
+        assert first.limiters is second.limiters  # giới hạn tốc độ dùng chung trong tiến trình
+        assert first.sources == ("crossref", "openalex", "semantic_scholar")
+
+
+async def test_make_test_deps_metadata_ttl_from_settings(tmp_path: Path) -> None:
+    settings = _settings(tmp_path, metadata_cache_ttl_days=5, metadata_not_found_ttl_days=2)
+    deps = make_test_deps(settings, async_sessionmaker())
+    assert deps.metadata is not None
+    cache = deps.metadata().cache
+    assert isinstance(cache, MetadataCache)
+    assert (cache.ok_ttl, cache.not_found_ttl) == (timedelta(days=5), timedelta(days=2))
     await deps.http.aclose()

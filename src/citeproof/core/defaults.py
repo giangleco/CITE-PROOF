@@ -64,3 +64,9 @@ LLM_PRICES: Mapping[str, tuple[float, float]] = MappingProxyType(
 RUN_MAX_CLAIMS = 150
 RUN_MAX_COST_USD = 5.0
 RETRIEVAL_K = 6
+
+# Số yêu cầu mỗi giây theo nguồn metadata (spec §7.3, `[ĐX]`). `Settings` lấy làm mặc định;
+# gateway dùng lại cho nguồn thiếu khi biến môi trường chỉ đặt một phần bảng.
+METADATA_RATE_LIMITS: Mapping[str, float] = MappingProxyType(
+    {"crossref": 5.0, "openalex": 10.0, "semantic_scholar": 0.3}
+)

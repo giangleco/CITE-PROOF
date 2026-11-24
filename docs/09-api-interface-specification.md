@@ -197,10 +197,14 @@ from pydantic import BaseModel
 
 T = TypeVar("T", bound=BaseModel)
 
-class MetadataConnector(Protocol):
+class MetadataConnector(Protocol):   # Crossref, OpenAlex, Semantic Scholar
     name: str
-    async def search(self, ref: "ParsedReference", limit: int = 5) -> list["WorkCandidate"]: ...
+    async def search(self, ref: "ParsedReference", limit: int = 5) -> list["WorkRecord"]: ...
+    async def search_text(self, query: str, *, year: int | None = None,
+                          limit: int = 5) -> list["WorkRecord"]: ...  # year: lọc ±1 năm (A1)
     async def get_by_doi(self, doi: str) -> "WorkRecord | None": ...
+    # 404 → None/[]; 429, 5xx, timeout → RetryableError (retry_after từ Retry-After);
+    # lỗi HTTP khác → ExternalServiceError; bản ghi thiếu tiêu đề bị bỏ, không phải lỗi
 
 class AccessResolver(Protocol):
     async def resolve(self, work: "WorkRecord") -> list["AccessOption"]: ...
@@ -250,6 +254,8 @@ class ReferenceResolver(Protocol):   # CascadeResolver, AgentResolver (A1)
 `AgentBudget` gồm `max_steps`, `max_context_tokens`, `max_total_input_tokens`, `max_wall_seconds`, `max_submit_attempts` (`07a` §4.5.1). Đây là bản phác thảo; tên kiểu cụ thể chốt khi viết mã.
 
 `ConnectorInterface` của v1.0 §9.2 được tách thành ba protocol: `MetadataConnector`, `AccessResolver`, `FullTextFetcher`. Lý do: không nguồn nào hỗ trợ đủ cả ba chức năng.
+
+`WorkRecord` (`integrations/metadata/models.py`) thay `WorkCandidate`: kết quả tìm kiếm và kết quả tra theo DOI có cùng dạng (`source`, `source_id`, `title`, `authors: list[WorkAuthor(family, given)]`, `year`, `venue`, `doi` chữ thường, `arxiv_id` không phiên bản, `openalex_id`, `s2_id`, `isbn`, `abstract`, `language`, `field` (lĩnh vực OpenAlex), `work_type`, `oa: list[OaLocation(pdf_url, license)]`). Stage không gọi connector trực tiếp mà qua `MetadataGateway` (`by_doi`, `search`, `search_text`, `available`; kết quả `LookupOutcome(source, status ∈ ok|not_found|error|circuit_open, records)`), nơi lo `metadata_cache`, giới hạn tốc độ, thử lại và ngắt mạch theo nguồn (spec core pipeline §7.3).
 
 ## 5. Implementation Steps
 

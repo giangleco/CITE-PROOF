@@ -5,7 +5,7 @@ sau thêm trường (GROBID, metadata, embedder, agent) có giá trị mặc đ�
 `PipelineDeps`.
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +18,7 @@ from citeproof.core.enums import StageName
 from citeproof.core.settings import Settings
 from citeproof.integrations.grobid import GrobidClient
 from citeproof.integrations.http_safe import SafeHttpClient
+from citeproof.integrations.metadata import MetadataGateway, make_gateway_factory
 from citeproof.llm.cache import doc_namespace
 from citeproof.llm.client import LLMClient
 from citeproof.llm.factory import make_llm_client
@@ -47,6 +48,9 @@ class PipelineDeps:
     cache_namespace: str | None = None
     # None khi không cấu hình GROBID: PDF parse bằng pypdfium2 (cảnh báo `PDF_TEXT_FALLBACK`).
     grobid: GrobidClient | None = None
+    # Mỗi lần gọi trả một gateway mới (ngắt mạch theo lần chạy; cache và giới hạn tốc độ dùng
+    # chung). `open_deps` và `make_test_deps` luôn đặt; S3 coi None là lỗi lập trình (F44).
+    metadata: Callable[[], MetadataGateway] | None = None
 
 
 @asynccontextmanager
@@ -68,6 +72,7 @@ async def open_deps(
             http=http,
             safe_http=SafeHttpClient(),
             grobid=make_grobid_client(settings, http),
+            metadata=make_gateway_factory(settings, http, session_factory),
         )
 
 

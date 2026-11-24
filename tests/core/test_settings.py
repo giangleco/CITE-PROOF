@@ -111,3 +111,28 @@ def test_pdf_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.grobid_url == "http://localhost:8070"
     assert s.grobid_timeout_seconds == 300.0
     assert s.max_pages == 300
+
+
+def test_metadata_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("CONTACT_EMAIL", "SEMANTIC_SCHOLAR_API_KEY", "METADATA_RATE_LIMITS"):
+        monkeypatch.delenv(f"CITEPROOF_{name}", raising=False)
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.contact_email is None  # không gửi email nào khi chưa cấu hình
+    assert s.semantic_scholar_api_key is None
+    assert s.metadata_rate_limits == {"crossref": 5.0, "openalex": 10.0, "semantic_scholar": 0.3}
+    assert s.metadata_breaker_threshold == 3
+    assert s.metadata_cache_ttl_days == 30
+    assert s.metadata_not_found_ttl_days == 7
+    assert s.metadata_timeout_seconds == 15.0
+    s.metadata_rate_limits["crossref"] = 1.0
+    assert Settings(_env_file=None).metadata_rate_limits["crossref"] == 5.0  # type: ignore[call-arg]
+
+
+def test_semantic_scholar_key_is_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CITEPROOF_SEMANTIC_SCHOLAR_API_KEY", "s2-secret")
+    monkeypatch.setenv("CITEPROOF_METADATA_RATE_LIMITS", '{"crossref": 1.5}')
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.semantic_scholar_api_key is not None
+    assert s.semantic_scholar_api_key.get_secret_value() == "s2-secret"
+    assert "s2-secret" not in repr(s)
+    assert s.metadata_rate_limits == {"crossref": 1.5}

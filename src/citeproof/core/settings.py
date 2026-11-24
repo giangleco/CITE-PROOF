@@ -53,6 +53,21 @@ class Settings(BaseSettings):
     # Bài dài hơn bị từ chối ở S1 (`PAGE_LIMIT_EXCEEDED`).
     max_pages: int = 300
 
+    # Tra cứu metadata ở S3 (spec §7.3, QĐ-06). `contact_email` là email của người vận hành cho
+    # "polite pool" (User-Agent và tham số `mailto` của OpenAlex), không bao giờ là email người
+    # dùng; None: không gửi email nào.
+    contact_email: str | None = None
+    semantic_scholar_api_key: SecretStr | None = None
+    # Số yêu cầu mỗi giây theo nguồn; nguồn không có trong bảng dùng mặc định ở `core.defaults`.
+    metadata_rate_limits: dict[str, float] = Field(
+        default_factory=lambda: dict(defaults.METADATA_RATE_LIMITS)
+    )
+    # Số lỗi liên tiếp của một nguồn trong một lần chạy trước khi ngắt mạch nguồn đó.
+    metadata_breaker_threshold: int = 3
+    metadata_cache_ttl_days: int = 30
+    metadata_not_found_ttl_days: int = 7
+    metadata_timeout_seconds: float = 15.0
+
     # Giao diện web (spec web UI §7.10). Các giới hạn [ĐX] chốt sau SPK-05.
     storage_dir: Path = Path("var/storage")
     max_upload_bytes: int = 26_214_400

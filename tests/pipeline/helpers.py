@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from citeproof.core.enums import StageName
 from citeproof.core.settings import Settings
 from citeproof.integrations.http_safe import Resolver, SafeHttpClient
+from citeproof.integrations.metadata import make_gateway_factory
 from citeproof.llm.cache import PgCacheStore
 from citeproof.llm.calls import PgCallLogger
 from citeproof.llm.client import LLMClient
@@ -22,6 +23,11 @@ from citeproof.pipeline.worker import work_once
 from citeproof.storage import LocalStorage
 
 PUBLIC_IP = "93.184.216.34"
+
+
+async def no_sleep(seconds: float) -> None:
+    """Không chờ: giới hạn tốc độ và thử lại của gateway metadata chạy tức thì trong test."""
+    return None
 
 
 async def public_resolver(host: str, port: int) -> list[str]:
@@ -39,9 +45,11 @@ def make_test_deps(
 ) -> PipelineDeps:
     """PipelineDeps cho test stage: không mạng thật, LLM chỉ khi truyền `provider`.
 
-    `transport` (ví dụ `httpx.MockTransport`) dùng chung cho `http`, `safe_http` và
-    `GrobidClient` (tới `settings.grobid_url`). Không truyền `transport` thì `grobid` là
-    None (S1 dùng pypdfium2), để test không bao giờ gọi GROBID thật.
+    `transport` (ví dụ `httpx.MockTransport`) dùng chung cho `http`, `safe_http`,
+    `GrobidClient` (tới `settings.grobid_url`) và gateway metadata. Không truyền `transport`
+    thì `grobid` là None (S1 dùng pypdfium2), để test không bao giờ gọi GROBID thật. Test có
+    tra cứu metadata (S3) phải truyền `transport`. Gateway dùng TTL cache của `settings` và
+    không chờ thật (limiter, thử lại).
     """
     llm = (
         LLMClient(
@@ -63,6 +71,7 @@ def make_test_deps(
         http=http,
         safe_http=SafeHttpClient(resolver=resolver or public_resolver, transport=transport),
         grobid=make_grobid_client(settings, http) if transport is not None else None,
+        metadata=make_gateway_factory(settings, http, session_factory, sleep=no_sleep),
     )
 
 
