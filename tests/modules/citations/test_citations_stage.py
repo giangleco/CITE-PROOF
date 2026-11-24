@@ -23,16 +23,19 @@ from citeproof.db.models import (
     CitationLink,
     Claim,
     Document,
+    LLMCall,
     ReferenceEntry,
     VerificationRun,
 )
+from citeproof.llm.providers.scripted import ScriptedProvider
+from citeproof.llm.types import ProviderResponse
 from citeproof.modules.citations.stage import CitationsStage
 from citeproof.modules.documents.stage import ParseStage
 from citeproof.modules.references.stage_extract import ExtractReferencesStage
 from citeproof.parsing.model import ParsedDocument
 from citeproof.pipeline.deps import PipelineDeps
 from citeproof.pipeline.runs import create_run
-from citeproof.pipeline.stages import PipelineStage, StageRegistry
+from citeproof.pipeline.stages import PipelineStage, StageContext, StageRegistry, StageResult
 from citeproof.services import documents
 from citeproof.storage import LocalStorage
 from tests.golden.cases import GoldenCase
@@ -259,7 +262,7 @@ async def test_unresolved_marker_creates_null_link(
     )
     deps = make_test_deps(settings, session_factory)
     await drain(session_factory, _registry(deps), pipeline_settings())
-    assert await _run_status(session_factory, run_id) == RunStatus.COMPLETED.value
+    assert await _run_status(session_factory, run_id) == RunStatus.COMPLETED_WITH_WARNINGS.value
 
     rows = await _rows(session_factory, document.id)
     names = await _ref_names(session_factory, document.id)
@@ -299,7 +302,7 @@ async def test_page_locator_markers_link_reference_numbers(
     )
     deps = make_test_deps(settings, session_factory)
     await drain(session_factory, _registry(deps), pipeline_settings())
-    assert await _run_status(session_factory, run_id) == RunStatus.COMPLETED.value
+    assert await _run_status(session_factory, run_id) == RunStatus.COMPLETED_WITH_WARNINGS.value
 
     rows = await _rows(session_factory, document.id)
     names = await _ref_names(session_factory, document.id)
@@ -367,3 +370,104 @@ async def test_s4_lease_lost_writes_nothing(
     async with session_factory() as session:
         for model in (Citation, CitationLink, Claim):
             assert await session.scalar(select(func.count()).select_from(model)) == 0
+
+
+# --- W2 (claim.extract) -----------------------------------------------------------------------
+
+W2_BODY = "Phân loại văn bản tiếng Việt đã được nghiên cứu rộng rãi [1]. Xem thêm [2]."
+W2_SENTENCE = "Phân loại văn bản tiếng Việt đã được nghiên cứu rộng rãi [1]."
+
+
+class _Recording:
+    """Bọc S4 thật để lấy `StageResult` của lần chạy qua `drain`."""
+
+    name = StageName.S4
+
+    def __init__(self, deps: PipelineDeps) -> None:
+        self._inner = CitationsStage(deps)
+        self.results: list[StageResult] = []
+
+    async def run(self, ctx: StageContext) -> StageResult:
+        result = await self._inner.run(ctx)
+        self.results.append(result)
+        return result
+
+
+def _w2_response(*items: dict[str, object]) -> ProviderResponse:
+    return ProviderResponse(json.dumps({"items": list(items)}), 100, 50, "end_turn")
+
+
+def _w2_item(
+    marker_id: str, start: int, end: int, *, text: str, is_claim: bool = True
+) -> dict[str, object]:
+    return {
+        "marker_id": marker_id,
+        "is_claim": is_claim,
+        "span_start": start,
+        "span_end": end,
+        "claim_text": text,
+    }
+
+
+@pytest.mark.db
+async def test_s4_without_llm_warns(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    document, _ = await _text_document(
+        session_factory, settings, body=W2_BODY, references=REFERENCES
+    )
+    deps = make_test_deps(settings, session_factory)
+    recording = _Recording(deps)
+    await drain(session_factory, _registry(deps, recording), pipeline_settings())
+    assert [r.warnings for r in recording.results] == [("LLM_NOT_CONFIGURED",)]
+    rows = await _rows(session_factory, document.id)
+    assert {row.claim.extraction_method for row in rows} == {"rule"}
+
+
+@pytest.mark.db
+async def test_s4_with_scripted_w2(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    document, _ = await _text_document(
+        session_factory, settings, body=W2_BODY, references=REFERENCES
+    )
+    refined = "văn bản tiếng Việt đã được nghiên cứu rộng rãi"
+    start = W2_SENTENCE.index(refined)
+    second = "Xem thêm [2]."
+    provider = ScriptedProvider(
+        [
+            _w2_response(
+                _w2_item("m1", start, start + len(refined), text=refined),
+                _w2_item("m2", 0, len(second), text=second, is_claim=False),
+            )
+        ]
+    )
+    deps = make_test_deps(settings, session_factory, provider=provider)
+    recording = _Recording(deps)
+    await drain(session_factory, _registry(deps, recording), pipeline_settings())
+    assert [r.warnings for r in recording.results] == [()]
+    assert len(provider.requests) == 1  # một đoạn có marker: một lời gọi
+    rows = await _rows(session_factory, document.id)
+    assert [row.claim.claim_text for row in rows] == [refined, second]
+    assert [row.claim.is_claim for row in rows] == [True, False]
+    assert rows[0].claim.extraction_method == "llm:claim.extract/v1"
+    async with session_factory() as session:
+        calls = (await session.execute(select(LLMCall.task, LLMCall.stage))).all()
+    assert [(c.task, c.stage) for c in calls] == [("claim.extract", "S4")]
+
+
+@pytest.mark.db
+async def test_w2_output_invalid_twice_keeps_rules(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    document, run_id = await _text_document(
+        session_factory, settings, body=W2_BODY, references=REFERENCES
+    )
+    bad = ProviderResponse('{"items": "nope"}', 10, 5, "end_turn")
+    deps = make_test_deps(settings, session_factory, provider=ScriptedProvider([bad, bad]))
+    await drain(session_factory, _registry(deps), pipeline_settings())
+    assert await _run_status(session_factory, run_id) == RunStatus.COMPLETED.value
+    rows = await _rows(session_factory, document.id)
+    assert len(rows) == 2
+    assert {row.claim.extraction_method for row in rows} == {"rule"}
+    assert rows[0].claim.claim_text == "Phân loại văn bản tiếng Việt đã được nghiên cứu rộng rãi"

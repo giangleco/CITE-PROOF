@@ -11,11 +11,16 @@ ghi trùng. Mỗi marker một `citations` (vị trí marker trong `ParsedDocume
 mục, câu), mỗi mục được trích một `citation_links` (`reference_entry_id` NULL khi không liên
 kết được; `link_method` theo loại marker), một `claims` (`extraction_method = "rule"`).
 
-Bước rule không gọi mạng hay LLM nên không có lỗi theo mục để cô lập (preflight F13 áp cho
-W2 ở Task 11): lỗi nào cũng làm stage lỗi. Không log nội dung bài.
+**W2 (T-402):** khi có `deps.llm`, mỗi đoạn có marker được gọi `claim.extract` một lần, trước
+giao dịch ghi (không có I/O LLM trong giao dịch rào lease). Span W2 chỉ được nhận khi là chuỗi
+con của câu; đầu ra hỏng (`LLMOutputError`) hay `CiteProofError` khác giữ claim rule của đoạn
+đó. `RetryableError` làm stage thử lại, riêng lần thử cuối thì giữ claim rule. Lỗi cache phát
+lại và `InternalError` lan ra ngoài (preflight F12, F13). Không có LLM mà có marker thì stage
+báo `LLM_NOT_CONFIGURED`. Không log nội dung bài.
 """
 
 import asyncio
+import logging
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -23,8 +28,14 @@ from uuid import UUID
 
 from sqlalchemy import select
 
-from citeproof.core.enums import StageName
-from citeproof.core.errors import InternalError, NotFoundError
+from citeproof.core.enums import LLMTask, StageName
+from citeproof.core.errors import (
+    CiteProofError,
+    InternalError,
+    LLMOutputError,
+    NotFoundError,
+    RetryableError,
+)
 from citeproof.db.models import (
     Citation,
     CitationLink,
@@ -33,14 +44,22 @@ from citeproof.db.models import (
     ReferenceEntry,
     VerificationRun,
 )
+from citeproof.llm.client import LLMClient
+from citeproof.llm.types import CacheEntryInvalidError, CacheMissError
 from citeproof.modules.citations.claims import ClaimDraft, build_drafts
 from citeproof.modules.citations.linking import LinkTarget, ReferenceIndex, make_target
+from citeproof.modules.citations.llm_extract import refine_paragraph
+from citeproof.modules.citations.sentences import split_sentences
+from citeproof.modules.references.stage_extract import LLM_NOT_CONFIGURED
 from citeproof.parsing.model import ParsedDocument
-from citeproof.pipeline.deps import PipelineDeps
+from citeproof.pipeline.config import load_run_info
+from citeproof.pipeline.deps import PipelineDeps, call_context
 from citeproof.pipeline.jobs import fenced_session
 from citeproof.pipeline.stages import StageContext, StageResult
 
 Drafts = Sequence[tuple[ClaimDraft, list[UUID | None]]]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -137,6 +156,49 @@ class CitationsStage:
             await session.flush()  # citations trước: links và claims tham chiếu tới chúng
             session.add_all(rows)
 
+    async def _refine(
+        self, llm: LLMClient, ctx: StageContext, parsed: ParsedDocument, drafts: Drafts
+    ) -> list[tuple[ClaimDraft, list[UUID | None]]]:
+        """W2 cho từng đoạn có marker; đoạn lỗi giữ claim rule (xem docstring module)."""
+        async with self._deps.session_factory() as session:
+            info = await load_run_info(session, ctx.run_id)
+        spec = info.config.task(LLMTask.CLAIM_EXTRACT)
+        call_ctx = call_context(self._deps, info, StageName.S4)
+        by_paragraph: dict[int, list[int]] = {}
+        for position, (draft, _) in enumerate(drafts):
+            by_paragraph.setdefault(draft.paragraph_index, []).append(position)
+        refined = [draft for draft, _ in drafts]
+        for paragraph_index, positions in by_paragraph.items():
+            sentences = await asyncio.to_thread(
+                split_sentences, parsed.paragraphs[paragraph_index].text
+            )
+            starts = {sentence.start: index for index, sentence in enumerate(sentences)}
+            try:
+                updated = await refine_paragraph(
+                    llm,
+                    self._deps.prompts,
+                    spec,
+                    call_ctx,
+                    [sentence.text for sentence in sentences],
+                    [(drafts[p][0], starts[drafts[p][0].sentence.start]) for p in positions],
+                )
+            except LLMOutputError:
+                logger.warning("w2_output_invalid", extra={"error_type": "LLMOutputError"})
+                continue
+            except RetryableError as exc:
+                if not ctx.is_last_attempt:
+                    raise
+                logger.warning("w2_skipped", extra={"error_type": type(exc).__name__})
+                continue
+            except (InternalError, CacheMissError, CacheEntryInvalidError):
+                raise
+            except CiteProofError as exc:
+                logger.warning("w2_skipped", extra={"error_type": type(exc).__name__})
+                continue
+            for position, draft in zip(positions, updated, strict=True):
+                refined[position] = draft
+        return [(draft, drafts[i][1]) for i, draft in enumerate(refined)]
+
     async def run(self, ctx: StageContext) -> StageResult:
         document = await self._load(ctx.run_id)
         if document.has_citations:
@@ -149,6 +211,13 @@ class CitationsStage:
         data = await self._deps.storage.get(document.parsed_key)
         parsed = await asyncio.to_thread(ParsedDocument.model_validate_json, data)
         drafts = await build_drafts(parsed, ReferenceIndex(targets))
-        if drafts:
-            await self._write(ctx, document.id, parsed, drafts)
-        return StageResult()
+        if not drafts:
+            return StageResult()
+        warnings: tuple[str, ...] = ()
+        llm = self._deps.llm
+        if llm is None:
+            warnings = (LLM_NOT_CONFIGURED,)
+        else:
+            drafts = await self._refine(llm, ctx, parsed, drafts)
+        await self._write(ctx, document.id, parsed, drafts)
+        return StageResult(warnings=warnings)

@@ -77,5 +77,5 @@ async def test_built_registry_completes_run(
             select(VerificationRun.status).where(VerificationRun.id == run_id)
         )
         parsed_key = await session.scalar(select(Document.parsed_key).where(Document.id == doc.id))
-    assert status == RunStatus.COMPLETED.value
+    assert status == RunStatus.COMPLETED_WITH_WARNINGS.value  # S4: LLM_NOT_CONFIGURED
     assert parsed_key is not None

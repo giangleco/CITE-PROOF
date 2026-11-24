@@ -164,4 +164,7 @@ async def test_demo_failure_marks_run_failed_then_resume_completes(
         await runs_view.resume(s, settings, user=user, run_id=run_id)
         await s.commit()
     await drain(session_factory, registry, pipeline_settings())
-    assert (await _status(session_factory, run_id)).status == RunStatus.COMPLETED.value
+    assert (await _status(session_factory, run_id)).status in (
+        RunStatus.COMPLETED.value,
+        RunStatus.COMPLETED_WITH_WARNINGS.value,
+    )
