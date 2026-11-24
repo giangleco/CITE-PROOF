@@ -90,6 +90,11 @@ def test_page_locator_links_reference_numbers_only() -> None:
     assert index.link(_marker("A [1, tr. 25].")) == [targets[0].entry_id]
     assert index.link(_marker("A [3: 25-30].")) == [targets[2].entry_id]
     assert index.link(_marker("A [1, tr. 25; 57, tr. 7].")) == [targets[0].entry_id, None]
+    assert index.link(_marker("A [1, tr. 25, 3, tr. 7].")) == [
+        targets[0].entry_id,
+        targets[2].entry_id,
+    ]
+    assert index.link(_marker("A [1, tr. 25, 30].")) == [targets[0].entry_id]  # 30 là trang
 
 
 def test_numeric_link_keeps_one_item_per_number() -> None:

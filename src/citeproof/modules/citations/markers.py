@@ -5,6 +5,9 @@ khoảng (`2-4` → 2, 3, 4, gạch nối hoặc gạch ngang dài; tối đa `M
 rộng), có thể kèm vị trí trang của luận văn Việt: `[1, tr. 25]`, `[1, trang 25]`,
 `[1, pp. 25-30]`, `[1: 25]`, `[1, tr. 25; 3, tr. 7]` (mở rộng spec §7.4 theo phán quyết
 Task 10). Số trang không phải số tài liệu (không được liên kết); `marker.text` giữ cả ngoặc.
+Trong một nhóm, số trơn sau vị trí trang là trang (`[1, tr. 25, 30]` → 1), số đứng ngay trước
+một vị trí trang là số tài liệu (`[1, tr. 25, 3, tr. 7]` → 1, 3). Hạn chế: tỉ lệ trong ngoặc
+vuông (`[1:2]`) bị đọc là trích dẫn tài liệu 1 vì trùng dạng `[n: trang]`.
 Khoảng IEEE viết bằng hai ngoặc (`[2]-[4]`, kể cả gạch ngang dài; GROBID ghi `[2]- [4]`) là
 một marker. Không phải marker: trang không có số tài liệu (`[tr. 25]`), số 0, khoảng ngược
 (`[5-3]`), phần rỗng (`[1,]`), quá `MAX_NUMBERS` số, và ngoặc mà mọi số tài liệu đều là năm
@@ -129,29 +132,29 @@ def numeric_marker_numbers(body: str) -> tuple[int, ...] | None:
 
     Nhóm phân tách bằng `;`, phần tử trong nhóm bằng `,`. Phần tử là số, khoảng, số kèm trang
     sau dấu hai chấm (`1: 25`), hoặc vị trí trang (`tr. 25`) đứng ngay sau một số tài liệu.
-    Sau vị trí trang, số còn lại trong nhóm là trang (`[1, tr. 25, 30]` → 1); vị trí trang thứ
-    hai trong cùng nhóm (`[1, tr. 25, 3, tr. 7]`) là mơ hồ nên cả ngoặc không phải marker.
+    Sau vị trí trang, số trơn trong nhóm là trang (`[1, tr. 25, 30]` → 1), trừ số đứng ngay
+    trước một vị trí trang khác: đó là số tài liệu (`[1, tr. 25, 3, tr. 7]` → 1, 3).
     """
     numbers: list[int] = []
     for group in body.split(";"):
+        items = [part.strip() for part in group.split(",")]
         after_number = False  # phần tử trước là một số tài liệu chưa có trang
-        paged = False  # nhóm đã có vị trí trang: số sau đó là trang
-        for item in (part.strip() for part in group.split(",")):
+        paged = False  # nhóm đã có vị trí trang: số trơn sau đó là trang
+        for position, item in enumerate(items):
             if _LOCATOR.fullmatch(item):
-                if not after_number or paged:
-                    return None  # "[tr. 25]": trang không có số tài liệu
+                if not after_number:
+                    return None  # "[tr. 25]", "[1, tr. 25, tr. 30]": trang không có số tài liệu
                 after_number, paged = False, True
                 continue
             colon = _COLON_LOCATOR.fullmatch(item)
             match = None if colon is not None else _NUMERIC_PART.fullmatch(item)
-            if paged:
-                if match is None:
-                    return None
-                continue  # trang tiếp theo: "tr. 25, 30"
             if colon is not None:
                 first = last = int(colon.group(1))
                 paged = True
             elif match is not None:
+                following = items[position + 1] if position + 1 < len(items) else ""
+                if paged and _LOCATOR.fullmatch(following) is None:
+                    continue  # trang tiếp theo: "tr. 25, 30"
                 first = int(match.group(1))
                 last = int(match.group(2)) if match.group(2) else first
             else:

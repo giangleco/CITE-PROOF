@@ -82,6 +82,26 @@ def test_marker_after_period_stays_with_its_sentence() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "PGS.TS. Nguyễn Văn An (2020) cho rằng mô hình A tốt hơn.",
+        "GS.TSKH. Lê Văn B cho rằng mô hình A tốt hơn.",
+        "Theo ThS. Trần Thị Bích và TS. Phạm Đức, kết quả tốt hơn.",
+    ],
+)
+def test_compound_titles_do_not_split(text: str) -> None:
+    assert [s.text for s in split_sentences(text)] == [text]
+
+
+def test_compound_title_then_real_boundary() -> None:
+    text = "Theo PGS.TS. Nguyễn Văn An (2020), X. Câu sau."
+    assert [s.text for s in split_sentences(text)] == [
+        "Theo PGS.TS. Nguyễn Văn An (2020), X.",
+        "Câu sau.",
+    ]
+
+
 def test_page_locator_markers_do_not_split() -> None:
     text = (
         "Kết quả tốt [1, tr. 25]. Mô hình khác [2, p. 5; 3, pp. 7-9] cũng vậy. "

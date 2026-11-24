@@ -291,7 +291,8 @@ async def test_page_locator_markers_link_reference_numbers(
         "Phân loại văn bản tiếng Việt đã được nghiên cứu rộng rãi [1, tr. 25; 2, tr. 7]. "
         "Giáo trình định nghĩa khái niệm này rất rõ ràng [2: 12-15]. "
         "Một kết quả khác được nêu ở nguồn ngoài danh mục [57, trang 3]. "
-        "Xem thêm [tr. 25] trong cùng giáo trình."
+        "Xem thêm [tr. 25] trong cùng giáo trình. "
+        "Hai nguồn được trích cùng lúc trong một ngoặc [1, tr. 25, 2, tr. 7]."
     )
     document, run_id = await _text_document(
         session_factory, settings, body=body, references=REFERENCES
@@ -306,8 +307,9 @@ async def test_page_locator_markers_link_reference_numbers(
         "[1, tr. 25; 2, tr. 7]",
         "[2: 12-15]",
         "[57, trang 3]",
+        "[1, tr. 25, 2, tr. 7]",
     ]
-    assert [_linked(row, names) for row in rows] == [["1", "2"], ["2"], [None]]
+    assert [_linked(row, names) for row in rows] == [["1", "2"], ["2"], [None], ["1", "2"]]
     assert {link.link_method for row in rows for link in row.links} == {LinkMethod.NUMERIC.value}
     assert rows[0].claim.claim_text == "Phân loại văn bản tiếng Việt đã được nghiên cứu rộng rãi"
     text = (await _parsed(session_factory, settings, document.id)).text()

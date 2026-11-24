@@ -58,6 +58,10 @@ def test_numeric_marker_variants() -> None:
         # Sau vị trí trang, số còn lại trong nhóm là trang, không phải tài liệu 30.
         ("Kết quả [1, tr. 25, 30].", (1,)),
         ("Kết quả [1: 25, 30; 4].", (1, 4)),
+        # Số đứng ngay trước vị trí trang là số tài liệu, kể cả khi nối bằng dấu phẩy.
+        ("Kết quả [1, tr. 25, 3, tr. 7].", (1, 3)),
+        ("Kết quả [1, tr. 25, 30, 3, tr. 7].", (1, 3)),
+        ("Kết quả [1: 25, 3: 7].", (1, 3)),
     ],
 )
 def test_page_locator_markers(s: str, numbers: tuple[int, ...]) -> None:
@@ -160,8 +164,6 @@ def test_author_year_page_and_multiple_years() -> None:
         "Xem [trang 25] và [p. 5] và [pp. 3-4].",
         "Lỗi [1, tr.] và [1, tr. 25, tr. 30] và [tr. 25; 3, tr. 7] và [1:] và [: 25].",
         "Năm [2019, tr. 5] và mẫu [n = 30, tr. 5] và [x, tr. 5].",
-        # Hai vị trí trang trong một nhóm: không rõ số nào là tài liệu, không đoán.
-        "Mơ hồ [1, tr. 25, 3, tr. 7] và [1: 25, 3: 7].",
     ],
 )
 def test_bracket_non_markers_ignored(text: str) -> None:

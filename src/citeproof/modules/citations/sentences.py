@@ -21,12 +21,13 @@ from citeproof.modules.citations.markers import numeric_marker_numbers
 __all__ = ["ABBREVIATIONS", "Sentence", "split_sentences"]
 
 # Viết tắt (chữ thường, kèm dấu chấm cuối) mà sau nó không tách câu. Danh sách của spec §7.4
-# cộng vài viết tắt hay gặp trong luận văn (TP., VD., cf., p., ed.).
+# cộng vài viết tắt hay gặp trong luận văn (TSKH., TP., VD., cf., p., ed.). Học hàm, học vị ghép
+# ("PGS.TS.", "GS.TSKH.") là viết tắt khi mọi phần giữa các dấu chấm đều là viết tắt.
 ABBREVIATIONS: frozenset[str] = frozenset(
     {
         "al.", "e.g.", "i.e.", "fig.", "eq.", "vs.", "cs.", "ts.", "ths.", "pgs.", "gs.",
         "tr.", "pp.", "vol.", "no.", "v.v.",
-        "tp.", "vd.", "cf.", "p.", "ed.", "eds.",
+        "tskh.", "tp.", "vd.", "cf.", "p.", "ed.", "eds.",
     }
 )  # fmt: skip
 
@@ -55,13 +56,18 @@ def _opens_sentence(text: str, index: int) -> bool:
 
 
 def _is_abbreviation(text: str, dot_end: int) -> bool:
-    """Từ kết thúc ở `dot_end` (gồm dấu chấm) là viết tắt không kết câu. Từ bắt đầu sau khoảng
-    trắng, ngoặc/nháy mở hoặc `,;:` ("[2,p. 5]" → "p.").
+    """Từ kết thúc ở `dot_end` (gồm dấu chấm) là viết tắt không kết câu: có trong
+    `ABBREVIATIONS`, hoặc mọi phần giữa các dấu chấm đều có ("PGS.TS." → "pgs.", "ts.").
+    Từ bắt đầu sau khoảng trắng, ngoặc/nháy mở hoặc `,;:` ("[2,p. 5]" → "p.").
     """
     start = dot_end
     while start > 0 and not text[start - 1].isspace() and text[start - 1] not in _TOKEN_STOP:
         start -= 1
-    return text[start:dot_end].lower() in ABBREVIATIONS
+    token = text[start:dot_end].lower()
+    if token in ABBREVIATIONS:
+        return True
+    parts = [part for part in token.split(".") if part]
+    return bool(parts) and all(f"{part}." in ABBREVIATIONS for part in parts)
 
 
 def _boundary(text: str, match: re.Match[str]) -> int | None:
