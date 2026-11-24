@@ -15,7 +15,7 @@ from citeproof.llm.calls import PgCallLogger
 from citeproof.llm.client import LLMClient
 from citeproof.llm.prompts import PromptLoader
 from citeproof.llm.providers.base import LLMProvider
-from citeproof.pipeline.deps import PROMPTS_ROOT, PipelineDeps
+from citeproof.pipeline.deps import PROMPTS_ROOT, PipelineDeps, make_grobid_client
 from citeproof.pipeline.jobs import ClaimedJob
 from citeproof.pipeline.stages import StageContext, StageRegistry, StageResult
 from citeproof.pipeline.worker import work_once
@@ -39,7 +39,9 @@ def make_test_deps(
 ) -> PipelineDeps:
     """PipelineDeps cho test stage: không mạng thật, LLM chỉ khi truyền `provider`.
 
-    `transport` (ví dụ `httpx.MockTransport`) dùng chung cho `http` và `safe_http`.
+    `transport` (ví dụ `httpx.MockTransport`) dùng chung cho `http`, `safe_http` và
+    `GrobidClient` (tới `settings.grobid_url`). Không truyền `transport` thì `grobid` là
+    None (S1 dùng pypdfium2), để test không bao giờ gọi GROBID thật.
     """
     llm = (
         LLMClient(
@@ -51,14 +53,16 @@ def make_test_deps(
         if provider is not None
         else None
     )
+    http = httpx.AsyncClient(transport=transport)
     return PipelineDeps(
         session_factory=session_factory,
         storage=LocalStorage(settings.storage_dir),
         settings=settings,
         llm=llm,
         prompts=PromptLoader(PROMPTS_ROOT),
-        http=httpx.AsyncClient(transport=transport),
+        http=http,
         safe_http=SafeHttpClient(resolver=resolver or public_resolver, transport=transport),
+        grobid=make_grobid_client(settings, http) if transport is not None else None,
     )
 
 

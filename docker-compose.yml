@@ -63,12 +63,16 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     command: ["python", "-m", "citeproof.pipeline"]
-    environment: *app-env
+    environment:
+      <<: *app-env
+      CITEPROOF_GROBID_URL: http://grobid:8070
     volumes:
       - citeproof_storage:/app/var/storage
     depends_on:
       migrate:
         condition: service_completed_successfully
+      grobid:
+        condition: service_started
 
 volumes:
   citeproof_db:

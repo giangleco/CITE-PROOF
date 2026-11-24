@@ -1,10 +1,10 @@
-"""S1 — nhận và parse tài liệu (spec §7.1; T-201, T-204, T-205, T-206).
+"""S1 — nhận và parse tài liệu (spec §7.1; T-201, T-203, T-204, T-205, T-206).
 
-Đọc tệp gốc từ storage, parse (văn bản JSON hoặc DOCX; PDF ở Task 6), ghi
-`documents/<uid>/<docid>/parsed.json` rồi cập nhật `documents.parsed_key`, `language`,
-`page_count` và nối cảnh báo vào `parse_warnings` trong một giao dịch có rào lease.
-Kết quả cấp tài liệu tạo một lần (QĐ-13): đã có `parsed_key` thì bỏ qua. Không gọi
-LLM; không log nội dung tài liệu.
+Đọc tệp gốc từ storage, parse (văn bản JSON, DOCX, hoặc PDF qua GROBID với `pypdfium2`
+dự phòng), ghi `documents/<uid>/<docid>/parsed.json` rồi cập nhật `documents.parsed_key`,
+`language`, `page_count` và nối cảnh báo vào `parse_warnings` trong một giao dịch có rào
+lease. Gọi GROBID và parse đều xong trước giao dịch đó. Kết quả cấp tài liệu tạo một lần
+(QĐ-13): đã có `parsed_key` thì bỏ qua. Không gọi LLM; không log nội dung tài liệu.
 """
 
 import asyncio
@@ -16,11 +16,12 @@ from uuid import UUID
 from sqlalchemy import select, update
 
 from citeproof.core.enums import DocumentKind, StageName
-from citeproof.core.errors import NotFoundError, ParseError
+from citeproof.core.errors import InputError, NotFoundError, ParseError
 from citeproof.db.models import Document, VerificationRun
 from citeproof.parsing.docx import parse_docx
 from citeproof.parsing.encoding import detect_legacy_encoding
 from citeproof.parsing.model import ParsedDocument
+from citeproof.parsing.pdf import parse_pdf_document, pdf_page_count
 from citeproof.parsing.text import parse_text_payload
 from citeproof.pipeline.deps import PipelineDeps
 from citeproof.pipeline.jobs import fenced_session
@@ -32,7 +33,7 @@ DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.docu
 PDF_MIME = "application/pdf"
 LEGACY_ENCODING = "LEGACY_ENCODING"
 
-InputSource = Literal["text", "docx"]
+InputSource = Literal["text", "docx", "pdf"]
 
 
 def parsed_key(user_id: UUID, document_id: UUID) -> str:
@@ -61,7 +62,9 @@ def legacy_encoding_warnings(doc: ParsedDocument) -> list[dict[str, Any]]:
     return [] if encoding is None else [{"code": LEGACY_ENCODING, "encoding": encoding}]
 
 
-def _parse_input(source: InputSource, data: bytes) -> tuple[ParsedDocument, list[dict[str, Any]]]:
+def _parse_input(
+    source: Literal["text", "docx"], data: bytes
+) -> tuple[ParsedDocument, list[dict[str, Any]]]:
     doc = parse_text_payload(data) if source == "text" else parse_docx(data)
     return doc, legacy_encoding_warnings(doc)
 
@@ -82,7 +85,7 @@ def _input_source(document: _DocumentRow) -> InputSource:
     if document.mime_type == DOCX_MIME:
         return "docx"
     if document.mime_type == PDF_MIME:
-        raise ParseError("PDF parsing arrives in Task 6", code="PDF_NOT_SUPPORTED")
+        return "pdf"
     raise ParseError("Định dạng tệp chưa được hỗ trợ.", code="UNSUPPORTED_FILE_TYPE")
 
 
@@ -91,6 +94,26 @@ class ParseStage:
 
     def __init__(self, deps: PipelineDeps) -> None:
         self._deps = deps
+
+    async def _parse_pdf(
+        self, data: bytes, ctx: StageContext
+    ) -> tuple[ParsedDocument, list[dict[str, Any]]]:
+        """Giới hạn trang, rồi GROBID; chỉ dùng `pypdfium2` khi GROBID lỗi xử lý tài liệu,
+        hoặc không truy cập được ở lần thử cuối (QĐ-22), hoặc không được cấu hình.
+        """
+        pages = await asyncio.to_thread(pdf_page_count, data)  # PDF mã hóa: PDF_ENCRYPTED
+        max_pages = self._deps.settings.max_pages
+        if pages > max_pages:
+            raise InputError(
+                f"Tệp có {pages} trang, vượt giới hạn {max_pages} trang.",
+                code="PAGE_LIMIT_EXCEEDED",
+            )
+        grobid = self._deps.grobid
+        parsed, warnings = await parse_pdf_document(
+            data, grobid=grobid, allow_fallback=ctx.is_last_attempt or grobid is None
+        )
+        legacy = await asyncio.to_thread(legacy_encoding_warnings, parsed)
+        return parsed, [*warnings, *legacy]
 
     async def _load(self, run_id: UUID) -> _DocumentRow:
         async with self._deps.session_factory() as session:
@@ -125,9 +148,12 @@ class ParseStage:
             return StageResult()
         source = _input_source(document)
         data = await self._deps.storage.get(document.storage_key)
-        # Parse DOCX và dò bảng mã trên văn bản dài tốn CPU: chạy ngoài event loop để
-        # vòng heartbeat vẫn gia hạn được lease.
-        parsed, warnings = await asyncio.to_thread(_parse_input, source, data)
+        if source == "pdf":
+            parsed, warnings = await self._parse_pdf(data, ctx)
+        else:
+            # Parse DOCX và dò bảng mã trên văn bản dài tốn CPU: chạy ngoài event loop để
+            # vòng heartbeat vẫn gia hạn được lease.
+            parsed, warnings = await asyncio.to_thread(_parse_input, source, data)
         key = parsed_key(document.user_id, document.id)
         # Ghi storage trước giao dịch rào (giữ giao dịch ngắn); thử lại thì ghi đè.
         await self._deps.storage.put(key, parsed.model_dump_json().encode())

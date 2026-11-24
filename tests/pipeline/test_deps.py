@@ -5,12 +5,14 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 import citeproof
 from citeproof.core.enums import StageName
 from citeproof.core.settings import Settings
+from citeproof.integrations.grobid import GrobidClient
 from citeproof.integrations.http_safe import SafeHttpClient
 from citeproof.llm.cache import InMemoryCacheStore, validate_namespace
 from citeproof.llm.calls import InMemoryCallLogger
@@ -141,4 +143,25 @@ async def test_make_test_deps_wires_provider(tmp_path: Path) -> None:
     assert make_test_deps(settings, async_sessionmaker()).llm is None
     deps = make_test_deps(settings, async_sessionmaker(), provider=ScriptedProvider([]))
     assert isinstance(deps.llm, LLMClient)
+    await deps.http.aclose()
+
+
+async def test_open_deps_builds_grobid_client(tmp_path: Path) -> None:
+    settings = _settings(tmp_path, grobid_url="http://grobid:8070", grobid_timeout_seconds=12.0)
+    async with open_deps(settings, async_sessionmaker()) as deps:
+        assert isinstance(deps.grobid, GrobidClient)
+        assert deps.grobid.base_url == "http://grobid:8070"
+        assert deps.grobid.timeout_s == 12.0
+    # URL rỗng: tắt GROBID, S1 dùng pypdfium2.
+    async with open_deps(_settings(tmp_path, grobid_url=" "), async_sessionmaker()) as deps:
+        assert deps.grobid is None
+
+
+async def test_make_test_deps_grobid_only_with_transport(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    assert make_test_deps(settings, async_sessionmaker()).grobid is None
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, text="<TEI/>"))
+    deps = make_test_deps(settings, async_sessionmaker(), transport=transport)
+    assert deps.grobid is not None
+    assert await deps.grobid.process_fulltext(b"%PDF-") == "<TEI/>"
     await deps.http.aclose()

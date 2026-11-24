@@ -102,3 +102,12 @@ def test_default_tables_are_copied_per_instance() -> None:
     second = Settings(_env_file=None)  # type: ignore[call-arg]
     assert second.llm_models["verdict.judge"] == "claude-sonnet-5-5"
     assert second.llm_prices["claude-haiku-5-5"] == (0.10, 0.50)
+
+
+def test_pdf_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("GROBID_URL", "GROBID_TIMEOUT_SECONDS", "MAX_PAGES"):
+        monkeypatch.delenv(f"CITEPROOF_{name}", raising=False)
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.grobid_url == "http://localhost:8070"
+    assert s.grobid_timeout_seconds == 300.0
+    assert s.max_pages == 300

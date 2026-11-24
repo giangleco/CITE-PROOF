@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     run_max_cost_usd: float = defaults.RUN_MAX_COST_USD
     retrieval_k: int = defaults.RETRIEVAL_K
 
+    # Parse PDF (ADR-004): GROBID là chính; URL rỗng thì chỉ dùng pypdfium2 dự phòng.
+    grobid_url: str = "http://localhost:8070"
+    grobid_timeout_seconds: float = 300.0
+    # Bài dài hơn bị từ chối ở S1 (`PAGE_LIMIT_EXCEEDED`).
+    max_pages: int = 300
+
     # Giao diện web (spec web UI §7.10). Các giới hạn [ĐX] chốt sau SPK-05.
     storage_dir: Path = Path("var/storage")
     max_upload_bytes: int = 26_214_400

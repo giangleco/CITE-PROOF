@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import citeproof
 from citeproof.core.enums import StageName
 from citeproof.core.settings import Settings
+from citeproof.integrations.grobid import GrobidClient
 from citeproof.integrations.http_safe import SafeHttpClient
 from citeproof.llm.cache import doc_namespace
 from citeproof.llm.client import LLMClient
@@ -44,6 +45,8 @@ class PipelineDeps:
     safe_http: SafeHttpClient
     # None: cache LLM theo tài liệu (`doc:<document_id>`); đánh giá đặt `eval:<dataset>@<hash>`.
     cache_namespace: str | None = None
+    # None khi không cấu hình GROBID: PDF parse bằng pypdfium2 (cảnh báo `PDF_TEXT_FALLBACK`).
+    grobid: GrobidClient | None = None
 
 
 @asynccontextmanager
@@ -64,7 +67,15 @@ async def open_deps(
             prompts=PromptLoader(PROMPTS_ROOT),
             http=http,
             safe_http=SafeHttpClient(),
+            grobid=make_grobid_client(settings, http),
         )
+
+
+def make_grobid_client(settings: Settings, http: httpx.AsyncClient) -> GrobidClient | None:
+    """GROBID trên client HTTP dùng chung với timeout riêng; URL rỗng thì không dùng GROBID."""
+    if not settings.grobid_url.strip():
+        return None
+    return GrobidClient(settings.grobid_url, http, timeout_s=settings.grobid_timeout_seconds)
 
 
 def call_context(deps: PipelineDeps, info: RunInfo, stage: StageName) -> CallContext:
