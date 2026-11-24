@@ -1,12 +1,14 @@
 """Phát hiện marker trích dẫn trong một câu bằng luật (spec §7.4, QĐ-23).
 
-**Marker số** `[…]`: trong ngoặc vuông chỉ có chữ số, `,`, `;`, gạch nối, gạch ngang dài (U+2013)
-và khoảng trắng; mỗi
-phần là một số hoặc một khoảng (`2-4` → 2, 3, 4; tối đa `MAX_NUMBERS` số sau khi mở rộng).
+**Marker số** `[…]`: nhóm phân tách bằng `;`, phần tử bằng `,`; mỗi phần tử là một số hoặc một
+khoảng (`2-4` → 2, 3, 4, gạch nối hoặc gạch ngang dài; tối đa `MAX_NUMBERS` số sau khi mở
+rộng), có thể kèm vị trí trang của luận văn Việt: `[1, tr. 25]`, `[1, trang 25]`,
+`[1, pp. 25-30]`, `[1: 25]`, `[1, tr. 25; 3, tr. 7]` (mở rộng spec §7.4 theo phán quyết
+Task 10). Số trang không phải số tài liệu (không được liên kết); `marker.text` giữ cả ngoặc.
 Khoảng IEEE viết bằng hai ngoặc (`[2]-[4]`, kể cả gạch ngang dài; GROBID ghi `[2]- [4]`) là
-một marker. Không phải
-marker: số 0, khoảng ngược (`[5-3]`), phần rỗng (`[1,]`), quá `MAX_NUMBERS` số, và ngoặc mà
-mọi số đều là năm 1800-2099 (`[2019]`). Thứ tự và số lặp giữ nguyên như trong bài.
+một marker. Không phải marker: trang không có số tài liệu (`[tr. 25]`), số 0, khoảng ngược
+(`[5-3]`), phần rỗng (`[1,]`), quá `MAX_NUMBERS` số, và ngoặc mà mọi số tài liệu đều là năm
+1800-2099 (`[2019]`). Thứ tự và số lặp giữ nguyên như trong bài.
 
 **Marker tác giả-năm:**
 - Trong ngoặc tròn: các phần `Tên[ et al.| và cs.| & Tên], YYYY[a-z][, YYYY…][, tr. N]` phân
@@ -33,7 +35,7 @@ from dataclasses import dataclass
 from citeproof.core.enums import LinkMethod
 from citeproof.modules.references.normalize import VIETNAMESE_FAMILY_NAMES, fold, is_initial
 
-__all__ = ["MAX_NUMBERS", "AuthorYear", "Marker", "find_markers"]
+__all__ = ["MAX_NUMBERS", "AuthorYear", "Marker", "find_markers", "numeric_marker_numbers"]
 
 MAX_NUMBERS = 50
 MIN_YEAR = 1800
@@ -45,9 +47,14 @@ _DASH = "\\-\u2013"  # gạch nối (đã thoát, dùng trong lớp ký tự) v�
 _PAGES = rf"(?:\s*,\s*(?:pp?|tr|trang)\.?\s*\d+(?:\s*[{_DASH}]\s*\d+)?)?"
 _NUMERIC = re.compile(
     rf"\[\s*(?P<a>\d{{1,4}})\s*\]\s*[{_DASH}]\s*\[\s*(?P<b>\d{{1,4}})\s*\]"  # khoảng IEEE
-    rf"|\[(?P<body>[\d\s,;{_DASH}]+)\]"
+    r"|\[(?P<body>[^\[\]]{1,200})\]"
 )
 _NUMERIC_PART = re.compile(rf"(\d{{1,4}})(?:\s*[{_DASH}]\s*(\d{{1,4}}))?")
+_PAGE_RANGE = rf"\d{{1,5}}(?:\s*[{_DASH}]\s*\d{{1,5}})?"
+# Vị trí trang sau số tài liệu: "tr. 25", "trang 25", "tr.25-30", "p. 25", "pp. 25-30".
+_LOCATOR = re.compile(rf"(?:trang|tr|pp|p)\.?\s*{_PAGE_RANGE}", re.IGNORECASE)
+# Số tài liệu kèm trang sau dấu hai chấm: "1: 25", "1:25-30".
+_COLON_LOCATOR = re.compile(rf"(\d{{1,4}})\s*:\s*{_PAGE_RANGE}")
 _PARENTHETICAL = re.compile(r"\(([^()]{1,400})\)")
 _CITE_PART = re.compile(
     rf"(?P<names>[^,\d]+?)\s*,\s*(?P<years>{_YEAR}[a-z]?(?:\s*,\s*{_YEAR}[a-z]?)*){_PAGES}"
@@ -116,25 +123,51 @@ def _checked(numbers: list[int]) -> tuple[int, ...] | None:
     return tuple(numbers)
 
 
-def _numbers(body: str) -> tuple[int, ...] | None:
-    """Số trong ngoặc vuông theo thứ tự, khoảng đã mở rộng; None nếu không phải marker."""
+def numeric_marker_numbers(body: str) -> tuple[int, ...] | None:
+    """Số tài liệu trong ngoặc vuông (`body` là phần giữa `[` và `]`), theo thứ tự, khoảng đã
+    mở rộng, bỏ số trang; None nếu không phải marker.
+
+    Nhóm phân tách bằng `;`, phần tử trong nhóm bằng `,`. Phần tử là số, khoảng, số kèm trang
+    sau dấu hai chấm (`1: 25`), hoặc vị trí trang (`tr. 25`) đứng ngay sau một số tài liệu.
+    Sau vị trí trang, số còn lại trong nhóm là trang (`[1, tr. 25, 30]` → 1); vị trí trang thứ
+    hai trong cùng nhóm (`[1, tr. 25, 3, tr. 7]`) là mơ hồ nên cả ngoặc không phải marker.
+    """
     numbers: list[int] = []
-    for part in re.split(r"[,;]", body):
-        match = _NUMERIC_PART.fullmatch(part.strip())
-        if match is None:
-            return None
-        first = int(match.group(1))
-        expanded = _expand(first, int(match.group(2)) if match.group(2) else first)
-        if expanded is None:
-            return None
-        numbers.extend(expanded)
+    for group in body.split(";"):
+        after_number = False  # phần tử trước là một số tài liệu chưa có trang
+        paged = False  # nhóm đã có vị trí trang: số sau đó là trang
+        for item in (part.strip() for part in group.split(",")):
+            if _LOCATOR.fullmatch(item):
+                if not after_number or paged:
+                    return None  # "[tr. 25]": trang không có số tài liệu
+                after_number, paged = False, True
+                continue
+            colon = _COLON_LOCATOR.fullmatch(item)
+            match = None if colon is not None else _NUMERIC_PART.fullmatch(item)
+            if paged:
+                if match is None:
+                    return None
+                continue  # trang tiếp theo: "tr. 25, 30"
+            if colon is not None:
+                first = last = int(colon.group(1))
+                paged = True
+            elif match is not None:
+                first = int(match.group(1))
+                last = int(match.group(2)) if match.group(2) else first
+            else:
+                return None
+            expanded = _expand(first, last)
+            if expanded is None:
+                return None
+            numbers.extend(expanded)
+            after_number = match is not None and match.group(2) is None
     return _checked(numbers)
 
 
 def _numeric_markers(sentence: str) -> Iterator[Marker]:
     for match in _NUMERIC.finditer(sentence):
         if match.group("body") is not None:
-            numbers = _numbers(match.group("body"))
+            numbers = numeric_marker_numbers(match.group("body"))
         else:
             expanded = _expand(int(match.group("a")), int(match.group("b")))
             numbers = None if expanded is None else _checked(expanded)

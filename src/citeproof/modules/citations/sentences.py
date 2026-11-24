@@ -5,8 +5,9 @@ chữ số, ngoặc mở hoặc nháy mở. Không tách sau chữ viết tắt 
 `TS.`, `tr.`, `v.v.`… — `ABBREVIATIONS`) hay giữa số thập phân (`3.5` không có khoảng trắng nên
 không bao giờ là ranh giới). Xuống dòng trong đoạn (PDF) được coi như khoảng trắng.
 
-Marker số đặt ngay sau dấu chấm (`…this.[1] Next`, `…this. [1] Next`) thuộc câu trước khi theo
-sau marker là đầu câu mới hoặc hết đoạn; `[4] cho rằng…` vẫn là đầu câu mới.
+Marker số đặt ngay sau dấu chấm (`…this.[1] Next`, `…this. [1, tr. 25] Next`) thuộc câu trước
+khi theo sau marker là đầu câu mới hoặc hết đoạn; `[4] cho rằng…` vẫn là đầu câu mới. Dấu chấm
+trong vị trí trang (`tr.`, `p.`, `pp.`) là viết tắt nên không tách câu giữa marker.
 
 Vị trí `start`/`end` tính trong đoạn: `text[start:end] == sentence.text`; câu đã bỏ khoảng
 trắng hai đầu và không bao giờ rỗng.
@@ -14,6 +15,8 @@ trắng hai đầu và không bao giờ rỗng.
 
 import re
 from dataclasses import dataclass
+
+from citeproof.modules.citations.markers import numeric_marker_numbers
 
 __all__ = ["ABBREVIATIONS", "Sentence", "split_sentences"]
 
@@ -29,10 +32,11 @@ ABBREVIATIONS: frozenset[str] = frozenset(
 
 _END = re.compile("[.!?\u2026]+[\"'\u201d\u2019\u00bb)\\]]*")
 _DASH = "\\-\u2013"  # gạch nối (đã thoát, dùng trong lớp ký tự) và gạch ngang dài
-_POST_MARKER = re.compile(rf"\s?(?:[{_DASH}]\s?)?\[[\d\s,;{_DASH}]*\d[\d\s,;{_DASH}]*\]")
+# Ngoặc vuông ngay sau dấu kết câu; là marker số khi `numeric_marker_numbers` nhận phần trong.
+_POST_BRACKET = re.compile(rf"\s?(?:[{_DASH}]\s?)?\[([^\[\]]{{1,200}})\]")
 _SPACE = re.compile(r"\s+")
 _OPENERS = "([\"'\u201c\u2018\u00ab"
-_TOKEN_LEAD = "([{\"'\u201c\u2018\u00ab"
+_TOKEN_STOP = ",;:([{\"'\u201c\u2018\u00ab"
 
 
 @dataclass(frozen=True)
@@ -51,12 +55,13 @@ def _opens_sentence(text: str, index: int) -> bool:
 
 
 def _is_abbreviation(text: str, dot_end: int) -> bool:
-    """Từ kết thúc ở `dot_end` (gồm dấu chấm) là viết tắt không kết câu."""
+    """Từ kết thúc ở `dot_end` (gồm dấu chấm) là viết tắt không kết câu. Từ bắt đầu sau khoảng
+    trắng, ngoặc/nháy mở hoặc `,;:` ("[2,p. 5]" → "p.").
+    """
     start = dot_end
-    while start > 0 and not text[start - 1].isspace():
+    while start > 0 and not text[start - 1].isspace() and text[start - 1] not in _TOKEN_STOP:
         start -= 1
-    token = text[start:dot_end].lstrip(_TOKEN_LEAD).lower()
-    return token in ABBREVIATIONS
+    return text[start:dot_end].lower() in ABBREVIATIONS
 
 
 def _boundary(text: str, match: re.Match[str]) -> int | None:
@@ -67,8 +72,10 @@ def _boundary(text: str, match: re.Match[str]) -> int | None:
     end = match.end()
     # Marker số ngay sau dấu chấm thuộc câu trước nếu sau nó là đầu câu mới hoặc hết đoạn.
     position = end
-    while (marker := _POST_MARKER.match(text, position)) is not None:
-        position = marker.end()
+    while (bracket := _POST_BRACKET.match(text, position)) is not None:
+        if numeric_marker_numbers(bracket.group(1)) is None:
+            break
+        position = bracket.end()
     if position > end:
         rest = _SPACE.match(text, position)
         after = rest.end() if rest is not None else position

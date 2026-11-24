@@ -284,6 +284,38 @@ async def test_unresolved_marker_creates_null_link(
 
 
 @pytest.mark.db
+async def test_page_locator_markers_link_reference_numbers(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    body = (
+        "Phân loại văn bản tiếng Việt đã được nghiên cứu rộng rãi [1, tr. 25; 2, tr. 7]. "
+        "Giáo trình định nghĩa khái niệm này rất rõ ràng [2: 12-15]. "
+        "Một kết quả khác được nêu ở nguồn ngoài danh mục [57, trang 3]. "
+        "Xem thêm [tr. 25] trong cùng giáo trình."
+    )
+    document, run_id = await _text_document(
+        session_factory, settings, body=body, references=REFERENCES
+    )
+    deps = make_test_deps(settings, session_factory)
+    await drain(session_factory, _registry(deps), pipeline_settings())
+    assert await _run_status(session_factory, run_id) == RunStatus.COMPLETED.value
+
+    rows = await _rows(session_factory, document.id)
+    names = await _ref_names(session_factory, document.id)
+    assert [row.citation.marker_text for row in rows] == [
+        "[1, tr. 25; 2, tr. 7]",
+        "[2: 12-15]",
+        "[57, trang 3]",
+    ]
+    assert [_linked(row, names) for row in rows] == [["1", "2"], ["2"], [None]]
+    assert {link.link_method for row in rows for link in row.links} == {LinkMethod.NUMERIC.value}
+    assert rows[0].claim.claim_text == "Phân loại văn bản tiếng Việt đã được nghiên cứu rộng rãi"
+    text = (await _parsed(session_factory, settings, document.id)).text()
+    for row in rows:
+        assert text[row.citation.char_start : row.citation.char_end] == row.citation.marker_text
+
+
+@pytest.mark.db
 async def test_s4_without_reference_entries_writes_nothing(
     session_factory: SessionFactory, clean_db: None, settings: Settings
 ) -> None:

@@ -82,6 +82,19 @@ def test_marker_after_period_stays_with_its_sentence() -> None:
     ]
 
 
+def test_page_locator_markers_do_not_split() -> None:
+    text = (
+        "Kết quả tốt [1, tr. 25]. Mô hình khác [2, p. 5; 3, pp. 7-9] cũng vậy. "
+        "Xem thêm.[4, tr. 12] Câu cuối."
+    )
+    assert [s.text for s in split_sentences(text)] == [
+        "Kết quả tốt [1, tr. 25].",
+        "Mô hình khác [2, p. 5; 3, pp. 7-9] cũng vậy.",
+        "Xem thêm.[4, tr. 12]",
+        "Câu cuối.",
+    ]
+
+
 def test_empty_and_blank_text() -> None:
     assert split_sentences("") == []
     assert split_sentences("   \n ") == []

@@ -33,6 +33,8 @@ SENTENCES = [
     "Kết quả (xem phụ lục [8]) cho thấy độ chính xác 3.5 điểm [9].",
     "Self-attention based models have become the standard for sequence transduction\n[1].",
     "Mô hình (BERT) [1].",
+    "Mô hình đạt kết quả tốt trên tập dữ liệu [1, tr. 25; 3, tr. 7].",
+    "Theo giáo trình [2: 25-30], khái niệm này được định nghĩa rõ ràng [4, trang 12].",
 ]
 
 

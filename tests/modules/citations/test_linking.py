@@ -83,6 +83,15 @@ def test_duplicate_labels_are_ambiguous() -> None:
     assert index.link(_marker("A [1, 2].")) == [None, targets[1].entry_id]
 
 
+def test_page_locator_links_reference_numbers_only() -> None:
+    targets = [_target(i) for i in range(40)]
+    index = ReferenceIndex(targets)
+    # Số trang 25 không bao giờ thành link tới mục 25.
+    assert index.link(_marker("A [1, tr. 25].")) == [targets[0].entry_id]
+    assert index.link(_marker("A [3: 25-30].")) == [targets[2].entry_id]
+    assert index.link(_marker("A [1, tr. 25; 57, tr. 7].")) == [targets[0].entry_id, None]
+
+
 def test_numeric_link_keeps_one_item_per_number() -> None:
     targets = [_target(0), _target(1)]
     index = ReferenceIndex(targets)

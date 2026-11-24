@@ -41,6 +41,34 @@ def test_numeric_marker_variants() -> None:
     assert [m.numbers for m in find_markers("A [1], [3] và B [5][6].")] == [(1,), (3,), (5,), (6,)]
 
 
+@pytest.mark.parametrize(
+    ("s", "numbers"),
+    [
+        ("Kết quả [1, tr. 25].", (1,)),
+        ("Kết quả [1, trang 25].", (1,)),
+        ("Kết quả [1, tr.25-30].", (1,)),
+        ("Result [1, p. 25].", (1,)),
+        ("Result [1, pp. 25\u201330].", (1,)),
+        ("Kết quả [1: 25].", (1,)),
+        ("Kết quả [1:25-30].", (1,)),
+        ("Kết quả [1, tr. 25; 3, tr. 7].", (1, 3)),
+        ("Kết quả [1, tr. 25; 3].", (1, 3)),
+        ("Kết quả [2, 4, tr. 9].", (2, 4)),
+        ("Kết quả [12, Tr. 5].", (12,)),
+        # Sau vị trí trang, số còn lại trong nhóm là trang, không phải tài liệu 30.
+        ("Kết quả [1, tr. 25, 30].", (1,)),
+        ("Kết quả [1: 25, 30; 4].", (1, 4)),
+    ],
+)
+def test_page_locator_markers(s: str, numbers: tuple[int, ...]) -> None:
+    """Số trang (`tr.`, `trang`, `p.`, `pp.`, `:`) không phải số tài liệu; marker giữ cả ngoặc."""
+    (marker,) = find_markers(s)
+    assert marker.kind is LinkMethod.NUMERIC
+    assert marker.numbers == numbers
+    assert s[marker.start : marker.end] == marker.text
+    assert marker.text == s[s.index("[") : s.index("]") + 1]
+
+
 def test_numeric_duplicates_and_order_kept() -> None:
     (marker,) = find_markers("A [3, 1, 3].")
     assert marker.numbers == (3, 1, 3)
@@ -127,6 +155,13 @@ def test_author_year_page_and_multiple_years() -> None:
         "Ghi chú (trong năm 2020) và (1799) và (Smith, 1799) và (Smith, 2100).",
         "Thiết bị COVID-19 (2020) mới.",
         "Khoảng [5-3] bị đảo.",
+        # Chỉ có số trang, không có số tài liệu: không phải trích dẫn.
+        "Xem [tr. 25] của giáo trình.",
+        "Xem [trang 25] và [p. 5] và [pp. 3-4].",
+        "Lỗi [1, tr.] và [1, tr. 25, tr. 30] và [tr. 25; 3, tr. 7] và [1:] và [: 25].",
+        "Năm [2019, tr. 5] và mẫu [n = 30, tr. 5] và [x, tr. 5].",
+        # Hai vị trí trang trong một nhóm: không rõ số nào là tài liệu, không đoán.
+        "Mơ hồ [1, tr. 25, 3, tr. 7] và [1: 25, 3: 7].",
     ],
 )
 def test_bracket_non_markers_ignored(text: str) -> None:
