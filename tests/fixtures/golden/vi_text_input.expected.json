@@ -1,0 +1,16 @@
+{
+  "language": "vi",
+  "warnings": [],
+  "page_count": null,
+  "references": [
+    {"label": "1", "title": "BERT: Pre-training of deep bidirectional transformers for language understanding", "year": 2019, "doi": "10.18653/v1/N19-1423", "first_author_family": "Devlin", "ref_type": "CONFERENCE"},
+    {"label": "2", "title": "Deep residual learning for image recognition", "year": 2016, "doi": "10.1109/CVPR.2016.90", "first_author_family": "He", "ref_type": "CONFERENCE"},
+    {"label": "3", "title": "Xây dựng hệ thống hỏi đáp tiếng Việt", "year": 2018, "doi": null, "first_author_family": "Phạm", "ref_type": "THESIS"}
+  ],
+  "citations": [
+    {"marker": "[1]", "links": ["1"], "claim": "BERT là mô hình ngôn ngữ huấn luyện trước hai chiều cho nhiều bài toán xử lý ngôn ngữ"},
+    {"marker": "[2]", "links": ["2"], "claim": "Mạng residual cho phép huấn luyện mạng rất sâu mà không bị suy giảm độ chính xác"},
+    {"marker": "[1, 2]", "links": ["1", "2"], "claim": "Hai hướng này thường được kết hợp trong các hệ thống thực tế"},
+    {"marker": "[3]", "links": ["3"], "claim": "Hệ thống hỏi đáp tiếng Việt vẫn thiếu dữ liệu huấn luyện"}
+  ]
+}

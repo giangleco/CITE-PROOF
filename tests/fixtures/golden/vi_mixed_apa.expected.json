@@ -1,0 +1,14 @@
+{
+  "language": "vi",
+  "warnings": [],
+  "page_count": 2,
+  "references": [
+    {"label": null, "title": "BERT: Pre-training of deep bidirectional transformers for language understanding", "year": 2019, "doi": "10.18653/v1/N19-1423", "first_author_family": "Devlin", "ref_type": "CONFERENCE"},
+    {"label": null, "title": "Phân loại văn bản tiếng Việt bằng mạng nơ-ron tích chập", "year": 2020, "doi": null, "first_author_family": "Nguyễn", "ref_type": "ARTICLE"},
+    {"label": null, "title": "Attention is all you need", "year": 2017, "doi": "10.48550/arXiv.1706.03762", "first_author_family": "Vaswani", "ref_type": "PREPRINT"}
+  ],
+  "citations": [
+    {"marker": "(Nguyễn Văn An, 2020; Devlin et al., 2019)", "links": ["2", "1"], "claim": "Các mô hình ngôn ngữ huấn luyện trước đã thay đổi cách tiếp cận xử lý văn bản tiếng Việt"},
+    {"marker": "(Vaswani et al., 2017)", "links": ["3"], "claim": "Kiến trúc Transformer là nền tảng của hầu hết các mô hình hiện nay"}
+  ]
+}

@@ -20,6 +20,7 @@ import citeproof.db.models  # noqa: F401  (đăng ký bảng lên Base.metadata)
 from citeproof.core.settings import Settings
 from citeproof.db.base import Base
 from citeproof.db.session import make_engine, make_session_factory
+from tests.golden.cases import GoldenCase, load_cases
 
 DEFAULT_TEST_URL = "postgresql+psycopg://citeproof:citeproof@localhost:5432/citeproof_test"
 _HANDLER_MARK = "_citeproof_handler"
@@ -97,3 +98,23 @@ async def clean_db(engine: AsyncEngine) -> AsyncIterator[None]:
 def settings(database_url: str, tmp_path: Path) -> Settings:
     """Settings môi trường local dùng DB test và thư mục storage tạm."""
     return Settings(database_url=database_url, env="local", storage_dir=tmp_path / "storage")
+
+
+_GOLDEN_WITH_EXPECTED = [case for case in load_cases() if case.expected is not None]
+
+
+@pytest.fixture(params=_GOLDEN_WITH_EXPECTED, ids=lambda case: case.name)
+def golden_case(request: pytest.FixtureRequest) -> GoldenCase:
+    """Mỗi mẫu golden có kết quả mong đợi (bỏ `encrypted`, `image_only`)."""
+    case: GoldenCase = request.param
+    return case
+
+
+@pytest.fixture(
+    params=[case for case in _GOLDEN_WITH_EXPECTED if case.input_path.suffix == ".docx"],
+    ids=lambda case: case.name,
+)
+def golden_docx_case(request: pytest.FixtureRequest) -> GoldenCase:
+    """Chỉ các mẫu golden DOCX (T5 kiểm tra ngôn ngữ, cảnh báo, section)."""
+    case: GoldenCase = request.param
+    return case

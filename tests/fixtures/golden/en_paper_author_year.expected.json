@@ -1,0 +1,18 @@
+{
+  "language": "en",
+  "warnings": [],
+  "page_count": null,
+  "references": [
+    {"label": null, "title": "BERT: Pre-training of deep bidirectional transformers for language understanding", "year": 2019, "doi": "10.18653/v1/N19-1423", "first_author_family": "Devlin", "ref_type": "CONFERENCE"},
+    {"label": null, "title": "Deep residual learning for image recognition", "year": 2016, "doi": "10.1109/CVPR.2016.90", "first_author_family": "He", "ref_type": "CONFERENCE"},
+    {"label": null, "title": "Long short-term memory", "year": 1997, "doi": "10.1162/neco.1997.9.8.1735", "first_author_family": "Hochreiter", "ref_type": "ARTICLE"},
+    {"label": null, "title": "Attention is all you need", "year": 2017, "doi": "10.48550/arXiv.1706.03762", "first_author_family": "Vaswani", "ref_type": "PREPRINT"}
+  ],
+  "citations": [
+    {"marker": "(Hochreiter & Schmidhuber, 1997)", "links": ["3"], "claim": "Sequence transduction models were long dominated by recurrent architectures"},
+    {"marker": "(Vaswani et al., 2017)", "links": ["4"], "claim": "The Transformer replaced recurrence with self-attention and set a new state of the art in machine translation"},
+    {"marker": "(Devlin et al., 2019)", "links": ["1"], "claim": "Pre-trained language models such as BERT further improved many benchmarks"},
+    {"marker": "(He et al., 2016; Vaswani et al., 2017)", "links": ["2", "4"], "claim": "Deep residual networks made very deep models trainable"},
+    {"marker": "(Smith, 2010)", "links": [null], "claim": "Earlier work has also argued otherwise"}
+  ]
+}

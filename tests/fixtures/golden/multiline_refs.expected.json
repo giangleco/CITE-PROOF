@@ -1,0 +1,17 @@
+{
+  "language": "vi",
+  "warnings": [],
+  "page_count": null,
+  "references": [
+    {"label": "1", "title": "Phân loại văn bản tiếng Việt bằng mạng nơ-ron tích chập", "year": 2020, "doi": null, "first_author_family": "Nguyễn", "ref_type": "ARTICLE"},
+    {"label": "2", "title": "Nhận dạng thực thể có tên trong văn bản tiếng Việt", "year": 2021, "doi": null, "first_author_family": "Trần", "ref_type": "THESIS"},
+    {"label": "3", "title": "Attention is all you need", "year": 2017, "doi": "10.48550/arXiv.1706.03762", "first_author_family": "Vaswani", "ref_type": "PREPRINT"},
+    {"label": "4", "title": "Giáo trình xử lý ngôn ngữ tự nhiên", "year": 2019, "doi": null, "first_author_family": "Lê", "ref_type": "BOOK"}
+  ],
+  "citations": [
+    {"marker": "[1]", "links": ["1"], "claim": "Phân loại văn bản tiếng Việt đã được nghiên cứu rộng rãi"},
+    {"marker": "[2]", "links": ["2"], "claim": "Nhận dạng thực thể có tên vẫn là bài toán khó"},
+    {"marker": "[3]", "links": ["3"], "claim": "Cơ chế tự chú ý là nền tảng của các mô hình hiện đại"},
+    {"marker": "[4]", "links": ["4"], "claim": "Giáo trình trình bày các khái niệm cơ bản của lĩnh vực"}
+  ]
+}

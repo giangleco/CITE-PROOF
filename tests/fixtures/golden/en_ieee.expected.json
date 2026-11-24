@@ -1,0 +1,18 @@
+{
+  "language": "en",
+  "warnings": [],
+  "page_count": 2,
+  "references": [
+    {"label": "1", "title": "Attention is all you need", "year": 2017, "doi": "10.48550/arXiv.1706.03762", "first_author_family": "Vaswani", "ref_type": "PREPRINT"},
+    {"label": "2", "title": "BERT: Pre-training of deep bidirectional transformers for language understanding", "year": 2019, "doi": "10.18653/v1/N19-1423", "first_author_family": "Devlin", "ref_type": "CONFERENCE"},
+    {"label": "3", "title": "Deep residual learning for image recognition", "year": 2016, "doi": "10.1109/CVPR.2016.90", "first_author_family": "He", "ref_type": "CONFERENCE"},
+    {"label": "4", "title": "Long short-term memory", "year": 1997, "doi": "10.1162/neco.1997.9.8.1735", "first_author_family": "Hochreiter", "ref_type": "ARTICLE"}
+  ],
+  "citations": [
+    {"marker": "[1]", "links": ["1"], "claim": "Self-attention based models have become the standard for sequence transduction"},
+    {"marker": "[2]–[4]", "links": ["2", "3", "4"], "claim": "Pre-trained encoders and deep residual networks have been widely adopted"},
+    {"marker": "[2]", "links": ["2"], "claim": "A pre-trained encoder is fine-tuned on the target data"},
+    {"marker": "[3]", "links": ["3"], "claim": "Residual connections stabilise the training of deep models"},
+    {"marker": "[4]", "links": ["4"], "claim": "Recurrent networks remain a strong baseline for short sequences"}
+  ]
+}

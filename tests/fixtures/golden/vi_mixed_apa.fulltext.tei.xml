@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TEI xml:space="preserve" xmlns="http://www.tei-c.org/ns/1.0" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xsi:schemaLocation="http://www.tei-c.org/ns/1.0 https://raw.githubusercontent.com/kermitt2/grobid/master/grobid-home/schemas/xsd/Grobid.xsd"
+ xmlns:xlink="http://www.w3.org/1999/xlink">
+	<teiHeader xml:lang="vi">
+		<fileDesc>
+			<titleStmt>
+				<title level="a" type="main">Kiểm tra trích dẫn trong luận văn công nghệ thông tin</title>
+			</titleStmt>
+			<publicationStmt>
+				<publisher/>
+				<availability status="unknown"><licence/></availability>
+			</publicationStmt>
+			<sourceDesc>
+				<biblStruct>
+					<analytic>
+						<author>
+							<persName><forename type="first">Trần</forename><forename type="middle">Quốc</forename><surname>Dũng</surname></persName>
+							<affiliation key="aff0">
+								<orgName type="department">Khoa Công nghệ Thông tin</orgName>
+								<address>
+									<addrLine>Trường Đại học Mẫu</addrLine>
+									<settlement>Hà Nội</settlement>
+								</address>
+							</affiliation>
+						</author>
+						<title level="a" type="main">Kiểm tra trích dẫn trong luận văn công nghệ thông tin</title>
+					</analytic>
+					<monogr>
+						<imprint>
+							<date/>
+						</imprint>
+					</monogr>
+					<idno type="MD5">7C8B829FB35B144641BF4A5C40B15EF9</idno>
+					<idno type="DOI">10.18653/v1/N19-1423</idno>
+				</biblStruct>
+			</sourceDesc>
+		</fileDesc>
+		<encodingDesc>
+			<appInfo>
+				<application version="0.8.1" ident="GROBID" when="2026-11-24T03:50+0000">
+					<desc>GROBID - A machine learning software for extracting information from scholarly documents</desc>
+					<ref target="https://github.com/kermitt2/grobid"/>
+				</application>
+			</appInfo>
+		</encodingDesc>
+		<profileDesc>
+			<abstract>
+<div xmlns="http://www.tei-c.org/ns/1.0"><p coords="1,78.00,181.52,439.28,10.50;1,78.00,196.52,308.43,10.50"><s coords="1,78.00,181.52,44.26,10.50">Tóm tắt.</s><s coords="1,125.44,181.52,391.83,10.50;1,78.00,196.52,308.43,10.50">Bài viết trình bày cách đối chiếu các trích dẫn trong luận văn tiếng Việt với danh mục tài liệu tham khảo bằng tiếng Việt và tiếng Anh.</s></p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="1." coords="1,78.00,219.88,82.66,12.00">Giới thiệu</head><p coords="1,78.00,244.52,422.01,10.50;1,78.00,259.52,50.83,10.50;1,356.15,259.52,142.81,10.50;1,78.00,274.52,344.74,10.50"><s coords="1,78.00,244.52,422.01,10.50;1,78.00,259.52,283.84,10.50">Các mô hình ngôn ngữ huấn luyện trước đã thay đổi cách tiếp cận xử lý văn bản tiếng Việt (Nguyễn Văn An, 2020; Devlin et al., 2019).</s><s coords="1,365.18,259.52,133.78,10.50;1,78.00,274.52,344.74,10.50">Phần lớn công trình trong nước vẫn dựa vào các bài báo quốc tế để xây dựng phương pháp.</s></p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2." coords="1,78.00,297.88,118.51,12.00">Cơ sở lý thuyết</head><p coords="1,78.00,322.52,360.24,10.50;1,125.83,337.52,374.41,10.50;1,78.00,352.52,151.62,10.50"><s coords="1,78.00,322.52,425.26,10.50;1,78.00,337.52,53.52,10.50">Kiến trúc Transformer là nền tảng của hầu hết các mô hình hiện nay (Vaswani et  al., 2017).</s><s coords="1,134.86,337.52,365.38,10.50;1,78.00,352.52,151.62,10.50">Việc đối chiếu từng nhận định với tài liệu gốc giúp người đọc kiểm tra được độ tin cậy của lập luận.</s></p></div>
+			</abstract>
+		</profileDesc>
+	</teiHeader>
+	<facsimile>
+		<surface n="1" ulx="0.0" uly="0.0" lrx="595.275" lry="841.889"/>
+		<surface n="2" ulx="0.0" uly="0.0" lrx="595.275" lry="841.889"/>
+	</facsimile>
+	<text xml:lang="vi">
+		<body/>
+		<back>
+			<div type="references">
+
+				<listBibl/>
+			</div>
+		</back>
+	</text>
+</TEI>

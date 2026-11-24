@@ -1,0 +1,90 @@
+<TEI xmlns="http://www.tei-c.org/ns/1.0" xmlns:xlink="http://www.w3.org/1999/xlink" 
+ xmlns:mml="http://www.w3.org/1998/Math/MathML">
+	<teiHeader/>
+	<text>
+		<front/>
+		<body/>
+		<back>
+			<div>
+				<listBibl>
+<biblStruct xml:id="b0">
+	<analytic>
+		<title level="a" type="main">BERT: Pre-training of deep bidirectional transformers for language understanding</title>
+		<author>
+			<persName><forename type="first">J</forename><surname>Devlin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M.-W</forename><surname>Chang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Lee</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Toutanova</surname></persName>
+		</author>
+		<idno type="DOI">10.18653/v1/N19-1423</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of NAACL-HLT, tr</title>
+		<meeting>NAACL-HLT, tr</meeting>
+		<imprint>
+			<date type="published" when="2019">2019</date>
+			<biblScope unit="page" from="4171" to="4186" />
+		</imprint>
+	</monogr>
+	<note type="raw_reference">Devlin J., Chang M.-W., Lee K., Toutanova K. (2019), &quot;BERT: Pre-training of deep bidirectional transformers for language understanding&quot;, Proceedings of NAACL-HLT, tr. 4171-4186, doi:10.18653/v1/N19-1423.</note>
+</biblStruct>
+
+<biblStruct xml:id="b1">
+	<analytic>
+		<title level="a" type="main">Deep residual learning for image recognition</title>
+		<author>
+			<persName><forename type="first">K</forename><surname>He</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">X</forename><surname>Zhang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Ren</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Sun</surname></persName>
+		</author>
+		<idno type="DOI">10.1109/CVPR.2016.90</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of IEEE CVPR</title>
+		<meeting>IEEE CVPR</meeting>
+		<imprint>
+			<date type="published" when="2016">2016</date>
+			<biblScope unit="page" from="770" to="778" />
+		</imprint>
+	</monogr>
+	<note type="raw_reference">He K., Zhang X., Ren S., Sun J. (2016), &quot;Deep residual learning for image recognition&quot;, Proceedings of IEEE CVPR, tr. 770-778, doi:10.1109/CVPR.2016.90.</note>
+</biblStruct>
+
+<biblStruct xml:id="b2">
+	<analytic>
+		<title level="a" type="main">Xây dựng hệ thống hỏi đáp tiếng Việt, Luận văn thạc sĩ, Trường Đại học Mẫu</title>
+		<author>
+			<persName><forename type="first">Minh</forename><surname>Phạm</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Đức</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">TP</title>
+		<imprint>
+			<date type="published" when="2018">2018</date>
+			<pubPlace>Hồ Chí Minh</pubPlace>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">Phạm Minh Đức (2018), Xây dựng hệ thống hỏi đáp tiếng Việt, Luận văn thạc sĩ, Trường Đại học Mẫu, TP. Hồ Chí Minh.</note>
+</biblStruct>
+
+				</listBibl>
+			</div>
+		</back>
+	</text>
+</TEI>

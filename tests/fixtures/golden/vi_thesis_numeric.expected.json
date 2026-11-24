@@ -1,0 +1,19 @@
+{
+  "language": "vi",
+  "warnings": [],
+  "page_count": null,
+  "references": [
+    {"label": "1", "title": "Phân loại văn bản tiếng Việt bằng mạng nơ-ron tích chập", "year": 2020, "doi": null, "first_author_family": "Nguyễn", "ref_type": "ARTICLE"},
+    {"label": "2", "title": "Nhận dạng thực thể có tên trong văn bản tiếng Việt", "year": 2021, "doi": null, "first_author_family": "Trần", "ref_type": "THESIS"},
+    {"label": "3", "title": "Attention is all you need", "year": 2017, "doi": "10.48550/arXiv.1706.03762", "first_author_family": "Vaswani", "ref_type": "PREPRINT"},
+    {"label": "4", "title": "Giáo trình xử lý ngôn ngữ tự nhiên", "year": 2019, "doi": null, "first_author_family": "Lê", "ref_type": "BOOK"}
+  ],
+  "citations": [
+    {"marker": "[1]", "links": ["1"], "claim": "Các mô hình học sâu cho văn bản tiếng Việt đã đạt kết quả tốt trên nhiều bài toán phân loại"},
+    {"marker": "[2]", "links": ["2"], "claim": "Nhận dạng thực thể có tên trong tiếng Việt vẫn còn nhiều thách thức về dữ liệu gán nhãn"},
+    {"marker": "[3]", "links": ["3"], "claim": "Kiến trúc Transformer dựa hoàn toàn trên cơ chế tự chú ý và cho kết quả vượt trội trong dịch máy"},
+    {"marker": "[4]", "links": ["4"], "claim": "Các giáo trình xử lý ngôn ngữ tự nhiên trình bày nền tảng này một cách hệ thống"},
+    {"marker": "[1, 3]", "links": ["1", "3"], "claim": "Một số nghiên cứu đã đề xuất cải tiến cho cả hai hướng tiếp cận"},
+    {"marker": "[5]", "links": [null], "claim": "Một số tác giả khác cũng có kết luận tương tự"}
+  ]
+}

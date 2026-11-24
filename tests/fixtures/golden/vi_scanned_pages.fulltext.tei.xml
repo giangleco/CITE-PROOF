@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TEI xml:space="preserve" xmlns="http://www.tei-c.org/ns/1.0" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xsi:schemaLocation="http://www.tei-c.org/ns/1.0 https://raw.githubusercontent.com/kermitt2/grobid/master/grobid-home/schemas/xsd/Grobid.xsd"
+ xmlns:xlink="http://www.w3.org/1999/xlink">
+	<teiHeader xml:lang="vi">
+		<fileDesc>
+			<titleStmt>
+				<title level="a" type="main"></title>
+			</titleStmt>
+			<publicationStmt>
+				<publisher/>
+				<availability status="unknown"><licence/></availability>
+			</publicationStmt>
+			<sourceDesc>
+				<biblStruct>
+					<analytic>
+					</analytic>
+					<monogr>
+						<imprint>
+							<date/>
+						</imprint>
+					</monogr>
+					<idno type="MD5">E966A454A574F92645DF05CDCE71D5AD</idno>
+				</biblStruct>
+			</sourceDesc>
+		</fileDesc>
+		<encodingDesc>
+			<appInfo>
+				<application version="0.8.1" ident="GROBID" when="2026-11-24T03:50+0000">
+					<desc>GROBID - A machine learning software for extracting information from scholarly documents</desc>
+					<ref target="https://github.com/kermitt2/grobid"/>
+				</application>
+			</appInfo>
+		</encodingDesc>
+		<profileDesc>
+			<abstract>
+<div xmlns="http://www.tei-c.org/ns/1.0"><p coords="1,60.00,53.53,175.76,11.00;1,60.00,71.53,347.88,11.00"><s coords="1,60.00,53.53,175.76,11.00;1,60.00,71.53,347.88,11.00">Báo cáo tiến độ thực hiện đề tài Trang này có lớp chữ nên trích xuất văn bản được bình thường.</s></p><p coords="1,60.00,89.53,243.73,11.00"><s coords="1,60.00,89.53,243.73,11.00">Trang kế tiếp là ảnh quét, không có lớp chữ.</s></p><p coords="3,60.00,53.53,396.62,11.00"><s coords="3,60.00,53.53,396.62,11.00">Trang cuối lại có lớp chữ để kiểm tra việc đánh số trang bắt đầu từ một.</s></p><p coords="3,60.00,71.53,96.56,11.00"><s coords="3,60.00,71.53,96.56,11.00">Kết thúc báo cáo.</s></p></div>
+			</abstract>
+		</profileDesc>
+	</teiHeader>
+	<facsimile>
+		<surface n="1" ulx="0.0" uly="0.0" lrx="595.275" lry="841.889"/>
+		<surface n="2" ulx="0.0" uly="0.0" lrx="595.275" lry="841.889"/>
+		<surface n="3" ulx="0.0" uly="0.0" lrx="595.275" lry="841.889"/>
+	</facsimile>
+	<text xml:lang="vi">
+		<body/>
+		<back>
+			<div type="references">
+
+				<listBibl/>
+			</div>
+		</back>
+	</text>
+</TEI>

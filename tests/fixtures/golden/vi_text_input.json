@@ -1,0 +1,8 @@
+{
+  "body": "Trích dẫn trong khóa luận cần đối chiếu được với nguồn gốc. BERT là mô hình ngôn ngữ huấn luyện trước hai chiều cho nhiều bài toán xử lý ngôn ngữ [1].\n\nMạng residual cho phép huấn luyện mạng rất sâu mà không bị suy giảm độ chính xác [2]. Hai hướng này thường được kết hợp trong các hệ thống thực tế [1, 2]. Hệ thống hỏi đáp tiếng Việt vẫn thiếu dữ liệu huấn luyện [3].",
+  "references": [
+    "[1] Devlin J., Chang M.-W., Lee K., Toutanova K. (2019), \"BERT: Pre-training of deep bidirectional transformers for language understanding\", Proceedings of NAACL-HLT, tr. 4171-4186, doi:10.18653/v1/N19-1423.",
+    "[2] He K., Zhang X., Ren S., Sun J. (2016), \"Deep residual learning for image recognition\", Proceedings of IEEE CVPR, tr. 770-778, doi:10.1109/CVPR.2016.90.",
+    "[3] Phạm Minh Đức (2018), Xây dựng hệ thống hỏi đáp tiếng Việt, Luận văn thạc sĩ, Trường Đại học Mẫu, TP. Hồ Chí Minh."
+  ]
+}

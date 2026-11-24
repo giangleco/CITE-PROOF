@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TEI xml:space="preserve" xmlns="http://www.tei-c.org/ns/1.0" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xsi:schemaLocation="http://www.tei-c.org/ns/1.0 https://raw.githubusercontent.com/kermitt2/grobid/master/grobid-home/schemas/xsd/Grobid.xsd"
+ xmlns:xlink="http://www.w3.org/1999/xlink">
+	<teiHeader xml:lang="en">
+		<fileDesc>
+			<titleStmt>
+				<title level="a" type="main">Sequence Models for Citation Checking</title>
+			</titleStmt>
+			<publicationStmt>
+				<publisher/>
+				<availability status="unknown"><licence/></availability>
+			</publicationStmt>
+			<sourceDesc>
+				<biblStruct>
+					<analytic>
+						<author>
+							<persName><forename type="first">Alex</forename><surname>Example</surname></persName>
+							<affiliation key="aff0">
+								<orgName type="department">Department of Computer Science</orgName>
+								<orgName type="institution">Example University</orgName>
+							</affiliation>
+						</author>
+						<author>
+							<persName><forename type="first">Sam</forename><surname>Sample</surname></persName>
+							<affiliation key="aff0">
+								<orgName type="department">Department of Computer Science</orgName>
+								<orgName type="institution">Example University</orgName>
+							</affiliation>
+						</author>
+						<title level="a" type="main">Sequence Models for Citation Checking</title>
+					</analytic>
+					<monogr>
+						<imprint>
+							<date/>
+						</imprint>
+					</monogr>
+					<idno type="MD5">4BAEDFF6D8993F28649ABD8874627217</idno>
+				</biblStruct>
+			</sourceDesc>
+		</fileDesc>
+		<encodingDesc>
+			<appInfo>
+				<application version="0.8.1" ident="GROBID" when="2026-11-24T03:50+0000">
+					<desc>GROBID - A machine learning software for extracting information from scholarly documents</desc>
+					<ref target="https://github.com/kermitt2/grobid"/>
+				</application>
+			</appInfo>
+		</encodingDesc>
+		<profileDesc>
+			<abstract>
+<div xmlns="http://www.tei-c.org/ns/1.0"><p coords="1,141.62,159.52,375.65,10.50;1,78.00,174.52,412.00,10.50;1,78.00,189.52,238.61,10.50"><s coords="1,141.62,159.52,375.65,10.50;1,78.00,174.52,164.72,10.50">We study how sequence models can be used to check that citations in a thesis match the cited sources.</s><s coords="1,246.06,174.52,243.94,10.50;1,78.00,189.52,238.61,10.50">Experiments on a small sample set compare a recurrent baseline with a fine-tuned encoder.</s></p></div>
+			</abstract>
+		</profileDesc>
+	</teiHeader>
+	<facsimile>
+		<surface n="1" ulx="0.0" uly="0.0" lrx="595.275" lry="841.889"/>
+		<surface n="2" ulx="0.0" uly="0.0" lrx="595.275" lry="841.889"/>
+	</facsimile>
+	<text xml:lang="en">
+		<body>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head coords="1,78.00,212.88,96.99,12.00">I. Introduction</head><p coords="1,78.00,237.52,434.32,10.50;1,91.66,252.52,409.76,10.50;1,92.38,267.52,4.79,10.50;1,111.54,267.52,4.79,10.50"><s coords="1,78.00,237.52,434.32,10.50;1,78.00,252.52,18.21,10.50">Self-attention based models have become the standard for sequence transduction <ref type="bibr" coords="1,78.00,252.52,13.66,10.50" target="#b0">[1]</ref>.</s><s coords="1,99.55,252.52,401.87,10.50;1,78.00,267.52,38.33,10.50">Pre-trained encoders and deep residual networks have been widely adopted <ref type="bibr" coords="1,78.00,267.52,14.38,10.50" target="#b1">[2]</ref>- <ref type="bibr" coords="1,97.17,267.52,14.38,10.50" target="#b3">[4]</ref>.</s></p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head coords="1,78.00,290.88,68.86,12.00">II. Method</head><p coords="1,78.00,315.52,283.96,10.50;1,378.96,315.52,119.37,10.50;1,78.00,330.52,192.50,10.50;1,287.50,330.52,4.55,10.50"><s coords="1,78.00,315.52,305.51,10.50">A pre-trained encoder is fine-tuned on the target data <ref type="bibr" coords="1,365.30,315.52,13.66,10.50" target="#b1">[2]</ref>.</s><s coords="1,386.85,315.52,111.48,10.50;1,78.00,330.52,214.05,10.50">Residual connections stabilise the training of deep models <ref type="bibr" coords="1,273.84,330.52,13.66,10.50" target="#b2">[3]</ref>.</s></p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head coords="2,78.00,80.88,72.19,12.00">III. Results</head><p coords="2,78.00,105.52,345.42,10.50;2,440.42,105.52,36.78,10.50;2,78.00,120.52,220.43,10.50"><s coords="2,78.00,105.52,366.97,10.50">Recurrent networks remain a strong baseline for short sequences <ref type="bibr" coords="2,426.76,105.52,13.66,10.50" target="#b3">[4]</ref>.</s><s coords="2,448.31,105.52,35.32,10.50;2,78.00,120.52,220.43,10.50">Table <ref type="table" coords="2,480.54,105.52,3.10,10.50" target="#tab_0">I</ref> summarises the accuracy of both models.</s></p></div><figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_0" coords="2,78.00,143.16,279.73,68.00"><head>TABLE I .</head><label>I</label><figDesc><div><p><s coords="2,117.77,143.16,239.97,9.00">Accuracy of the baseline and the fine-tuned encoder.</s></p></div></figDesc><table coords="2,84.00,166.16,141.11,45.00"><row><cell>Model</cell><cell>Accuracy</cell></row><row><cell>Baseline LSTM</cell><cell>81.2</cell></row><row><cell cols="2">Fine-tuned encoder 88.7</cell></row></table></figure>
+		</body>
+		<back>
+			<div type="references">
+
+				<listBibl>
+
+<biblStruct coords="2,94.48,262.28,355.00,9.50;2,78.00,275.28,136.48,9.50" xml:id="b0">
+	<monogr>
+		<title level="m" type="main">Attention is all you need</title>
+		<author>
+			<persName><forename type="first">A</forename><surname>Vaswani</surname></persName>
+		</author>
+		<idno type="DOI">10.48550/arXiv.1706.03762</idno>
+		<idno type="arXiv">arXiv:1706.03762</idno>
+		<imprint>
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">A. Vaswani et al., &quot;Attention is all you need,&quot; arXiv:1706.03762, 2017, doi: 10.48550/arXiv.1706.03762.</note>
+</biblStruct>
+
+<biblStruct coords="2,94.48,292.28,366.73,9.50;2,78.00,305.28,412.67,9.50;2,78.00,318.28,191.74,9.50" xml:id="b1">
+	<analytic>
+		<title level="a" type="main">BERT: Pre-training of deep bidirectional transformers for language understanding</title>
+		<author>
+			<persName><forename type="first">J</forename><surname>Devlin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M.-W</forename><surname>Chang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Lee</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Toutanova</surname></persName>
+		</author>
+		<idno type="DOI">10.18653/v1/N19-1423</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Proc. NAACL-HLT</title>
+		<meeting>NAACL-HLT</meeting>
+		<imprint>
+			<date type="published" when="2019">2019</date>
+			<biblScope unit="page" from="4171" to="4186" />
+		</imprint>
+	</monogr>
+	<note type="raw_reference">J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova, &quot;BERT: Pre-training of deep bidirectional transformers for language understanding,&quot; in Proc. NAACL-HLT, 2019, pp. 4171-4186, doi: 10.18653/v1/N19-1423.</note>
+</biblStruct>
+
+<biblStruct coords="2,94.48,335.28,407.38,9.50;2,78.00,348.28,310.06,9.50" xml:id="b2">
+	<analytic>
+		<title level="a" type="main">Deep residual learning for image recognition</title>
+		<author>
+			<persName><forename type="first">K</forename><surname>He</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">X</forename><surname>Zhang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Ren</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Sun</surname></persName>
+		</author>
+		<idno type="DOI">10.1109/CVPR.2016.90</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Proc. IEEE CVPR</title>
+		<meeting>IEEE CVPR</meeting>
+		<imprint>
+			<date type="published" when="2016">2016</date>
+			<biblScope unit="page" from="770" to="778" />
+		</imprint>
+	</monogr>
+	<note type="raw_reference">K. He, X. Zhang, S. Ren, and J. Sun, &quot;Deep residual learning for image recognition,&quot; in Proc. IEEE CVPR, 2016, pp. 770-778, doi: 10.1109/CVPR.2016.90.</note>
+</biblStruct>
+
+<biblStruct coords="2,94.48,365.28,408.26,9.50;2,78.00,378.28,297.72,9.50" xml:id="b3">
+	<analytic>
+		<title level="a" type="main">Long short-term memory</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Hochreiter</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Schmidhuber</surname></persName>
+		</author>
+		<idno type="DOI">10.1162/neco.1997.9.8.1735</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Neural Comput</title>
+		<imprint>
+			<biblScope unit="volume">9</biblScope>
+			<biblScope unit="issue">8</biblScope>
+			<biblScope unit="page" from="1735" to="1780" />
+			<date type="published" when="1997">1997</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">S. Hochreiter and J. Schmidhuber, &quot;Long short-term memory,&quot; Neural Comput., vol. 9, no. 8, pp. 1735-1780, 1997, doi: 10.1162/neco.1997.9.8.1735.</note>
+</biblStruct>
+
+				</listBibl>
+			</div>
+		</back>
+	</text>
+</TEI>
