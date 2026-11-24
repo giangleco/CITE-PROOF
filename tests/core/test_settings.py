@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import pytest
 
 from citeproof.core.enums import LLMTask
@@ -159,3 +161,12 @@ def test_openalex_key_is_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.openalex_api_key.get_secret_value() == "oa-secret"
     assert "oa-secret" not in repr(s)
     assert "oa-secret" not in str(s.model_dump())
+
+
+def test_source_and_consent_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CITEPROOF_MAX_SOURCE_BYTES", raising=False)
+    monkeypatch.delenv("CITEPROOF_CONSENT_TEXT_UPDATED_AT", raising=False)
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.max_source_bytes == 31_457_280
+    # Màn hình đồng ý thêm nguồn tải bản mở (QĐ-43): người đồng ý trước mốc này đồng ý lại.
+    assert s.consent_text_updated_at == datetime(2026, 11, 24, tzinfo=UTC)

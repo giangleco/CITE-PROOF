@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from citeproof.core.enums import (
+    AccessStatus,
     ClaimStatus,
     ContentLevel,
     ContentLevelUsed,
@@ -24,6 +25,7 @@ from citeproof.db.models import (
     SourceChunk,
     SourceFile,
     VerificationRun,
+    Work,
 )
 from tests.conftest import alembic_config
 from tests.db.factories import (
@@ -139,15 +141,62 @@ async def test_not_found_requires_sources_searched(
         await s.flush()
 
 
-def _source(**kw: object) -> SourceFile:
+def _source(
+    access_status: str = AccessStatus.OPEN_ABSTRACT.value, sha256: str = "s", **kw: object
+) -> SourceFile:
     return SourceFile(
-        access_status="OPEN",
+        access_status=access_status,
         content_level=ContentLevel.ABSTRACT.value,
         storage_key="k",
-        sha256="s",
+        sha256=sha256,
         title_match=TitleMatch.UNKNOWN.value,
         **kw,
     )
+
+
+@pytest.mark.db
+async def test_source_access_status_enum(
+    session_factory: async_sessionmaker[AsyncSession], clean_db: None
+) -> None:
+    async with session_factory() as s:
+        for status in AccessStatus:
+            s.add(_source(access_status=status.value, origin=SourceOrigin.OPEN_ACCESS.value))
+        await s.flush()
+        s.add(_source(access_status="OPEN", origin=SourceOrigin.OPEN_ACCESS.value))
+        with pytest.raises(IntegrityError):
+            await s.flush()
+
+
+@pytest.mark.db
+async def test_open_access_source_unique_per_work_and_sha(
+    session_factory: async_sessionmaker[AsyncSession], clean_db: None
+) -> None:
+    async with session_factory() as s:
+        user = await make_user(s)
+        entry = await make_reference_entry(s, await make_document(s, user))
+        work = Work(title="T", title_norm="t", metadata_source="crossref")
+        other = Work(title="U", title_norm="u", metadata_source="crossref")
+        s.add_all([work, other])
+        await s.flush()
+        open_access = SourceOrigin.OPEN_ACCESS.value
+        s.add(_source(origin=open_access, work_id=work.id, sha256="a" * 64))
+        s.add(_source(origin=open_access, work_id=work.id, sha256="b" * 64))
+        s.add(_source(origin=open_access, work_id=other.id, sha256="a" * 64))
+        for _ in range(2):  # bản tải lên của người dùng không bị khóa này ràng buộc
+            s.add(
+                _source(
+                    access_status=AccessStatus.USER_PROVIDED.value,
+                    origin=SourceOrigin.USER_UPLOAD.value,
+                    owner_user_id=user.id,
+                    reference_entry_id=entry.id,
+                    work_id=work.id,
+                    sha256="a" * 64,
+                )
+            )
+        await s.flush()
+        s.add(_source(origin=open_access, work_id=work.id, sha256="a" * 64))
+        with pytest.raises(IntegrityError):
+            await s.flush()
 
 
 @pytest.mark.db

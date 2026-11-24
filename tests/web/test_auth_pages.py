@@ -150,6 +150,38 @@ async def test_consent_page_mentions_sources_and_placeholder_provider(
 
 
 @pytest.mark.db
+async def test_consent_mentions_open_access_sources(
+    client: httpx.AsyncClient, session_factory: SessionFactory
+) -> None:
+    await login(client, session_factory, consented=False)
+    html = (await client.get("/consent")).text
+    assert (
+        "Mã DOI và mã arXiv của tài liệu được trích được dùng để tải bản mở từ OpenAlex, "
+        "Unpaywall, arXiv, ACL Anthology và trang của nhà xuất bản."
+    ) in html
+    for word in ("Unpaywall", "arXiv", "ACL Anthology"):
+        assert word in html
+
+
+@pytest.mark.db
+async def test_consent_given_before_open_access_text_is_asked_again(
+    client: httpx.AsyncClient, session_factory: SessionFactory
+) -> None:
+    user = await login(client, session_factory)
+    assert (await client.get("/documents/new")).status_code == 200
+    async with session_factory() as s:
+        await s.execute(
+            update(User)
+            .where(User.id == user.id)
+            .values(consent_llm_at=datetime(2026, 11, 23, 12, 0, tzinfo=UTC))
+        )
+        await s.commit()
+    response = await client.get("/documents/new")
+    assert response.status_code == 303
+    assert response.headers["location"] == "/consent?next=%2Fdocuments%2Fnew"
+
+
+@pytest.mark.db
 async def test_register_with_invite(
     client: httpx.AsyncClient, session_factory: SessionFactory
 ) -> None:

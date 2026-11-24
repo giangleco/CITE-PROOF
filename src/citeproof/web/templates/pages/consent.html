@@ -2,6 +2,8 @@
 {% from "partials/ui.html" import csrf, field_error %}
 {% block title %}Đồng ý dữ liệu | CiteProof{% endblock %}
 {% block content %}
+{# Nội dung đồng ý viết thẳng trong template, không qua labels.py (preflight F39); đổi nội dung
+   thì tăng `consent_text_updated_at` để người đã đồng ý đồng ý lại (FR-63). #}
 <div class="narrow">
   <div class="page-head"><div><h1>Trước lần kiểm tra đầu tiên</h1><p class="lede">Để kiểm tra bài của bạn, CiteProof gửi một phần nội dung ra các dịch vụ bên ngoài. Đây là những gì được gửi đi.</p></div></div>
   <form class="panel form" method="post" action="/consent">
@@ -9,6 +11,7 @@
     <input type="hidden" name="next" value="{{ next }}">
     <ul class="bullets">
       <li>Thông tin trong danh mục tài liệu tham khảo (tên bài, tác giả, năm, DOI) được gửi tới Crossref, OpenAlex và Semantic Scholar để tra cứu.</li>
+      <li>Mã DOI và mã arXiv của tài liệu được trích được dùng để tải bản mở từ OpenAlex, Unpaywall, arXiv, ACL Anthology và trang của nhà xuất bản.</li>
       <li>Các câu có trích dẫn, đoạn văn xung quanh và đoạn nguồn liên quan được gửi tới nhà cung cấp mô hình ngôn ngữ {{ provider or '[chưa chốt nhà cung cấp]' }} để đánh giá.{% if policy_url %} <a href="{{ policy_url }}" rel="noopener noreferrer">Chính sách dữ liệu của nhà cung cấp</a>.{% endif %}</li>
       <li>Bạn xóa được bài và toàn bộ kết quả bất cứ lúc nào, ở trang của từng bài hoặc trang tài khoản.</li>
     </ul>

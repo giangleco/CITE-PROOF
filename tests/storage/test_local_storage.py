@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -51,6 +52,16 @@ async def test_put_is_atomic_no_partial_file(tmp_path: Path) -> None:
     storage = LocalStorage(tmp_path)
     await storage.put("a/b.bin", b"data")
     assert [p.name for p in (tmp_path / "a").iterdir()] == ["b.bin"]
+
+
+async def test_concurrent_puts_same_key_never_mix(tmp_path: Path) -> None:
+    # Bản mở dùng chung (`sources/open/<sha256>.pdf`) có thể được hai worker ghi cùng lúc.
+    storage = LocalStorage(tmp_path)
+    blobs = [bytes([65 + i]) * 4_000_000 for i in range(4)]
+    for _ in range(3):
+        await asyncio.gather(*(storage.put("sources/open/x.pdf", blob) for blob in blobs))
+        assert await storage.get("sources/open/x.pdf") in blobs
+    assert [p.name for p in (tmp_path / "sources" / "open").iterdir()] == ["x.pdf"]
 
 
 def test_document_prefix() -> None:

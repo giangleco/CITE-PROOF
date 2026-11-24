@@ -52,10 +52,13 @@ class Settings(BaseSettings):
     grobid_timeout_seconds: float = 300.0
     # Bài dài hơn bị từ chối ở S1 (`PAGE_LIMIT_EXCEEDED`).
     max_pages: int = 300
+    # Bản mở tải ở S5 (30 MB): lớn hơn thì bỏ qua bản đó. Chỉ client tải nguồn dùng giới hạn
+    # này; client kiểm tra URL của tài liệu web giữ giới hạn nhỏ mặc định.
+    max_source_bytes: int = 31_457_280
 
     # Tra cứu metadata ở S3 (spec §7.3, QĐ-06). `contact_email` là email của người vận hành cho
     # "polite pool" (User-Agent và tham số `mailto` của OpenAlex), không bao giờ là email người
-    # dùng; None: không gửi email nào.
+    # dùng; None: không gửi email nào. Unpaywall (S5) chỉ được gọi khi có email này.
     contact_email: str | None = None
     semantic_scholar_api_key: SecretStr | None = None
     # Không có khóa, OpenAlex chia một hạn mức nhỏ mỗi ngày cho mọi client cùng IP.
@@ -87,8 +90,9 @@ class Settings(BaseSettings):
     login_max_failures_per_email: int = 5
     login_max_failures_per_ip: int = 20
     login_window_minutes: int = 15
-    # Người đồng ý trước mốc này phải đồng ý lại (FR-63).
-    consent_text_updated_at: datetime = datetime(2026, 11, 23, tzinfo=UTC)
+    # Người đồng ý trước mốc này phải đồng ý lại (FR-63); 24/11/2026: thêm nguồn tải bản mở
+    # (QĐ-43).
+    consent_text_updated_at: datetime = datetime(2026, 11, 24, tzinfo=UTC)
     llm_provider_name: str | None = None
     llm_provider_policy_url: str | None = None
     # IP của reverse proxy được tin X-Forwarded-For (phân tách bằng dấu phẩy); rỗng: không tin ai.

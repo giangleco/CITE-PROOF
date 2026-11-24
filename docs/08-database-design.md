@@ -151,7 +151,7 @@ Quy ước chung: khóa chính `id UUID`; mọi bảng có `created_at TIMESTAMP
 | reference_entry_id | FK reference_entries NULL | Bắt buộc khi origin là `USER_UPLOAD` |
 | owner_user_id | FK users NULL | Bắt buộc khi origin là `USER_UPLOAD` |
 | origin | ENUM(`OPEN_ACCESS`, `USER_UPLOAD`) | |
-| access_status | ENUM, theo v1.0 §9.3 | |
+| access_status | ENUM(`OPEN_FULL_TEXT`, `OPEN_ABSTRACT`, `USER_PROVIDED`) | Theo bài mẫu (spec lõi QĐ-18, CHECK ở migration `0010`); ánh xạ lại khi có v1.0 §9.3 |
 | content_level | ENUM(`ABSTRACT`, `FULL_TEXT`) | |
 | url | TEXT NULL | Nơi lấy bản mở |
 | license | TEXT NULL | |
@@ -159,6 +159,8 @@ Quy ước chung: khóa chính `id UUID`; mọi bảng có `created_at TIMESTAMP
 | sha256 | TEXT | |
 | title_match | ENUM(`MATCH`, `MISMATCH`, `UNKNOWN`) | FR-33 |
 | retrieved_at | TIMESTAMPTZ | |
+
+Bản mở (`OPEN_ACCESS`) do S5 lấy về là dữ liệu dùng chung: không chủ sở hữu, không reference, lưu theo SHA-256 ở `sources/open/<sha256>.pdf` (toàn văn, `OPEN_FULL_TEXT`) hoặc `sources/open/<sha256>.abstract.json` (abstract của work, JSON `{"title", "abstract"}`, `OPEN_ABSTRACT`). Index duy nhất một phần `uq_source_files_open_work_sha` (`work_id`, `sha256`) WHERE `origin = 'OPEN_ACCESS'`: S5 chèn với `ON CONFLICT DO NOTHING` (spec lõi §7.5, migration `0010`).
 
 **source_chunks**
 

@@ -16,7 +16,12 @@ from citeproof.llm.calls import PgCallLogger
 from citeproof.llm.client import LLMClient
 from citeproof.llm.prompts import PromptLoader
 from citeproof.llm.providers.base import LLMProvider
-from citeproof.pipeline.deps import PROMPTS_ROOT, PipelineDeps, make_grobid_client
+from citeproof.pipeline.deps import (
+    PROMPTS_ROOT,
+    PipelineDeps,
+    make_grobid_client,
+    make_source_http,
+)
 from citeproof.pipeline.jobs import ClaimedJob
 from citeproof.pipeline.stages import StageContext, StageRegistry, StageResult
 from citeproof.pipeline.worker import work_once
@@ -70,10 +75,11 @@ def make_test_deps(
     """PipelineDeps cho test stage: không mạng thật, LLM chỉ khi truyền `provider`.
 
     `transport` (ví dụ `httpx.MockTransport`) dùng chung cho `http`, `safe_http`,
-    `GrobidClient` (tới `settings.grobid_url`) và gateway metadata. Không truyền `transport`
-    thì `grobid` là None (S1 dùng pypdfium2) và `http` (đường gọi API metadata) từ chối mọi
-    request bằng `NetworkRefusedError`, để test không bao giờ gọi GROBID hay API thật. Gateway
-    dùng TTL cache của `settings` và không chờ thật (limiter, thử lại).
+    `source_http`, `GrobidClient` (tới `settings.grobid_url`) và gateway metadata. Không truyền
+    `transport` thì `grobid` là None (S1 dùng pypdfium2), còn `http` (đường gọi API metadata)
+    và `source_http` (tải bản mở ở S5) từ chối mọi request bằng `NetworkRefusedError`, để test
+    không bao giờ gọi GROBID, API hay máy chủ PDF thật. Gateway dùng TTL cache của `settings`
+    và không chờ thật (limiter, thử lại).
     """
     llm = (
         LLMClient(
@@ -94,6 +100,11 @@ def make_test_deps(
         prompts=PromptLoader(PROMPTS_ROOT),
         http=http,
         safe_http=SafeHttpClient(resolver=resolver or public_resolver, transport=transport),
+        source_http=make_source_http(
+            settings,
+            resolver=resolver or public_resolver,
+            transport=transport or httpx.MockTransport(refuse_network),
+        ),
         grobid=make_grobid_client(settings, http) if transport is not None else None,
         metadata=make_gateway_factory(settings, http, session_factory, sleep=no_sleep),
     )

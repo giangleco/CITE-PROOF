@@ -17,7 +17,7 @@ import citeproof
 from citeproof.core.enums import StageName
 from citeproof.core.settings import Settings
 from citeproof.integrations.grobid import GrobidClient
-from citeproof.integrations.http_safe import SafeHttpClient
+from citeproof.integrations.http_safe import Resolver, SafeHttpClient
 from citeproof.integrations.metadata import MetadataGateway, make_gateway_factory
 from citeproof.llm.cache import doc_namespace
 from citeproof.llm.client import LLMClient
@@ -30,6 +30,8 @@ from citeproof.storage import Storage, make_storage
 PROMPTS_ROOT = Path(citeproof.__file__).parent / "prompts"
 # Timeout mặc định của client dùng chung; client gọi API đặt timeout riêng khi cần.
 _HTTP_TIMEOUT_S = 30.0
+# Thời gian tổng tối đa để tải một bản mở (mọi lần chuyển hướng và toàn bộ thân).
+SOURCE_TOTAL_TIMEOUT_S = 60.0
 
 
 @dataclass
@@ -42,8 +44,10 @@ class PipelineDeps:
     prompts: PromptLoader
     # Chỉ cho host API cố định (Crossref, OpenAlex, Semantic Scholar, Unpaywall, GROBID).
     http: httpx.AsyncClient
-    # Mọi URL lấy từ dữ liệu người dùng hoặc metadata bên thứ ba.
+    # Mọi URL lấy từ dữ liệu người dùng hoặc metadata bên thứ ba (kiểm tra URL, giới hạn nhỏ).
     safe_http: SafeHttpClient
+    # Tải bản mở ở S5 (URL từ metadata): giới hạn `max_source_bytes`, 60 s (preflight F08).
+    source_http: SafeHttpClient
     # None: cache LLM theo tài liệu (`doc:<document_id>`); đánh giá đặt `eval:<dataset>@<hash>`.
     cache_namespace: str | None = None
     # None khi không cấu hình GROBID: PDF parse bằng pypdfium2 (cảnh báo `PDF_TEXT_FALLBACK`).
@@ -71,9 +75,25 @@ async def open_deps(
             prompts=PromptLoader(PROMPTS_ROOT),
             http=http,
             safe_http=SafeHttpClient(),
+            source_http=make_source_http(settings),
             grobid=make_grobid_client(settings, http),
             metadata=make_gateway_factory(settings, http, session_factory),
         )
+
+
+def make_source_http(
+    settings: Settings,
+    *,
+    resolver: Resolver | None = None,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> SafeHttpClient:
+    """Client chống SSRF để tải bản mở: tới `max_source_bytes`, tổng 60 s."""
+    return SafeHttpClient(
+        resolver=resolver,
+        transport=transport,
+        max_bytes=settings.max_source_bytes,
+        total_timeout_s=SOURCE_TOTAL_TIMEOUT_S,
+    )
 
 
 def make_grobid_client(settings: Settings, http: httpx.AsyncClient) -> GrobidClient | None:

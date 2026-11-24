@@ -199,3 +199,23 @@ async def test_make_test_deps_refuses_network_without_transport(
     with pytest.raises(NetworkRefusedError):
         await deps.http.get("https://api.openalex.org/works")
     await deps.http.aclose()
+
+
+async def test_open_deps_builds_source_http(tmp_path: Path) -> None:
+    # Bản mở có thể tới 30 MB (preflight F08): client riêng, client kiểm tra URL giữ 5 MB.
+    settings = _settings(tmp_path, max_source_bytes=1234)
+    async with open_deps(settings, async_sessionmaker()) as deps:
+        assert isinstance(deps.source_http, SafeHttpClient)
+        assert deps.source_http.max_bytes == 1234
+        assert deps.source_http.total_timeout_s == 60.0
+        assert deps.safe_http.max_bytes == 5_000_000
+
+
+async def test_make_test_deps_source_http_refuses_network_without_transport(
+    tmp_path: Path,
+) -> None:
+    deps = make_test_deps(_settings(tmp_path), async_sessionmaker())
+    assert deps.source_http.max_bytes == 31_457_280
+    with pytest.raises(NetworkRefusedError):
+        await deps.source_http.get("https://export.arxiv.org/pdf/1706.03762")
+    await deps.http.aclose()

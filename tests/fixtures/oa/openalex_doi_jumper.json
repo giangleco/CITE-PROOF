@@ -1,0 +1,40 @@
+{
+  "id": "https://openalex.org/W3177828909",
+  "doi": "https://doi.org/10.1038/s41586-021-03819-2",
+  "title": "Highly accurate protein structure prediction with AlphaFold",
+  "display_name": "Highly accurate protein structure prediction with AlphaFold",
+  "publication_year": 2021,
+  "language": "en",
+  "type": "article",
+  "ids": {
+    "openalex": "https://openalex.org/W3177828909",
+    "doi": "https://doi.org/10.1038/s41586-021-03819-2",
+    "pmid": "https://pubmed.ncbi.nlm.nih.gov/34265844"
+  },
+  "authorships": [
+    {"author": {"display_name": "John Jumper"}, "raw_author_name": "John Jumper"},
+    {"author": {"display_name": "Richard Evans"}, "raw_author_name": "Richard Evans"}
+  ],
+  "primary_location": {
+    "is_oa": true,
+    "landing_page_url": "https://doi.org/10.1038/s41586-021-03819-2",
+    "pdf_url": "https://www.nature.com/articles/s41586-021-03819-2.pdf",
+    "license": "cc-by",
+    "source": {"display_name": "Nature"}
+  },
+  "best_oa_location": {
+    "is_oa": true,
+    "landing_page_url": "https://doi.org/10.1038/s41586-021-03819-2",
+    "pdf_url": "https://www.nature.com/articles/s41586-021-03819-2.pdf",
+    "license": "cc-by",
+    "source": {"display_name": "Nature"}
+  },
+  "primary_topic": {"field": {"display_name": "Biochemistry, Genetics and Molecular Biology"}},
+  "abstract_inverted_index": {
+    "Proteins": [0],
+    "are": [1],
+    "essential": [2],
+    "to": [3],
+    "life.": [4]
+  }
+}

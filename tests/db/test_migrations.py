@@ -54,3 +54,47 @@ def test_0008_normalizes_sample_dois(database_url: str) -> None:
             ("10.48550/arxiv.1706.03762", "sample"),
         ]
     )
+
+
+@pytest.mark.db
+def test_0010_maps_legacy_access_status(database_url: str) -> None:
+    config = alembic_config(database_url)
+    parsed = make_url(database_url)
+    conninfo = parsed.set(drivername="postgresql").render_as_string(hide_password=False)
+    command.downgrade(config, "0009")
+    try:
+        with psycopg.connect(conninfo, autocommit=True) as conn:
+            conn.execute("TRUNCATE users, source_files CASCADE")
+            conn.execute(
+                "WITH u AS (INSERT INTO users (email, password_hash, display_name) "
+                "VALUES ('m@b.vn', 'x', 'M') RETURNING id), "
+                "d AS (INSERT INTO documents (user_id, kind, filename, mime_type, storage_key, "
+                "sha256) SELECT id, 'TEXT', 'a', 'text/plain', 'k', 's' FROM u RETURNING id, "
+                "user_id), "
+                "r AS (INSERT INTO reference_entries (document_id, order_index, raw_text, "
+                "ref_type, parse_method) SELECT id, 0, 'r', 'ARTICLE', 'rule' FROM d "
+                "RETURNING id) "
+                "INSERT INTO source_files (origin, access_status, content_level, storage_key, "
+                "sha256, title_match, owner_user_id, reference_entry_id) "
+                "SELECT 'USER_UPLOAD', 'UPLOADED', 'FULL_TEXT', 'u', 'u', 'UNKNOWN', "
+                "d.user_id, r.id FROM d, r"
+            )
+            conn.execute(
+                "INSERT INTO source_files (origin, access_status, content_level, storage_key, "
+                "sha256, title_match) VALUES "
+                "('OPEN_ACCESS', 'OPEN', 'ABSTRACT', 'a', 'a', 'UNKNOWN'), "
+                "('OPEN_ACCESS', 'OPEN', 'FULL_TEXT', 'f', 'f', 'UNKNOWN'), "
+                "('OPEN_ACCESS', 'OPEN_ABSTRACT', 'FULL_TEXT', 'k', 'k', 'UNKNOWN')"
+            )
+        command.upgrade(config, "head")
+        with psycopg.connect(conninfo, autocommit=True) as conn:
+            rows = sorted(conn.execute("SELECT sha256, access_status FROM source_files").fetchall())
+            conn.execute("TRUNCATE users, source_files CASCADE")
+    finally:
+        command.upgrade(config, "head")
+    assert rows == [
+        ("a", "OPEN_ABSTRACT"),
+        ("f", "OPEN_FULL_TEXT"),
+        ("k", "OPEN_ABSTRACT"),  # giá trị đã hợp lệ giữ nguyên
+        ("u", "USER_PROVIDED"),
+    ]

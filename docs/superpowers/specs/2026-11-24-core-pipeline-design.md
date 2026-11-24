@@ -109,7 +109,8 @@ src/citeproof/
                                  openalex.py, semantic_scholar.py, ratelimit.py, breaker.py,
                                  cache.py (MetadataCache), gateway.py (MetadataGateway),
                                  abstracts.py (bỏ thẻ JATS, dựng abstract OpenAlex; connector cần)
-  integrations/oa/               AccessOption, arxiv.py, acl.py, openalex_oa.py, unpaywall.py
+  integrations/oa/               base.py (AccessOption, WorkRef, AccessResolver), arxiv.py, acl.py,
+                                 openalex_oa.py, unpaywall.py
   llm/providers/anthropic.py     AnthropicProvider
   llm/schema.py                  strict_output_schema
   llm/factory.py                 make_llm_client
@@ -119,7 +120,7 @@ src/citeproof/
                                  stage_extract.py (S2), matcher.py, cascade.py, works.py,
                                  web_check.py, domain.py, stage_check.py (S3), tools.py, resolver_agent.py (A1)
   modules/citations/             sentences.py, markers.py, linking.py, claims.py, llm_extract.py (W2), stage.py (S4)
-  modules/sources/               fetch.py, stage_fetch.py (S5), chunking.py,
+  modules/sources/               fetch.py, selection.py (chọn work/nguồn cho lần chạy), stage_fetch.py (S5), chunking.py,
                                  parse_source.py, stage_index.py (S6), title_match.py
   modules/retrieval/             embedding.py, lexical.py, fusion.py, translate.py (W3), pairs.py,
                                  retriever.py, stage.py (S7), tools.py (công cụ A2)

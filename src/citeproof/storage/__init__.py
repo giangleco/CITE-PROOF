@@ -10,7 +10,7 @@ import re
 import shutil
 from pathlib import Path
 from typing import Protocol
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from citeproof.core.settings import Settings
 
@@ -53,9 +53,15 @@ class LocalStorage:
 
         def write() -> None:
             path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_name(path.name + ".tmp")
-            tmp.write_bytes(data)
-            os.replace(tmp, path)
+            # Tên tạm riêng cho mỗi lần ghi: hai worker cùng ghi một khóa dùng chung
+            # (`sources/open/<sha256>.pdf`) không ghi đè file tạm của nhau.
+            tmp = path.with_name(f"{path.name}.{uuid4().hex}.tmp")
+            try:
+                tmp.write_bytes(data)
+                os.replace(tmp, path)
+            except BaseException:
+                tmp.unlink(missing_ok=True)
+                raise
 
         await asyncio.to_thread(write)
 

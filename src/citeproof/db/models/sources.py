@@ -4,11 +4,11 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import CheckConstraint, Computed, DateTime, ForeignKey, Index, Text, func
+from sqlalchemy import CheckConstraint, Computed, DateTime, ForeignKey, Index, Text, func, text
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
-from citeproof.core.enums import ChunkRegion, ContentLevel, SourceOrigin, TitleMatch
+from citeproof.core.enums import AccessStatus, ChunkRegion, ContentLevel, SourceOrigin, TitleMatch
 from citeproof.db.base import Base, IdCreatedMixin, enum_check
 
 EMBEDDING_DIM = 1024
@@ -18,6 +18,7 @@ class SourceFile(IdCreatedMixin, Base):
     __tablename__ = "source_files"
     __table_args__ = (
         enum_check("origin", SourceOrigin),
+        enum_check("access_status", AccessStatus),
         enum_check("content_level", ContentLevel),
         enum_check("title_match", TitleMatch),
         CheckConstraint(
@@ -28,6 +29,15 @@ class SourceFile(IdCreatedMixin, Base):
         CheckConstraint(
             "origin <> 'OPEN_ACCESS' OR (owner_user_id IS NULL AND reference_entry_id IS NULL)",
             name="open_access_is_shared",
+        ),
+        # Bản mở dùng chung: mỗi work chỉ lưu một dòng cho mỗi nội dung (S5 chèn với
+        # `ON CONFLICT DO NOTHING`); bản tải lên của từng người không bị ràng buộc này.
+        Index(
+            "uq_source_files_open_work_sha",
+            "work_id",
+            "sha256",
+            unique=True,
+            postgresql_where=text("origin = 'OPEN_ACCESS'"),
         ),
     )
 

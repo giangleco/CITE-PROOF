@@ -172,6 +172,15 @@ class SafeHttpClient:
         self._max_bytes = max_bytes
         self._max_redirects = max_redirects
 
+    @property
+    def max_bytes(self) -> int:
+        """Số byte thân phản hồi tối đa; dài hơn thì `SafeResponse.truncated`."""
+        return self._max_bytes
+
+    @property
+    def total_timeout_s(self) -> float:
+        return self._total_timeout_s
+
     async def _validate(self, url: str) -> _Target:
         if len(url) > _MAX_URL_LEN or any(ord(c) <= 0x20 or ord(c) == 0x7F for c in url):
             raise UnsafeUrlError("INVALID_URL", "URL chứa ký tự không hợp lệ hoặc quá dài")

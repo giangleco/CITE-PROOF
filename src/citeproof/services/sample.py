@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from citeproof.core.domain import normalize_doi
 from citeproof.core.enums import (
+    AccessStatus,
     ClaimStatus,
     ContentLevel,
     ContentLevelUsed,
@@ -387,7 +388,7 @@ async def seed_sample(
                 reference_entry_id=entry.id,
                 owner_user_id=user_id,
                 origin=SourceOrigin.USER_UPLOAD.value,
-                access_status="USER_PROVIDED",
+                access_status=AccessStatus.USER_PROVIDED.value,
                 content_level=ContentLevel.FULL_TEXT.value,
                 url=f"https://doi.org/{ref.work.doi}",
                 storage_key=SAMPLE_STORAGE_KEY,

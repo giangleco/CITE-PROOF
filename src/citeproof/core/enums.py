@@ -62,6 +62,14 @@ class SourceOrigin(StrEnum):
     USER_UPLOAD = "USER_UPLOAD"
 
 
+class AccessStatus(StrEnum):
+    """Trạng thái truy cập của một `source_files` (spec lõi QĐ-18, khớp bài mẫu)."""
+
+    OPEN_FULL_TEXT = "OPEN_FULL_TEXT"
+    OPEN_ABSTRACT = "OPEN_ABSTRACT"
+    USER_PROVIDED = "USER_PROVIDED"
+
+
 class ContentLevel(StrEnum):
     ABSTRACT = "ABSTRACT"
     FULL_TEXT = "FULL_TEXT"
