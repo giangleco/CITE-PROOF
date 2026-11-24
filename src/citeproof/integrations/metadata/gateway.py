@@ -1,9 +1,10 @@
 """Cổng tra cứu metadata mà S3 và A1 dùng (spec §7.3, `07a` §4.3.5, T-304).
 
-Mỗi lời gọi: kiểm tra ngắt mạch → cache → giới hạn tốc độ → connector, thử lại tối đa 2
+Mỗi lời gọi: cache → kiểm tra ngắt mạch → giới hạn tốc độ → connector, thử lại tối đa 2
 lần khi `RetryableError` (chờ `min(Retry-After, 10)` giây, không có thì 1 s rồi 2 s) → ghi
-cache. Lỗi của nguồn trở thành kết quả `error` (không ném ra) để S3 ghi nguồn đó vào
-`sources_failed`; lỗi khác (lỗi lập trình, DB) vẫn lan ra ngoài.
+cache. Kết quả đã cache được trả cả khi nguồn đang bị ngắt mạch. Lỗi của nguồn trở thành
+kết quả `error` (không ném ra) để S3 ghi nguồn đó vào `sources_failed`; lỗi khác (lỗi lập
+trình, DB) vẫn lan ra ngoài.
 
 `make_gateway_factory` dựng connector, cache và limiter một lần cho mỗi tiến trình; mỗi
 lần gọi factory trả một gateway mới với bộ ngắt mạch mới (ngắt mạch theo lần chạy).
@@ -17,6 +18,7 @@ from datetime import timedelta
 from typing import Any, Literal
 
 import httpx
+from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from citeproof.core import defaults
@@ -132,13 +134,15 @@ class MetadataGateway:
         self, source: str, op: str, args: Mapping[str, Any], call: Call
     ) -> LookupOutcome:
         connector = self._connector(source)
-        breaker = self._breakers[source]
-        if breaker.is_open:
-            return LookupOutcome(source, "circuit_open", [])
         payload = {"op": op, "args": dict(args)}
+        # Cache trước ngắt mạch: kết quả đã lưu không cần gọi nguồn nên vẫn dùng được khi nguồn
+        # đang bị ngắt; chỉ lần không trúng cache mới xét bộ ngắt mạch.
         cached = await self._cache.get(source, payload)
         if cached is not None and cached.outcome in _STATUS:
             return LookupOutcome(source, _STATUS[cached.outcome], cached.records)
+        breaker = self._breakers[source]
+        if breaker.is_open:
+            return LookupOutcome(source, "circuit_open", [])
         try:
             records = await self._call_with_retries(source, connector, call)
         except ExternalServiceError as exc:
@@ -197,18 +201,18 @@ def make_gateway_factory(
     không chờ).
     """
     timeout_s = settings.metadata_timeout_seconds
-    api_key = settings.semantic_scholar_api_key
     connectors: dict[str, MetadataConnector] = {
         "crossref": CrossrefConnector(
             http, contact_email=settings.contact_email, timeout_s=timeout_s
         ),
         "openalex": OpenAlexConnector(
-            http, contact_email=settings.contact_email, timeout_s=timeout_s
+            http,
+            contact_email=settings.contact_email,
+            api_key=_secret(settings.openalex_api_key),
+            timeout_s=timeout_s,
         ),
         "semantic_scholar": SemanticScholarConnector(
-            http,
-            api_key=api_key.get_secret_value() if api_key is not None else None,
-            timeout_s=timeout_s,
+            http, api_key=_secret(settings.semantic_scholar_api_key), timeout_s=timeout_s
         ),
     }
     limiters = {
@@ -236,3 +240,8 @@ def make_gateway_factory(
         )
 
     return factory
+
+
+def _secret(value: SecretStr | None) -> str | None:
+    """Khóa API chỉ được mở `SecretStr` ở đây, ngay trước khi giao cho connector."""
+    return value.get_secret_value() if value is not None else None

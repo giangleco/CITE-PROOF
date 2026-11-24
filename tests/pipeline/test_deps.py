@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 import pytest
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import citeproof
 from citeproof.core.enums import StageName
@@ -26,7 +26,7 @@ from citeproof.pipeline import deps as deps_module
 from citeproof.pipeline.config import RunConfig, RunInfo
 from citeproof.pipeline.deps import PROMPTS_ROOT, call_context, open_deps
 from citeproof.storage import LocalStorage
-from tests.pipeline.helpers import make_test_deps
+from tests.pipeline.helpers import NetworkRefusedError, make_test_deps
 
 
 def _settings(tmp_path: Path, **overrides: Any) -> Settings:
@@ -186,4 +186,16 @@ async def test_make_test_deps_metadata_ttl_from_settings(tmp_path: Path) -> None
     cache = deps.metadata().cache
     assert isinstance(cache, MetadataCache)
     assert (cache.ok_ttl, cache.not_found_ttl) == (timedelta(days=5), timedelta(days=2))
+    await deps.http.aclose()
+
+
+async def test_make_test_deps_refuses_network_without_transport(
+    tmp_path: Path, session_factory: async_sessionmaker[AsyncSession], clean_db: None
+) -> None:
+    deps = make_test_deps(_settings(tmp_path), session_factory)
+    assert deps.metadata is not None
+    with pytest.raises(NetworkRefusedError, match="transport="):
+        await deps.metadata().by_doi("crossref", "10.1109/cvpr.2016.90")
+    with pytest.raises(NetworkRefusedError):
+        await deps.http.get("https://api.openalex.org/works")
     await deps.http.aclose()

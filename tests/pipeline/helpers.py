@@ -25,6 +25,18 @@ from citeproof.storage import LocalStorage
 PUBLIC_IP = "93.184.216.34"
 
 
+class NetworkRefusedError(AssertionError):
+    """Test gọi tới API thật qua `deps.http` mà không truyền `transport` cho `make_test_deps`."""
+
+
+def refuse_network(request: httpx.Request) -> httpx.Response:
+    """Handler mặc định của `deps.http` trong test: từ chối mọi request, báo rõ cách sửa."""
+    raise NetworkRefusedError(
+        f"make_test_deps không cho gọi mạng thật ({request.method} "
+        f"{request.url.host}{request.url.path}); hãy truyền transport=httpx.MockTransport(...)"
+    )
+
+
 async def no_sleep(seconds: float) -> None:
     """Không chờ: giới hạn tốc độ và thử lại của gateway metadata chạy tức thì trong test."""
     return None
@@ -47,9 +59,9 @@ def make_test_deps(
 
     `transport` (ví dụ `httpx.MockTransport`) dùng chung cho `http`, `safe_http`,
     `GrobidClient` (tới `settings.grobid_url`) và gateway metadata. Không truyền `transport`
-    thì `grobid` là None (S1 dùng pypdfium2), để test không bao giờ gọi GROBID thật. Test có
-    tra cứu metadata (S3) phải truyền `transport`. Gateway dùng TTL cache của `settings` và
-    không chờ thật (limiter, thử lại).
+    thì `grobid` là None (S1 dùng pypdfium2) và `http` (đường gọi API metadata) từ chối mọi
+    request bằng `NetworkRefusedError`, để test không bao giờ gọi GROBID hay API thật. Gateway
+    dùng TTL cache của `settings` và không chờ thật (limiter, thử lại).
     """
     llm = (
         LLMClient(
@@ -61,7 +73,7 @@ def make_test_deps(
         if provider is not None
         else None
     )
-    http = httpx.AsyncClient(transport=transport)
+    http = httpx.AsyncClient(transport=transport or httpx.MockTransport(refuse_network))
     return PipelineDeps(
         session_factory=session_factory,
         storage=LocalStorage(settings.storage_dir),

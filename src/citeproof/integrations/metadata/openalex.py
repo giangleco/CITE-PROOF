@@ -3,7 +3,8 @@
 `/works/doi:{doi}` tra theo DOI; `/works?search=…` tìm toàn văn. `field` lấy từ
 `primary_topic.field.display_name` (cảnh báo ngoài lĩnh vực); `oa` từ `best_oa_location`
 khi có `pdf_url`; arXiv ID từ `ids.arxiv` (bỏ phiên bản). Polite pool: tham số `mailto`
-và User-Agent khi người vận hành đặt email.
+và User-Agent khi người vận hành đặt email. Khóa API (tùy chọn) đi trong tham số `api_key`:
+URL kèm query string không bao giờ được ghi log hay đưa vào thông điệp lỗi.
 """
 
 from typing import Any
@@ -48,6 +49,7 @@ class OpenAlexConnector:
         http: httpx.AsyncClient,
         *,
         contact_email: str | None,
+        api_key: str | None = None,
         timeout_s: float = DEFAULT_TIMEOUT_S,
     ) -> None:
         self._http = http
@@ -55,6 +57,8 @@ class OpenAlexConnector:
         self._base_params = {"select": SELECT}
         if contact_email:
             self._base_params["mailto"] = contact_email
+        if api_key:
+            self._base_params["api_key"] = api_key
         self._timeout_s = timeout_s
 
     async def get_by_doi(self, doi: str) -> WorkRecord | None:

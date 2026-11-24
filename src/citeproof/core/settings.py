@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     # dùng; None: không gửi email nào.
     contact_email: str | None = None
     semantic_scholar_api_key: SecretStr | None = None
+    # Không có khóa, OpenAlex chia một hạn mức nhỏ mỗi ngày cho mọi client cùng IP.
+    openalex_api_key: SecretStr | None = None
     # Số yêu cầu mỗi giây theo nguồn; nguồn không có trong bảng dùng mặc định ở `core.defaults`.
     metadata_rate_limits: dict[str, float] = Field(
         default_factory=lambda: dict(defaults.METADATA_RATE_LIMITS)

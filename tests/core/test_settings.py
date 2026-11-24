@@ -114,11 +114,17 @@ def test_pdf_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_metadata_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("CONTACT_EMAIL", "SEMANTIC_SCHOLAR_API_KEY", "METADATA_RATE_LIMITS"):
+    for name in (
+        "CONTACT_EMAIL",
+        "SEMANTIC_SCHOLAR_API_KEY",
+        "OPENALEX_API_KEY",
+        "METADATA_RATE_LIMITS",
+    ):
         monkeypatch.delenv(f"CITEPROOF_{name}", raising=False)
     s = Settings(_env_file=None)  # type: ignore[call-arg]
     assert s.contact_email is None  # không gửi email nào khi chưa cấu hình
     assert s.semantic_scholar_api_key is None
+    assert s.openalex_api_key is None
     assert s.metadata_rate_limits == {"crossref": 5.0, "openalex": 10.0, "semantic_scholar": 0.3}
     assert s.metadata_breaker_threshold == 3
     assert s.metadata_cache_ttl_days == 30
@@ -136,3 +142,12 @@ def test_semantic_scholar_key_is_secret(monkeypatch: pytest.MonkeyPatch) -> None
     assert s.semantic_scholar_api_key.get_secret_value() == "s2-secret"
     assert "s2-secret" not in repr(s)
     assert s.metadata_rate_limits == {"crossref": 1.5}
+
+
+def test_openalex_key_is_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CITEPROOF_OPENALEX_API_KEY", "oa-secret")
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.openalex_api_key is not None
+    assert s.openalex_api_key.get_secret_value() == "oa-secret"
+    assert "oa-secret" not in repr(s)
+    assert "oa-secret" not in str(s.model_dump())

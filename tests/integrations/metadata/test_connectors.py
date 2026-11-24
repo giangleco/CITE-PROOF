@@ -417,6 +417,27 @@ async def test_contact_email_polite_pool() -> None:
     assert openalex.headers["User-Agent"].endswith(f"; mailto:{EMAIL}")
 
 
+async def test_openalex_api_key_sent_only_when_set() -> None:
+    api = FakeApi(lambda request: json_response(load_fixture("openalex_search_he")))
+    await OpenAlexConnector(api.client(), contact_email=None, api_key="oa-secret").search_text("q")
+    await _openalex(api).search_text("q")
+    with_key, without_key = api.requests
+    assert with_key.url.params["api_key"] == "oa-secret"
+    assert "api_key" not in without_key.url.params
+
+
+@pytest.mark.parametrize(
+    "outcome", [httpx.Response(400), httpx.Response(429), httpx.ReadTimeout("slow")]
+)
+async def test_openalex_api_key_not_in_errors(outcome: httpx.Response | Exception) -> None:
+    api = FakeApi(sequence(outcome))
+    connector = OpenAlexConnector(api.client(), contact_email=None, api_key="oa-secret")
+    with pytest.raises(ExternalServiceError) as caught:
+        await connector.get_by_doi("10.1109/cvpr.2016.90")
+    assert "oa-secret" not in str(caught.value)
+    assert "oa-secret" not in repr(caught.value)
+
+
 async def test_timeout_is_per_request() -> None:
     api = FakeApi(lambda request: httpx.Response(404))
     connector = CrossrefConnector(api.client(), contact_email=None, timeout_s=4.5)

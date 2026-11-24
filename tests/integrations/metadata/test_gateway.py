@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from citeproof.core.domain import ParsedReference
 from citeproof.core.errors import ExternalServiceError, InternalError, RetryableError
+from citeproof.core.logging import configure_logging
 from citeproof.core.settings import Settings
 from citeproof.integrations.metadata import (
     SOURCES,
@@ -182,18 +183,34 @@ async def test_success_resets_breaker() -> None:
     assert gateway.available("crossref")
 
 
-async def test_breaker_checked_before_cache() -> None:
+async def test_cache_served_when_breaker_open() -> None:
     cache = InMemoryMetadataCache()
     ok = FakeApi(lambda request: json_response(HE))
-    assert (
-        await _gateway(ok, cache=cache).by_doi("crossref", "10.1109/cvpr.2016.90")
-    ).status == "ok"
+    first = await _gateway(ok, cache=cache).by_doi("crossref", "10.1109/cvpr.2016.90")
+    assert first.status == "ok"
     failing = FakeApi(lambda request: httpx.Response(400))
     gateway = _gateway(failing, cache=cache, threshold=1)
     assert (await gateway.by_doi("crossref", "10.1000/other")).status == "error"
-    # Thứ tự của brief: ngắt mạch → cache → giới hạn tốc độ → connector.
+    assert not gateway.available("crossref")
+    calls = failing.calls
+
+    # Thứ tự cache → ngắt mạch: kết quả đã cache không cần gọi nguồn nên vẫn được dùng.
     cached = await gateway.by_doi("crossref", "10.1109/cvpr.2016.90")
-    assert cached.status == "circuit_open"
+
+    assert cached == LookupOutcome("crossref", "ok", first.records)
+    assert failing.calls == calls
+
+
+async def test_breaker_open_cache_miss_is_circuit_open() -> None:
+    failing = FakeApi(lambda request: httpx.Response(400))
+    gateway = _gateway(failing, threshold=1)
+    assert (await gateway.by_doi("crossref", "10.1000/a")).status == "error"
+    calls = failing.calls
+
+    miss = await gateway.by_doi("crossref", "10.1000/b")
+
+    assert miss == LookupOutcome("crossref", "circuit_open", [])
+    assert failing.calls == calls  # không gọi HTTP khi mạch đã ngắt
 
 
 # --- Kết quả và khóa cache --------------------------------------------------------------------
@@ -323,6 +340,7 @@ async def test_factory_shares_limiters_and_resets_breakers(
     settings = Settings(
         _env_file=None,  # type: ignore[call-arg]
         semantic_scholar_api_key="s2-key",
+        openalex_api_key="oa-key",
         contact_email="ops@example.org",
         metadata_breaker_threshold=1,
         metadata_rate_limits={"crossref": 2.0},
@@ -344,3 +362,29 @@ async def test_factory_shares_limiters_and_resets_breakers(
     (request,) = api.requests
     assert request.headers["x-api-key"] == "s2-key"
     assert "@" not in request.headers["User-Agent"]  # S2 không nhận email liên hệ
+    await first.search_text("openalex", "q", year=None, limit=5)
+    openalex = api.requests[-1]
+    assert openalex.url.params["api_key"] == "oa-key"
+    assert openalex.url.params["mailto"] == "ops@example.org"
+    assert "x-api-key" not in openalex.headers
+
+
+async def test_openalex_key_never_logged(capsys: pytest.CaptureFixture[str]) -> None:
+    # Log JSON thật của ứng dụng: httpx ghi URL kèm `api_key` nhưng bị chặn ở `core.logging`.
+    configure_logging("DEBUG")
+    api = FakeApi(sequence(httpx.Response(503), httpx.Response(400)))
+    gateway = MetadataGateway(
+        {"openalex": OpenAlexConnector(api.client(), contact_email=None, api_key="oa-secret")},
+        InMemoryMetadataCache(),
+        {},
+        breaker_threshold=3,
+        sleep=_no_sleep,
+    )
+    outcome = await gateway.search_text("openalex", "private query", year=None, limit=5)
+    assert outcome.status == "error"
+    assert api.requests[0].url.params["api_key"] == "oa-secret"
+    err = capsys.readouterr().err
+    assert "metadata_lookup_failed" in err
+    assert "oa-secret" not in err
+    assert "private query" not in err
+    assert "api_key" not in err
