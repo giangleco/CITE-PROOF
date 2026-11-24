@@ -75,7 +75,7 @@ async def test_references_filter(
         _, all_items = await report.list_references(s, user=user, run_id=run_id)
     assert len(items) == 1 and items[0].index == 2
     assert items[0].mismatches[0] == MismatchView(field="year", in_document="2018", found="2019")
-    assert items[0].doi == "10.18653/v1/N19-1423"
+    assert items[0].doi == "10.18653/v1/n19-1423"
     assert [i.index for i in all_items] == [1, 2, 3, 4, 5, 6, 7]
 
 

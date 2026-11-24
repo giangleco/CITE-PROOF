@@ -32,7 +32,7 @@ from citeproof.services.sample import seed_sample
 from tests.services.helpers import new_user
 
 SessionFactory = async_sessionmaker[AsyncSession]
-VASWANI_DOI = "10.48550/arXiv.1706.03762"
+VASWANI_DOI = "10.48550/arxiv.1706.03762"  # dòng thật lưu DOI chuẩn hóa
 
 
 @pytest.mark.db

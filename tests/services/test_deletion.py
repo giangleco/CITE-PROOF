@@ -74,7 +74,7 @@ async def test_delete_sample_removes_feedback_and_sample_works_only(
     async with session_factory() as s:
         s.add(
             Work(
-                doi="10.48550/arXiv.1706.03762",
+                doi="10.48550/arxiv.1706.03762",
                 title="Attention",
                 title_norm="attention",
                 metadata_source="crossref",

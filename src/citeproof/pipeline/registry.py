@@ -2,6 +2,7 @@
 
 from citeproof.core.enums import StageName
 from citeproof.modules.documents.stage import ParseStage
+from citeproof.modules.references.stage_check import CheckReferencesStage
 from citeproof.modules.references.stage_extract import ExtractReferencesStage
 from citeproof.pipeline.demo import DemoStage
 from citeproof.pipeline.deps import PipelineDeps
@@ -10,7 +11,11 @@ from citeproof.pipeline.stages import NoopStage, PipelineStage, StageRegistry
 
 def _real_stages(deps: PipelineDeps) -> dict[StageName, PipelineStage]:
     """Stage đã có cài đặt thật; task sau thêm vào đây."""
-    return {StageName.S1: ParseStage(deps), StageName.S2: ExtractReferencesStage(deps)}
+    return {
+        StageName.S1: ParseStage(deps),
+        StageName.S2: ExtractReferencesStage(deps),
+        StageName.S3: CheckReferencesStage(deps),
+    }
 
 
 def build_registry(deps: PipelineDeps) -> StageRegistry:

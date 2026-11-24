@@ -11,12 +11,13 @@ chỉ được tạo khi chưa có DOI đó và mang `metadata_source = "sample"
 import hashlib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from citeproof.core.domain import normalize_doi
 from citeproof.core.enums import (
     ClaimStatus,
     ContentLevel,
@@ -296,11 +297,13 @@ CLAIMS: tuple[_Claim, ...] = (
 
 
 async def _get_or_create_work(session: AsyncSession, work: _Work, now: datetime) -> UUID:
-    existing = await session.scalar(select(Work.id).where(Work.doi == work.doi))
+    # DOI lưu dạng chuẩn hóa như dòng thật (`08` §4.4), để S3 tìm thấy và ghi đè dòng mẫu.
+    doi = normalize_doi(work.doi)
+    existing = await session.scalar(select(Work.id).where(Work.doi == doi))
     if existing is not None:
         return existing
     row = Work(
-        doi=work.doi,
+        doi=doi,
         title=work.title,
         title_norm=work.title.lower(),
         authors=work.authors,
@@ -360,7 +363,7 @@ async def seed_sample(
             parsed={**ref.parsed, **({"doi": ref.work.doi} if ref.work else {})},
             ref_type=ref.ref_type.value,
             parse_method=ParseMethod.RULE.value,
-            doi_normalized=ref.work.doi.lower() if ref.work else None,
+            doi_normalized=normalize_doi(ref.work.doi) if ref.work else None,
         )
         session.add(entry)
         await session.flush()
@@ -372,7 +375,7 @@ async def seed_sample(
                 reference_entry_id=entry.id,
                 status=ref.status.value,
                 work_id=work_id,
-                mismatches=cast(dict[str, Any], ref.mismatches),
+                mismatches=ref.mismatches,
                 sources_searched=ref.searched,
                 sources_failed=ref.failed,
                 needs_user_review=ref.status != ReferenceStatus.MATCHED,

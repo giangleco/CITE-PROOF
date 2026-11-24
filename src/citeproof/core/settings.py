@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     metadata_cache_ttl_days: int = 30
     metadata_not_found_ttl_days: int = 7
     metadata_timeout_seconds: float = 15.0
+    # Số tài liệu tham khảo S3 kiểm tra song song trong một lần chạy.
+    reference_concurrency: int = 4
+    # Tra bản lưu trữ archive.org cho tài liệu web (FR-15); tắt vì màn hình đồng ý chưa nêu
+    # archive.org (QĐ-42).
+    web_archive_lookup: bool = False
 
     # Giao diện web (spec web UI §7.10). Các giới hạn [ĐX] chốt sau SPK-05.
     storage_dir: Path = Path("var/storage")

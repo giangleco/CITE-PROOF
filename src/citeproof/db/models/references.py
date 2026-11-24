@@ -66,6 +66,8 @@ class Work(IdCreatedMixin, Base):
     venue: Mapped[str | None] = mapped_column(Text)
     abstract: Mapped[str | None] = mapped_column(Text)
     language: Mapped[str | None] = mapped_column(Text)
+    # Lĩnh vực OpenAlex (`primary_topic.field`), dùng cho cảnh báo ngoài lĩnh vực (QĐ-41).
+    field: Mapped[str | None] = mapped_column(Text)
     metadata_source: Mapped[str] = mapped_column(Text)
     retrieved_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -94,7 +96,8 @@ class ReferenceCheck(IdCreatedMixin, Base):
     work_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("works.id", ondelete="SET NULL"), index=True
     )
-    mismatches: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    # Danh sách `{"field", "in_document", "found"}` (`08` §4.4a); mặc định `{}` đọc là rỗng.
+    mismatches: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     sources_searched: Mapped[list[str]] = mapped_column(
         ARRAY(Text), server_default=text("'{}'::text[]")
     )

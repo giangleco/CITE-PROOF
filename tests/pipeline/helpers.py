@@ -37,6 +37,18 @@ def refuse_network(request: httpx.Request) -> httpx.Response:
     )
 
 
+METADATA_HOSTS = frozenset({"api.crossref.org", "api.openalex.org", "api.semanticscholar.org"})
+
+
+def metadata_not_found(request: httpx.Request) -> httpx.Response:
+    """Handler cho test chạy cả pipeline: API metadata trả 404 cho mọi tra cứu (S3 ra "chưa
+    tìm thấy"), host khác vẫn bị từ chối như `refuse_network` (đặt `grobid_url=""`).
+    """
+    if request.url.host in METADATA_HOSTS:
+        return httpx.Response(404)
+    return refuse_network(request)
+
+
 async def no_sleep(seconds: float) -> None:
     """Không chờ: giới hạn tốc độ và thử lại của gateway metadata chạy tức thì trong test."""
     return None

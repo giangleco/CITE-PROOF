@@ -134,6 +134,14 @@ def test_metadata_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert Settings(_env_file=None).metadata_rate_limits["crossref"] == 5.0  # type: ignore[call-arg]
 
 
+def test_reference_check_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("REFERENCE_CONCURRENCY", "WEB_ARCHIVE_LOOKUP"):
+        monkeypatch.delenv(f"CITEPROOF_{name}", raising=False)
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.reference_concurrency == 4
+    assert s.web_archive_lookup is False  # QĐ-42: chưa nêu archive.org trên màn hình đồng ý
+
+
 def test_semantic_scholar_key_is_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CITEPROOF_SEMANTIC_SCHOLAR_API_KEY", "s2-secret")
     monkeypatch.setenv("CITEPROOF_METADATA_RATE_LIMITS", '{"crossref": 1.5}')

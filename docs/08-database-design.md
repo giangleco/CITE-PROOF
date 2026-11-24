@@ -121,7 +121,8 @@ Quy ước chung: khóa chính `id UUID`; mọi bảng có `created_at TIMESTAMP
 | venue | TEXT NULL | |
 | abstract | TEXT NULL | |
 | language | TEXT NULL | |
-| metadata_source | TEXT | Nguồn đã lấy metadata |
+| field | TEXT NULL | Lĩnh vực OpenAlex (`primary_topic.field`); dùng cho cảnh báo ngoài lĩnh vực (spec lõi QĐ-41, migration `0008`) |
+| metadata_source | TEXT | Nguồn đã lấy metadata; `sample` là dòng của bài mẫu, được kết quả tra cứu thật ghi đè |
 | retrieved_at | TIMESTAMPTZ | |
 
 **reference_checks**

@@ -2,6 +2,7 @@
 
 import uuid
 
+import httpx
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -20,6 +21,7 @@ from tests.pipeline.helpers import (
     CountingStage,
     drain,
     make_test_deps,
+    metadata_not_found,
     pipeline_settings,
     stage_context,
 )
@@ -144,7 +146,13 @@ async def test_demo_failure_marks_run_failed_then_resume_completes(
     user, run_id = await _run(
         session_factory, settings, DemoConfig(step_delay_s=0, fail_at=StageName.S2)
     )
-    registry = build_registry(make_test_deps(settings, session_factory))
+    # S3 thật tra metadata: API giả trả 404; không GROBID (S2 dùng rule).
+    deps = make_test_deps(
+        settings.model_copy(update={"grobid_url": ""}),
+        session_factory,
+        transport=httpx.MockTransport(metadata_not_found),
+    )
+    registry = build_registry(deps)
     await drain(session_factory, registry, pipeline_settings())
     run = await _status(session_factory, run_id)
     assert run.status == RunStatus.FAILED.value

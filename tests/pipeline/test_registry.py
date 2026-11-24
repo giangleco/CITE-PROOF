@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -11,13 +12,14 @@ from citeproof.core.enums import RunStatus, StageName
 from citeproof.core.settings import Settings
 from citeproof.db.models import Document, VerificationRun
 from citeproof.modules.documents.stage import ParseStage
+from citeproof.modules.references.stage_check import CheckReferencesStage
 from citeproof.modules.references.stage_extract import ExtractReferencesStage
 from citeproof.pipeline.demo import DemoStage
 from citeproof.pipeline.registry import build_registry
 from citeproof.pipeline.stages import NoopStage
 from citeproof.services import documents
 from citeproof.storage import LocalStorage
-from tests.pipeline.helpers import drain, make_test_deps, pipeline_settings
+from tests.pipeline.helpers import drain, make_test_deps, metadata_not_found, pipeline_settings
 from tests.services.helpers import new_user
 
 SessionFactory = async_sessionmaker[AsyncSession]
@@ -37,7 +39,8 @@ def test_build_registry_wraps_demo_only_in_local(tmp_path: Path) -> None:
         assert not isinstance(other.get(StageName.S1), DemoStage)
         assert isinstance(other.get(StageName.S1), ParseStage)
         assert isinstance(other.get(StageName.S2), ExtractReferencesStage)
-        assert isinstance(other.get(StageName.S3), NoopStage)
+        assert isinstance(other.get(StageName.S3), CheckReferencesStage)
+        assert isinstance(other.get(StageName.S4), NoopStage)
 
 
 @pytest.mark.parametrize("env", ["local", "pilot"])
@@ -51,7 +54,7 @@ def test_build_registry_covers_every_stage(tmp_path: Path, env: str) -> None:
 async def test_built_registry_completes_run(
     session_factory: SessionFactory, clean_db: None, tmp_path: Path
 ) -> None:
-    settings = _settings(tmp_path, env="pilot")
+    settings = _settings(tmp_path, env="pilot", grobid_url="")
     async with session_factory() as session:
         user = await new_user(session)
         doc, run_id = await documents.create_text_document(
@@ -64,7 +67,8 @@ async def test_built_registry_completes_run(
             references="[1] Nguyễn Văn An (2020), Phân loại văn bản tiếng Việt.",
         )
         await session.commit()
-    registry = build_registry(make_test_deps(settings, session_factory))
+    transport = httpx.MockTransport(metadata_not_found)  # S3 thật: không gọi API thật
+    registry = build_registry(make_test_deps(settings, session_factory, transport=transport))
     assert await drain(session_factory, registry, pipeline_settings()) == len(StageName)
     async with session_factory() as session:
         status = await session.scalar(
