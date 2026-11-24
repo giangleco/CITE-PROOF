@@ -53,7 +53,7 @@ Kiến trúc kỹ thuật cho MVP Pilot: một modular monolith viết bằng Py
 | Hàng đợi tác vụ | Redis + worker | Hàng đợi trên PostgreSQL (bảng `jobs`, khóa `FOR UPDATE SKIP LOCKED`) | Bớt một dịch vụ (Redis); khối lượng pilot nhỏ | ADR-003 |
 | Parse tài liệu | PyMuPDF, python-docx | GROBID cho PDF khoa học + PyMuPDF dự phòng + python-docx | GROBID tách sẵn tài liệu tham khảo và marker trích dẫn; cần kiểm chứng ở SPK-01 | ADR-004 |
 | Giao diện | Next.js | Server-rendered bằng FastAPI + Jinja2 + HTMX cho pilot; Next.js sau MVP | Giữ toàn bộ mã nguồn bằng Python, đủ cho pilot | ADR-005 |
-| Truy cập LLM | Model Gateway | Interface `LLMClient` nội bộ, bên dưới là SDK nhà cung cấp hoặc thư viện đa nhà cung cấp (ví dụ LiteLLM) | Giữ ý tưởng gateway nhưng mỏng; ghi log, cache tập trung | ADR-006 |
+| Truy cập LLM | Model Gateway | Interface `LLMClient` nội bộ, bên dưới là `AnthropicProvider` dùng SDK `anthropic` chính thức (structured output, prompt caching, fallback phía server khi model từ chối). Model theo tác vụ, cấu hình được: W1–W4 `claude-haiku-5-5`, W5/A1/A2 `claude-sonnet-5-5`. Không có khóa API thì các bước LLM giảm cấp tất định | Giữ ý tưởng gateway nhưng mỏng; cache, log chi phí và phát lại tập trung ở `LLMClient`; lớp đa nhà cung cấp (ví dụ LiteLLM) không đem lại gì khi chỉ dùng một nhà cung cấp | ADR-006 |
 | Open-weight model | Có | Hoãn sau MVP (Q-08) | Tránh vận hành GPU | — |
 | Embedding | Chưa nêu | Chọn sau SPK-04: model đa ngôn ngữ tự chạy (ví dụ BGE-M3, multilingual-e5) hoặc API embedding | Phụ thuộc chất lượng xuyên ngôn ngữ và chi phí | ADR-007 |
 | Kiểm tra tài liệu tham khảo | Tự xây | Cân nhắc tái sử dụng thành phần mã nguồn mở (`02` §4.3c) nếu giấy phép phù hợp | Nhiều công cụ đã có; tiết kiệm thời gian | ADR-008 |
@@ -205,10 +205,10 @@ claim_verification → verification_run.config (biến thể, model, prompt vers
 | ADR-001 | Giữ Python, FastAPI, Pydantic v2, PostgreSQL + pgvector, SQLAlchemy, Alembic | Đề xuất |
 | ADR-002 | Pipeline tự viết thay cho LangGraph trong MVP | Đề xuất |
 | ADR-003 | Hàng đợi trên PostgreSQL thay cho Redis | Đề xuất |
-| ADR-004 | GROBID cho parse PDF | Chờ SPK-01 |
+| ADR-004 | GROBID cho parse PDF, pypdfium2 dự phòng (`decisions/ADR-004-grobid-pdf-parsing.md`) | Accepted (24/11/2026); ngưỡng G-5 xem lại sau SPK-01 |
 | ADR-005 | Giao diện server-rendered cho pilot | Accepted |
-| ADR-006 | Lớp truy cập LLM | Đề xuất |
-| ADR-007 | Embedding và chiến lược xuyên ngôn ngữ | Chờ SPK-04 |
+| ADR-006 | Lớp truy cập LLM: Anthropic SDK sau `LLMClient` (`decisions/ADR-006-llm-access-layer.md`) | Accepted (24/11/2026); Q-01, Q-03 còn mở |
+| ADR-007 | Embedding và chiến lược xuyên ngôn ngữ (`decisions/ADR-007-embedding-strategy.md`) | Accepted cho v1 (24/11/2026); xem lại sau SPK-04 |
 | ADR-008 | Tái sử dụng hay tự xây kiểm tra tài liệu tham khảo | Chờ T-002 |
 | ADR-009 | Agent có giới hạn trong pipeline tất định (`decisions/ADR-009-bounded-agents-in-pipeline.md`) | Accepted (D-13) |
 | ADR-010 | Hiện thực vòng lặp agent (`decisions/ADR-010-agent-loop-implementation.md`) | Proposed, chốt khi bắt đầu T-406 |

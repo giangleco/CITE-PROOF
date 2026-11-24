@@ -44,6 +44,12 @@ def _entry_value[T: OutputModel](schema: type[T], entry: Mapping[str, Any]) -> T
         return None
 
 
+def _entry_model(entry: Mapping[str, Any], requested: str) -> str:
+    """Model đã trả lời entry; entry cũ (chưa ghi model) coi như model đã yêu cầu."""
+    served = entry.get("model")
+    return served if isinstance(served, str) and served else requested
+
+
 class LLMClient:
     def __init__(
         self,
@@ -69,10 +75,14 @@ class LLMClient:
         ctx: CallContext,
         max_tokens: int = 4096,
         max_attempts: int = 2,
+        effort: str | None = None,
     ) -> LLMResult[T]:
         validate_namespace(ctx.namespace, ctx.document_id)
         output_schema = schema.model_json_schema()
         messages: list[dict[str, str]] = [{"role": "user", "content": parts.user}]
+        inputs: dict[str, Any] = {"system": parts.system, "messages": messages}
+        if effort is not None:  # không có effort thì khóa giữ nguyên như trước
+            inputs["effort"] = effort
         key = worker_cache_key(
             namespace=ctx.namespace,
             provider=self._provider.name,
@@ -80,7 +90,7 @@ class LLMClient:
             task=parts.task,
             prompt_version=parts.prompt_version,
             schema_version=schema.SCHEMA_VERSION,
-            inputs={"system": parts.system, "messages": messages},
+            inputs=inputs,
             attempt=1,
         )
         if self._mode is not CacheMode.FRESH:
@@ -93,8 +103,9 @@ class LLMClient:
                     self._warn_invalid_entry(parts, key)
                     await self._cache.delete(key)
                 else:
-                    await self._log(parts, ctx, model, key, 0, 0, 0, cache_hit=True)
-                    return LLMResult(value, True, key, 0, 0)
+                    served = _entry_model(cached, model)
+                    await self._log(parts, ctx, served, model, key, 0, 0, 0, cache_hit=True)
+                    return LLMResult(value, True, key, 0, 0, served)
             elif self._mode is CacheMode.REPLAY_ONLY:
                 raise CacheMissError(key)
 
@@ -105,13 +116,16 @@ class LLMClient:
                 messages=tuple(dict(m) for m in messages),
                 output_schema=output_schema,
                 max_tokens=max_tokens,
+                effort=effort,
             )
             started = time.perf_counter()
             response = await self._provider.complete(request)
             latency_ms = round((time.perf_counter() - started) * 1000)
+            served = response.model or model
             await self._log(
                 parts,
                 ctx,
+                served,
                 model,
                 key,
                 response.input_tokens,
@@ -143,7 +157,7 @@ class LLMClient:
                             parts.prompt_version,
                             schema.SCHEMA_VERSION,
                         ),
-                        {"value": value_or_none.model_dump(mode="json")},
+                        {"value": value_or_none.model_dump(mode="json"), "model": served},
                     )
                     # Lời gọi đồng thời cùng khoá: entry có trước thắng, để kết quả
                     # trả về bây giờ trùng với kết quả phát lại sau này.
@@ -152,11 +166,19 @@ class LLMClient:
                         self._warn_invalid_entry(parts, key)
                     else:
                         value_or_none = winner
+                        served = _entry_model(stored, model)
                 return LLMResult(
-                    value_or_none, False, key, response.input_tokens, response.output_tokens
+                    value_or_none,
+                    False,
+                    key,
+                    response.input_tokens,
+                    response.output_tokens,
+                    served,
                 )
 
-            messages.append({"role": "assistant", "content": response.text})
+            # API từ chối lượt assistant rỗng (ví dụ khi model từ chối trước khi viết gì).
+            if response.text.strip():
+                messages.append({"role": "assistant", "content": response.text})
             messages.append({"role": "user", "content": _feedback(problems)})
 
         raise LLMOutputError(f"{parts.task}: output invalid after {max_attempts} attempts")
@@ -168,7 +190,8 @@ class LLMClient:
         self,
         parts: PromptParts,
         ctx: CallContext,
-        model: str,
+        served: str,
+        requested: str,
         key: str,
         input_tokens: int,
         output_tokens: int,
@@ -176,14 +199,16 @@ class LLMClient:
         *,
         cache_hit: bool,
     ) -> None:
-        cost = estimate_cost(model, input_tokens, output_tokens, self._prices)
+        # Model dự phòng chưa có trong bảng giá thì tính theo giá model đã yêu cầu.
+        price_model = served if served in self._prices else requested
+        cost = estimate_cost(price_model, input_tokens, output_tokens, self._prices)
         await self._call_logger.log(
             LLMCallRecord(
                 run_id=ctx.run_id,
                 stage=ctx.stage,
                 task=parts.task,
                 provider=self._provider.name,
-                model=model,
+                model=served,
                 prompt_version=parts.prompt_version,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,

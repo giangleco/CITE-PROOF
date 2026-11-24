@@ -25,6 +25,8 @@ class ProviderRequest:
     messages: tuple[Mapping[str, str], ...]
     output_schema: Mapping[str, Any]
     max_tokens: int
+    # None: provider không gửi effort (model dùng mặc định của nó).
+    effort: str | None = None
 
 
 @dataclass(frozen=True)
@@ -33,6 +35,8 @@ class ProviderResponse:
     input_tokens: int
     output_tokens: int
     stop_reason: str
+    # Model thực sự trả lời (có thể là model dự phòng); rỗng nghĩa là model đã yêu cầu.
+    model: str = ""
 
 
 class CacheMode(StrEnum):
@@ -56,6 +60,8 @@ class LLMResult[T: OutputModel]:
     cache_key: str
     input_tokens: int
     output_tokens: int
+    # Model thực sự trả lời; với cache hit là model đã ghi cùng entry.
+    model: str = ""
 
 
 class CacheMissError(CiteProofError):

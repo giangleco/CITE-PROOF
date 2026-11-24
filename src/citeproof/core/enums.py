@@ -190,3 +190,16 @@ class MetadataOutcome(StrEnum):
     OK = "ok"
     NOT_FOUND = "not_found"
     ERROR = "error"
+
+
+class LLMTask(StrEnum):
+    """Tác vụ LLM (spec §8.2); khoá của `llm_models`, `llm_effort`, `llm_max_tokens`."""
+
+    REFERENCE_PARSE = "reference.parse"
+    CLAIM_EXTRACT = "claim.extract"
+    CLAIM_TRANSLATE = "claim.translate"
+    CLAIM_DECOMPOSE = "claim.decompose"
+    VERDICT_JUDGE = "verdict.judge"
+    VERDICT_JUDGE_CLOSED_BOOK = "verdict.judge_closed_book"
+    AGENT_REFERENCE_RESOLVER = "agent.reference_resolver"
+    AGENT_EVIDENCE_INVESTIGATOR = "agent.evidence_investigator"

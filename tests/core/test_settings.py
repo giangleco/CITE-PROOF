@@ -1,5 +1,6 @@
 import pytest
 
+from citeproof.core.enums import LLMTask
 from citeproof.core.settings import Settings, get_settings
 
 
@@ -17,7 +18,54 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.job_lock_timeout_seconds == 120
     assert s.job_heartbeat_seconds == 30.0
     assert s.worker_poll_interval_seconds == 1.0
-    assert s.llm_prices == {}
+    assert s.llm_prices == {
+        "claude-haiku-5-5": (0.10, 0.50),
+        "claude-sonnet-5-5": (2.0, 10.0),
+        "claude-opus-5-5": (4.0, 20.0),
+    }
+
+
+_LOCAL_TASKS = {"reference.parse", "claim.extract", "claim.translate", "claim.decompose"}
+
+
+def test_llm_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CITEPROOF_ANTHROPIC_API_KEY", raising=False)
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.anthropic_api_key is None
+    assert s.anthropic_timeout_seconds == 120.0
+    assert s.anthropic_max_retries == 2
+    assert s.anthropic_refusal_fallback is True
+    assert s.llm_concurrency == 4
+    tasks = {t.value for t in LLMTask}
+    assert tasks == _LOCAL_TASKS | {
+        "verdict.judge",
+        "verdict.judge_closed_book",
+        "agent.reference_resolver",
+        "agent.evidence_investigator",
+    }
+    assert set(s.llm_models) == set(s.llm_effort) == set(s.llm_max_tokens) == tasks
+    for task in tasks:
+        local = task in _LOCAL_TASKS
+        assert s.llm_models[task] == ("claude-haiku-5-5" if local else "claude-sonnet-5-5")
+        assert s.llm_effort[task] == ("low" if local else "high")
+    assert s.llm_max_tokens == {
+        "reference.parse": 8000,
+        "claim.extract": 4000,
+        "claim.translate": 2000,
+        "claim.decompose": 2000,
+        "verdict.judge": 16000,
+        "verdict.judge_closed_book": 16000,
+        "agent.reference_resolver": 16000,
+        "agent.evidence_investigator": 16000,
+    }
+
+
+def test_anthropic_key_is_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CITEPROOF_ANTHROPIC_API_KEY", "sk-ant-secret")
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.anthropic_api_key is not None
+    assert s.anthropic_api_key.get_secret_value() == "sk-ant-secret"
+    assert "sk-ant-secret" not in repr(s)
 
 
 def test_get_settings_is_cached() -> None:

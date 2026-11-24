@@ -8,6 +8,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.20.1",
+    "anthropic>=2.13,<3",
     "argon2-cffi>=25.1.0",
     "fastapi>=0.165.0",
     "httpx>=0.28.1",
@@ -47,7 +48,11 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 asyncio_default_test_loop_scope = "function"
 testpaths = ["tests"]
-markers = ["db: needs PostgreSQL"]
+markers = [
+    "db: needs PostgreSQL",
+    "live: calls the real Anthropic API (needs CITEPROOF_LIVE_LLM=1 and a key)",
+    "grobid: calls a live GROBID service (needs CITEPROOF_LIVE_GROBID=1)",
+]
 
 [dependency-groups]
 dev = [

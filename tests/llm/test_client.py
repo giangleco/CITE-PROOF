@@ -7,7 +7,13 @@ import pytest
 
 from citeproof.core.errors import LLMOutputError, RetryableError
 from citeproof.core.logging import configure_logging
-from citeproof.llm.cache import CacheEntryMeta, InMemoryCacheStore, doc_namespace, eval_namespace
+from citeproof.llm.cache import (
+    CacheEntryMeta,
+    InMemoryCacheStore,
+    doc_namespace,
+    eval_namespace,
+    worker_cache_key,
+)
 from citeproof.llm.calls import InMemoryCallLogger
 from citeproof.llm.client import LLMClient
 from citeproof.llm.context import PromptParts
@@ -204,7 +210,7 @@ async def test_corrupt_entry_is_regenerated_in_read_write(entry: dict[str, objec
     client2, provider, _, _ = make([GOOD], CacheMode.READ_WRITE, store)
     assert await call(client2) == "ok"
     assert len(provider.requests) == 1
-    assert store._entries[key] == {"value": {"answer": "ok"}}
+    assert store._entries[key] == {"value": {"answer": "ok"}, "model": "m"}
 
 
 @pytest.mark.parametrize("entry", [{}, {"value": {"wrong": 1}}])
@@ -256,3 +262,138 @@ async def test_concurrent_writer_entry_wins_so_live_equals_replay() -> None:
     assert len(provider.requests) == 1
     replay, _, _, _ = make([], CacheMode.REPLAY_ONLY, store)
     assert await call(replay) == "first"
+
+
+def _legacy_key() -> str:
+    """Khoá như trước khi có `effort`: inputs chỉ gồm system và messages."""
+    return worker_cache_key(
+        namespace=CTX.namespace,
+        provider="scripted",
+        model="m",
+        task="echo",
+        prompt_version="v1",
+        schema_version="echo/1",
+        inputs={"system": "sys", "messages": [{"role": "user", "content": "hello"}]},
+        attempt=1,
+    )
+
+
+async def test_no_effort_keeps_existing_key() -> None:
+    client, provider, store, _ = make([GOOD])
+    result = await client.complete_structured(parts=PARTS, schema=Echo, model="m", ctx=CTX)
+    assert result.cache_key == _legacy_key()
+    assert list(store._entries) == [_legacy_key()]
+    assert provider.requests[0].effort is None
+
+
+async def test_effort_changes_cache_key() -> None:
+    client, provider, store, _ = make([GOOD, GOOD, GOOD])
+    keys = []
+    for effort in (None, "low", "high"):
+        result = await client.complete_structured(
+            parts=PARTS, schema=Echo, model="m", ctx=CTX, effort=effort
+        )
+        assert not result.cache_hit
+        keys.append(result.cache_key)
+    assert len(set(keys)) == 3
+    assert [r.effort for r in provider.requests] == [None, "low", "high"]
+    again, provider2, _, _ = make([], CacheMode.REPLAY_ONLY, store)
+    hit = await again.complete_structured(
+        parts=PARTS, schema=Echo, model="m", ctx=CTX, effort="low"
+    )
+    assert hit.cache_hit and hit.cache_key == keys[1]
+    assert provider2.requests == []
+
+
+async def test_effort_is_kept_on_schema_retry() -> None:
+    bad = ProviderResponse('{"bad":1}', 1, 1, "end_turn")
+    client, provider, _, _ = make([bad, GOOD])
+    await client.complete_structured(parts=PARTS, schema=Echo, model="m", ctx=CTX, effort="low")
+    assert [r.effort for r in provider.requests] == ["low", "low"]
+
+
+async def test_served_model_recorded() -> None:
+    served = ProviderResponse('{"answer":"ok"}', 10, 5, "end_turn", model="claude-sonnet-5")
+    client, _, store, call_logger = make([served])
+    result = await client.complete_structured(
+        parts=PARTS, schema=Echo, model="claude-sonnet-5-5", ctx=CTX
+    )
+    assert result.model == "claude-sonnet-5"
+    assert call_logger.records[0].model == "claude-sonnet-5"
+    assert store._entries[result.cache_key] == {
+        "value": {"answer": "ok"},
+        "model": "claude-sonnet-5",
+    }
+    hit = await client.complete_structured(
+        parts=PARTS, schema=Echo, model="claude-sonnet-5-5", ctx=CTX
+    )
+    assert hit.cache_hit
+    assert hit.model == "claude-sonnet-5"
+    assert call_logger.records[1].model == "claude-sonnet-5"
+
+
+async def test_empty_served_model_means_requested() -> None:
+    client, _, store, call_logger = make([GOOD])
+    result = await client.complete_structured(parts=PARTS, schema=Echo, model="m", ctx=CTX)
+    assert result.model == "m"
+    assert call_logger.records[0].model == "m"
+    assert store._entries[result.cache_key]["model"] == "m"
+
+
+async def test_legacy_entry_without_model_reports_requested_model() -> None:
+    store = InMemoryCacheStore()
+    store._entries[_legacy_key()] = {"value": {"answer": "old"}}
+    client, provider, _, call_logger = make([], CacheMode.REPLAY_ONLY, store)
+    result = await client.complete_structured(parts=PARTS, schema=Echo, model="m", ctx=CTX)
+    assert (result.value.answer, result.model) == ("old", "m")
+    assert call_logger.records[0].model == "m"
+    assert provider.requests == []
+
+
+async def test_each_attempt_logs_its_own_served_model() -> None:
+    bad = ProviderResponse('{"bad":1}', 1, 1, "end_turn", model="claude-sonnet-5-5")
+    good = ProviderResponse('{"answer":"ok"}', 1, 1, "end_turn", model="claude-sonnet-5")
+    client, _, _, call_logger = make([bad, good])
+    result = await client.complete_structured(
+        parts=PARTS, schema=Echo, model="claude-sonnet-5-5", ctx=CTX
+    )
+    assert [r.model for r in call_logger.records] == ["claude-sonnet-5-5", "claude-sonnet-5"]
+    assert result.model == "claude-sonnet-5"
+
+
+async def test_cost_uses_served_model_price_then_requested() -> None:
+    served = ProviderResponse('{"answer":"ok"}', 1_000_000, 0, "end_turn", model="fallback-m")
+    client, _, _, call_logger = make([served], prices={"fallback-m": (2.0, 10.0), "m": (9.0, 9.0)})
+    await call(client)
+    assert call_logger.records[0].cost_estimate == Decimal(2)
+
+    unpriced = ProviderResponse('{"answer":"ok"}', 1_000_000, 0, "end_turn", model="unpriced-m")
+    client, _, _, call_logger = make([unpriced], prices={"m": (3.0, 15.0)})
+    await call(client)
+    assert call_logger.records[0].model == "unpriced-m"
+    assert call_logger.records[0].cost_estimate == Decimal(3)
+
+
+async def test_concurrent_writer_model_wins_too() -> None:
+    class _Racing(InMemoryCacheStore):
+        async def put(
+            self, key: str, meta: CacheEntryMeta, response: dict[str, Any]
+        ) -> dict[str, Any]:
+            await super().put(key, meta, {"value": {"answer": "first"}, "model": "other-m"})
+            return await super().put(key, meta, response)
+
+    served = ProviderResponse('{"answer":"ok"}', 1, 1, "end_turn", model="served-m")
+    client, _, _, _ = make([served], cache=_Racing())
+    result = await client.complete_structured(parts=PARTS, schema=Echo, model="m", ctx=CTX)
+    assert (result.value.answer, result.model) == ("first", "other-m")
+
+
+@pytest.mark.parametrize("text", ["", "  \n"])
+async def test_empty_output_is_not_echoed_as_assistant_turn(text: str) -> None:
+    # API từ chối lượt assistant rỗng: lần thử lại chỉ thêm phản hồi lỗi của user.
+    refused = ProviderResponse(text, 1, 0, "refusal")
+    client, provider, _, _ = make([refused, GOOD])
+    assert await call(client) == "ok"
+    retry = provider.requests[1].messages
+    assert [m["role"] for m in retry] == ["user", "user"]
+    assert "stop_reason=refusal" in retry[-1]["content"]
