@@ -99,6 +99,9 @@ class Settings(BaseSettings):
     llm_provider_policy_url: str | None = None
     # IP của reverse proxy được tin X-Forwarded-For (phân tách bằng dấu phẩy); rỗng: không tin ai.
     trusted_proxies: str = "127.0.0.1"
+    # Giới hạn mỗi IP mỗi phút (trong tiến trình, một process app); upload có hạn riêng chặt hơn.
+    rate_limit_per_minute: int = 120
+    rate_limit_uploads_per_minute: int = 10
 
     @model_validator(mode="after")
     def _heartbeat_fits_lease(self) -> Self:

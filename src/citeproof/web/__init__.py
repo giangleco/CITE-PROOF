@@ -143,6 +143,7 @@ def _install_handlers(app: FastAPI) -> None:
 
 
 def mount_web(app: FastAPI, settings: Settings) -> None:
+    from citeproof.web.ratelimit import RateLimitMiddleware
     from citeproof.web.routes import ROUTERS
     from citeproof.web.security import BodyLimitMiddleware, SecurityHeadersMiddleware
 
@@ -160,5 +161,11 @@ def mount_web(app: FastAPI, settings: Settings) -> None:
         too_large=too_large,
     )
     app.add_middleware(SecurityHeadersMiddleware)
+    # Trước ProxyHeadersMiddleware để chạy bên trong nó và thấy IP thật của client.
+    app.add_middleware(
+        RateLimitMiddleware,
+        per_minute=settings.rate_limit_per_minute,
+        uploads_per_minute=settings.rate_limit_uploads_per_minute,
+    )
     trusted = [host.strip() for host in settings.trusted_proxies.split(",") if host.strip()]
     app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=trusted)
