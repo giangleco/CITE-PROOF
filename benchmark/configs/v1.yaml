@@ -1,3 +1,6 @@
 # V1: W5 on the abstract only.
 variant: V1
 cross_lingual: X2
+limits:
+  # USD cap per run; benchmark runs state it explicitly (max_claims follows the dataset).
+  max_cost_usd: 5.0

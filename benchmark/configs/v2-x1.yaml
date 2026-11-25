@@ -1,3 +1,6 @@
 # V2-X1: lexical retrieval on the original claim only, then W5.
 variant: V2
 cross_lingual: X1
+limits:
+  # USD cap per run; benchmark runs state it explicitly (max_claims follows the dataset).
+  max_cost_usd: 5.0

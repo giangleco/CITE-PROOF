@@ -4,6 +4,7 @@ import hashlib
 from pathlib import Path
 
 import pytest
+import yaml
 
 from citeproof.core.enums import ClaimStatus, ContentLevel, ReferenceStatus, Verifier
 from citeproof.core.errors import InputError
@@ -89,6 +90,9 @@ def test_benchmark_configs(name: str, variant: Verifier, cross_lingual: str) -> 
     assert config.variant is variant
     assert config.cross_lingual == cross_lingual
     assert config.demo is None and config.scope is None
+    # Hạn mức chi phí luôn ghi rõ trong cấu hình benchmark.
+    raw = yaml.safe_load((CONFIGS / f"{name}.yaml").read_text(encoding="utf-8"))
+    assert raw["limits"]["max_cost_usd"] == config.limits.max_cost_usd == 5.0
 
 
 def test_config_rejects_unknown_keys(tmp_path: Path) -> None:

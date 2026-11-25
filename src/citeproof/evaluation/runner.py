@@ -32,10 +32,21 @@ from sqlalchemy import func, select
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from citeproof.core.enums import ClaimStatus, JobStatus, ReferenceStatus, RunStatus, StageName
+from citeproof.core.enums import (
+    ClaimStatus,
+    ContentLevel,
+    JobStatus,
+    ReferenceStatus,
+    RunStatus,
+    SourceOrigin,
+    StageName,
+    UnverifiableReason,
+)
 from citeproof.core.errors import CiteProofError, InputError, InternalError
 from citeproof.core.settings import Settings
 from citeproof.db.models import (
+    CitationLink,
+    Claim,
     ClaimVerification,
     Job,
     LLMCall,
@@ -43,6 +54,7 @@ from citeproof.db.models import (
     ReferenceEntry,
     RetrievalResult,
     SourceChunk,
+    SourceFile,
     VerificationRun,
 )
 from citeproof.db.session import make_engine, make_session_factory
@@ -163,6 +175,9 @@ class EvalReport(BaseModel):
     cache_namespace: str
     run_id: UUID
     run_status: RunStatus
+    # Cảnh báo của lần chạy (ví dụ `COST_LIMIT_REACHED`) và số mục không có phán quyết thật.
+    warnings: list[str]
+    missing_count: int
     metrics: ClassificationMetrics
     retrieval: RetrievalMetrics | None
     quote_drop_rate: float
@@ -183,6 +198,8 @@ class RefEvalReport(BaseModel):
     cache_namespace: str
     run_id: UUID
     run_status: RunStatus
+    warnings: list[str]
+    missing_count: int
     n: int
     labels: list[str]
     accuracy: float
@@ -327,6 +344,13 @@ async def _system(session: AsyncSession, run_id: UUID, n_items: int) -> SystemMe
     )
 
 
+async def _run_warnings(session: AsyncSession, run_id: UUID) -> list[str]:
+    warnings = await session.scalar(
+        select(VerificationRun.warnings).where(VerificationRun.id == run_id)
+    )
+    return [str(w) for w in warnings or []]
+
+
 def _labels(values: Sequence[str], order: Sequence[str]) -> list[str]:
     """Nhãn xuất hiện, theo thứ tự chuẩn; nhãn lạ (ví dụ `MISSING`) ở cuối."""
     present = set(values)
@@ -340,7 +364,8 @@ def _classification(
     labels = _labels([*gold, *pred], order)
 
     def metric(g: Sequence[str], p: Sequence[str]) -> float:
-        return macro_f1(g, p, labels)
+        # Cùng quy tắc nhãn cho ước lượng điểm và cho từng mẫu bootstrap.
+        return macro_f1(g, p, _labels([*g, *p], order))
 
     return ClassificationMetrics(
         n=len(gold),
@@ -353,6 +378,23 @@ def _classification(
     )
 
 
+async def _gold_source_files(session: AsyncSession, run_id: UUID, claim_id: UUID) -> set[UUID]:
+    """Nguồn toàn văn mở của work mà claim trích (theo `reference_checks` của lần chạy)."""
+    rows = await session.execute(
+        select(SourceFile.id)
+        .join(ReferenceCheck, ReferenceCheck.work_id == SourceFile.work_id)
+        .join(CitationLink, CitationLink.reference_entry_id == ReferenceCheck.reference_entry_id)
+        .join(Claim, Claim.citation_id == CitationLink.citation_id)
+        .where(
+            Claim.id == claim_id,
+            ReferenceCheck.run_id == run_id,
+            SourceFile.origin == SourceOrigin.OPEN_ACCESS.value,
+            SourceFile.content_level == ContentLevel.FULL_TEXT.value,
+        )
+    )
+    return set(rows.scalars())
+
+
 async def _retrieval(
     session: AsyncSession,
     run_id: UUID,
@@ -360,11 +402,19 @@ async def _retrieval(
     claim_ids: dict[str, UUID],
     retrieval_k: int,
 ) -> RetrievalMetrics | None:
-    """Recall@k, MRR trên claim có `evidence_spans` và có kết quả truy xuất (13 §B.1).
+    """Recall@k, MRR trên claim có `evidence_spans` và có chunk liên quan (13 §B.1).
 
-    Xếp hạng như S8 đọc (`score_fused` tốt nhất qua các biến thể); chunk liên quan là chunk của
-    cùng nguồn chứa nguyên văn một span sau chuẩn hóa (NFC, gộp khoảng trắng).
+    None khi biến thể không truy xuất (lần chạy không có `retrieval_results` nào). Xếp hạng như
+    S8 đọc (`score_fused` tốt nhất qua các biến thể); claim không truy xuất được gì có xếp hạng
+    rỗng (recall, RR bằng 0). Chunk liên quan là chunk của nguồn toàn văn của work được trích
+    (hoặc của nguồn đã truy xuất) chứa nguyên văn một span sau chuẩn hóa (NFC, gộp khoảng trắng).
+    `n` là số claim được lấy trung bình.
     """
+    any_rows = await session.scalar(
+        select(RetrievalResult.id).where(RetrievalResult.run_id == run_id).limit(1)
+    )
+    if any_rows is None:
+        return None
     ranked: list[list[str]] = []
     relevant: list[list[str]] = []
     best = func.max(RetrievalResult.score_fused)
@@ -385,9 +435,11 @@ async def _retrieval(
                 .order_by(best.desc(), SourceChunk.chunk_index)
             )
         ).all()
-        if not rows:
+        file_ids = {row.source_file_id for row in rows} | await _gold_source_files(
+            session, run_id, claim_id
+        )
+        if not file_ids:
             continue
-        file_ids = {row.source_file_id for row in rows}
         chunks = (
             await session.execute(
                 select(SourceChunk.id, SourceChunk.text).where(
@@ -395,14 +447,15 @@ async def _retrieval(
                 )
             )
         ).all()
+        gold = [
+            str(chunk.id)
+            for chunk in chunks
+            if any(locate_quote(span.text, chunk.text) for span in item.evidence_spans)
+        ]
+        if not gold:
+            continue
         ranked.append([str(row.source_chunk_id) for row in rows])
-        relevant.append(
-            [
-                str(chunk.id)
-                for chunk in chunks
-                if any(locate_quote(span.text, chunk.text) for span in item.evidence_spans)
-            ]
-        )
+        relevant.append(gold)
     if not ranked:
         return None
     ks = sorted({*RECALL_KS, retrieval_k})
@@ -444,6 +497,7 @@ async def _claim_report(
         ).all()
         retrieval = await _retrieval(session, run_id, items, claim_ids, config.retrieval_k)
         system = await _system(session, run_id, len(items))
+        warnings = await _run_warnings(session, run_id)
     by_claim = {row.claim_id: row for row in rows}
     predictions = []
     for item in items:
@@ -458,6 +512,14 @@ async def _claim_report(
             )
         )
     judged = [row for row in rows if row.model != NO_MODEL]
+    # Không có phán quyết thật: thiếu dòng, hoặc kết quả tất định `PROCESSING_ERROR` (chạm giới
+    # hạn số claim/chi phí, lỗi LLM, tra cứu lỗi).
+    missing = sum(
+        1
+        for p in predictions
+        if p.predicted == MISSING
+        or p.unverifiable_reason == UnverifiableReason.PROCESSING_ERROR.value
+    )
     dropped = sum(1 for row in judged if row.downgraded_by_rule == QUOTE_NOT_VERBATIM)
     return EvalReport(
         dataset=dataset.name,
@@ -470,6 +532,8 @@ async def _claim_report(
         cache_namespace=namespace,
         run_id=run_id,
         run_status=run_status,
+        warnings=warnings,
+        missing_count=missing,
         metrics=_classification(
             [p.gold for p in predictions],
             [p.predicted for p in predictions],
@@ -509,6 +573,7 @@ async def _reference_report(
             )
         }
         system = await _system(session, run_id, len(dataset.items))
+        warnings = await _run_warnings(session, run_id)
     by_text = {" ".join(entry.raw_text.split()): entry.id for entry in entries}
     predictions = []
     for item in dataset.items:
@@ -533,6 +598,8 @@ async def _reference_report(
         cache_namespace=namespace,
         run_id=run_id,
         run_status=run_status,
+        warnings=warnings,
+        missing_count=sum(p.predicted == MISSING for p in predictions),
         n=len(predictions),
         labels=labels,
         accuracy=sum(g == p for g, p in zip(gold, pred, strict=True)) / len(predictions),
@@ -604,7 +671,8 @@ def _pg_dump(pg_dump: str, url: str, target: Path) -> str:
 
 
 def _write_outputs(
-    out: Path,
+    out_dir: Path,
+    name: str,
     *,
     report: BaseModel,
     markdown: str,
@@ -612,7 +680,7 @@ def _write_outputs(
     manifest: dict[str, Any],
     dump: Callable[[Path], str] | None,
 ) -> None:
-    out.mkdir(parents=True, exist_ok=True)
+    out = _new_result_dir(out_dir, name)
     if dump is not None:
         manifest["dump"] = {"file": "dump.sql.gz", "sha256": dump(out / "dump.sql.gz")}
     (out / "report.json").write_text(report.model_dump_json(indent=2) + "\n", encoding="utf-8")
@@ -683,6 +751,8 @@ def _claim_markdown(report: EvalReport) -> str:
         f"{m.macro_f1_ci[1]:.4f})",
         f"- Accuracy: {m.accuracy:.4f}",
         f"- Quote drop rate: {report.quote_drop_rate:.4f}",
+        f"- Items without a real verdict: {report.missing_count}",
+        f"- Run warnings: {', '.join(report.warnings) or 'none'}",
         "",
         "| class | F1 |",
         "|---|---|",
@@ -708,6 +778,8 @@ def _reference_markdown(report: RefEvalReport) -> str:
         f"- Accuracy: {report.accuracy:.4f}",
         f"- Real references reported not found: {_fmt(report.false_not_found_rate)}",
         f"- Fabricated references detected: {_fmt(report.fabricated_detection_rate)}",
+        f"- Items without a result: {report.missing_count}",
+        f"- Run warnings: {', '.join(report.warnings) or 'none'}",
         "",
         *_confusion_md(report.labels, report.confusion),
         *_system_md(report.system),
@@ -715,8 +787,19 @@ def _reference_markdown(report: RefEvalReport) -> str:
     return "\n".join(lines)
 
 
-def _result_dir(out_dir: Path, name: str) -> Path:
-    return out_dir / f"{date.today():%Y-%m-%d}-{name}"
+def _new_result_dir(out_dir: Path, name: str) -> Path:
+    """`<out>/<YYYY-MM-DD>-<name>`; đã có thì thêm `-2`, `-3`, … (không bao giờ ghi đè)."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    base = f"{date.today():%Y-%m-%d}-{name}"
+    suffix = 1
+    while True:
+        target = out_dir / (base if suffix == 1 else f"{base}-{suffix}")
+        try:
+            target.mkdir()
+        except FileExistsError:
+            suffix += 1
+            continue
+        return target
 
 
 # --- Điểm vào ---------------------------------------------------------------------------------
@@ -739,7 +822,13 @@ async def run_eval(
     llm_provider = _provider_for(settings, mode, provider)
     pg_dump = _require_pg_dump() if dump else None
     dataset = load_claims(dataset_path)
+    items = [item for item in dataset.items if split is None or item.split == split]
+    # Giới hạn số claim của sản phẩm không được cắt bộ dữ liệu: mọi claim nhập vào đều được
+    # kiểm; hạn mức chi phí giữ theo cấu hình biến thể.
     config = load_run_config(settings, config_path)
+    config = config.model_copy(
+        update={"limits": config.limits.model_copy(update={"max_claims": max(1, len(items))})}
+    )
     namespace = eval_namespace(dataset.name, dataset.sha256[:12])
     engine = make_engine(url)
     session_factory = make_session_factory(engine)
@@ -759,7 +848,6 @@ async def run_eval(
             status = await _drive(session_factory, build_registry(deps), settings, imported.run_id)
         if status not in (RunStatus.COMPLETED, RunStatus.COMPLETED_WITH_WARNINGS):
             raise await _failed(session_factory, imported.run_id)
-        items = [item for item in dataset.items if split is None or item.split == split]
         report = await _claim_report(
             session_factory,
             dataset=dataset,
@@ -782,7 +870,8 @@ async def run_eval(
     manifest["split"] = split
     await asyncio.to_thread(
         _write_outputs,
-        _result_dir(out_dir, config_path.stem),
+        out_dir,
+        config_path.stem if split is None else f"{config_path.stem}-{split}",
         report=report,
         markdown=_claim_markdown(report),
         config=config,
@@ -845,7 +934,8 @@ async def run_reference_eval(
     )
     await asyncio.to_thread(
         _write_outputs,
-        _result_dir(out_dir, f"refs-{dataset.name}"),
+        out_dir,
+        f"refs-{dataset.name}",
         report=report,
         markdown=_reference_markdown(report),
         config=config,

@@ -30,6 +30,7 @@ from citeproof.evaluation.runner import (
     EVAL_USER_EMAIL,
     EvalReport,
     EvalRunFailedError,
+    _classification,
     run_eval,
     run_reference_eval,
 )
@@ -198,6 +199,8 @@ async def test_harness_end_to_end_scripted(
     assert report.system.cost_usd > 0
     assert report.system.latency_p50_ms is not None
     assert report.system.latency_p95_ms is not None
+    assert report.missing_count == 0
+    assert "COST_LIMIT_REACHED" not in report.warnings
     assert report.retrieval is not None
     assert report.retrieval.n == 5  # claim 4 không có evidence_spans
     assert report.retrieval.recall_at_k["1"] == 1.0
@@ -237,12 +240,92 @@ async def test_harness_end_to_end_scripted(
     assert user is not None and user.email == EVAL_USER_EMAIL
 
 
-async def test_split_filter(
+async def test_split_filter_and_result_dirs_never_overwrite(
     eval_settings: Settings, session_factory: SessionFactory, clean_db: None, tmp_path: Path
 ) -> None:
-    report = await _eval(eval_settings, tmp_path / "results", split="test")
+    out_dir = tmp_path / "results"
+    report = await _eval(eval_settings, out_dir, split="test")
     assert report.metrics.n == 2
     assert {p.item_id for p in report.predictions} == {"mini-004", "mini-006"}
+    again = await _eval(eval_settings, out_dir, split="test", mode=CacheMode.REPLAY_ONLY)
+    assert again.metrics == report.metrics
+    first = _result_dir(out_dir, "v2-x2-test")
+    second = first.with_name(first.name + "-2")
+    assert sorted(p.name for p in out_dir.iterdir()) == [first.name, second.name]
+    for directory, run in ((first, report), (second, again)):
+        data = json.loads((directory / "report.json").read_text(encoding="utf-8"))
+        assert data["run_id"] == str(run.run_id)
+
+
+async def test_cost_cap_truncation_is_reported(
+    eval_settings: Settings, session_factory: SessionFactory, clean_db: None, tmp_path: Path
+) -> None:
+    """Hạn mức chi phí của cấu hình vẫn áp dụng; cặp bị dừng được báo, không lặng lẽ tính điểm.
+    W3 (S7) đã vượt hạn mức nên mọi cặp ở S8 dừng trước W5."""
+    config = tmp_path / "tiny.yaml"
+    config.write_text(
+        "variant: V2\ncross_lingual: X2\nlimits:\n  max_cost_usd: 0.000001\n", encoding="utf-8"
+    )
+    provider = routed()
+    report = await run_eval(
+        eval_settings,
+        dataset_path=MINI,
+        config_path=config,
+        mode=CacheMode.READ_WRITE,
+        split=None,
+        out_dir=tmp_path / "results",
+        dump=False,
+        provider=provider,
+    )
+    assert "COST_LIMIT_REACHED" in report.warnings
+    assert report.missing_count == 6
+    assert provider.calls("W5") == []
+    markdown = (_result_dir(tmp_path / "results", "tiny") / "report.md").read_text(encoding="utf-8")
+    assert "COST_LIMIT_REACHED" in markdown and "without a real verdict: 6" in markdown
+    async with session_factory() as session:
+        run = await session.get(VerificationRun, report.run_id)
+    assert run is not None
+    # Giới hạn số claim theo bộ dữ liệu, không theo mặc định sản phẩm.
+    assert run.config["limits"] == {"max_claims": 6, "max_cost_usd": 0.000001}
+
+
+async def test_retrieval_counts_claims_without_hits(
+    eval_settings: Settings, session_factory: SessionFactory, clean_db: None, tmp_path: Path
+) -> None:
+    """Claim có span vàng nhưng truy xuất không ra chunk nào vẫn được tính (recall, RR = 0)."""
+    lines = MINI.read_text(encoding="utf-8").splitlines()
+    hit = json.loads(lines[0])
+    miss = json.loads(lines[5])
+    miss.update(id="zero-001", claim_text="Zebras gallop quickly.", citing_context="Zebras.")
+    rows = []
+    for item in (hit, miss):
+        source = EVAL / item.pop("source_path")
+        item["source_text"] = source.read_text(encoding="utf-8")
+        rows.append(json.dumps(item, ensure_ascii=False))
+    dataset = tmp_path / "zero.jsonl"
+    dataset.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    report = await run_eval(
+        eval_settings,
+        dataset_path=dataset,
+        config_path=V2_X2,
+        mode=CacheMode.READ_WRITE,
+        split=None,
+        out_dir=tmp_path / "results",
+        dump=False,
+        provider=routed(),
+    )
+    assert report.retrieval is not None
+    assert report.retrieval.n == 2
+    assert report.retrieval.recall_at_k["1"] == 0.5
+    assert report.retrieval.mrr == 0.5
+
+
+def test_bootstrap_ci_uses_point_estimate_labels() -> None:
+    """Lớp chỉ có một mục, đoán đúng: mẫu bootstrap thiếu lớp đó không bị tính F1 = 0."""
+    gold = ["SUPPORTED", "SUPPORTED", "SUPPORTED", "CONTRADICTED"]
+    metrics = _classification(gold, list(gold), [status.value for status in ClaimStatus])
+    assert metrics.macro_f1 == 1.0
+    assert metrics.macro_f1_ci == (1.0, 1.0)
 
 
 async def test_replay_mode_no_provider_calls_same_metrics(

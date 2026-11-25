@@ -44,6 +44,9 @@ Metadata cache (S3) trên DB đánh giá không có TTL, nên kết quả không
 
 `benchmark/configs/*.yaml` ghi đè `RunConfig` (mặc định lấy từ `Settings` như một lần chạy thật);
 khóa lạ bị từ chối. Bảng (`models`, `effort`, `limits`, …) chỉ ghi đè khóa được nêu.
+Mọi cấu hình ghi rõ `limits.max_cost_usd`; `limits.max_claims` luôn bằng số claim được nhập (bộ dữ
+liệu không bao giờ bị cắt bởi giới hạn của sản phẩm). Cặp bị dừng vì hạn mức chi phí hoặc lỗi được
+đếm trong `missing_count` và cảnh báo của lần chạy (ví dụ `COST_LIMIT_REACHED`) nằm trong `warnings`.
 
 | Tệp | Biến thể |
 |---|---|
@@ -62,7 +65,8 @@ liệu thật đặt trong `benchmark/datasets/` (không commit).
 
 ## Kết quả
 
-`benchmark/results/<YYYY-MM-DD>-<cấu hình>/` (D5: `<YYYY-MM-DD>-refs-<tập>/`), không commit:
+`benchmark/results/<YYYY-MM-DD>-<cấu hình>[-<split>]/` (D5: `<YYYY-MM-DD>-refs-<tập>/`), không
+commit; thư mục đã có thì thêm `-2`, `-3`, … (không bao giờ ghi đè):
 
 - `report.json`, `report.md`: Macro-F1 (kèm khoảng tin cậy bootstrap 1000 lần, seed 0), F1 từng
   lớp, ma trận nhầm lẫn, Recall@k/MRR khi có `evidence_spans`, tỷ lệ quote bị loại, chi phí và độ
