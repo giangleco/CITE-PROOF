@@ -109,7 +109,7 @@ Trạng thái: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `IN_REVIEW`, `COMPLETED`
 | T-701 | Chạy thực nghiệm chính | V0–V3 × X1/X2 × abstract/toàn văn trên tập test | P0 | T-506, T-E06 | NOT_STARTED | Bảng kết quả kèm khoảng tin cậy |
 | T-702 | Ablation và phân tích lỗi | Theo `13` §B.6 | P0 | T-701 | NOT_STARTED | Phân loại lỗi có ví dụ |
 | T-703 | Chi phí và độ trễ | Từ `llm_calls` | P0 | T-701 | NOT_STARTED | Bảng trade-off chất lượng–chi phí–độ trễ |
-| T-704 | Agent A2 Evidence Investigator | `source_outline`, `source_search`, `source_read`, `submit_verdict`; V4 và `V2+A2` (`07a` §4.5.3) | P1 | T-406, T-503 | NOT_STARTED | Chạy được V4 và `V2+A2` trên tập dev; có chỉ số ở `13` §B.1 |
+| T-704 | Agent A2 Evidence Investigator | `source_outline`, `source_search`, `source_read`, `submit_verdict`; V4 và `V2+A2` (`07a` §4.5.3). Đã có (nhánh `feat/core-pipeline`): công cụ khóa vào `source_file_id` của cặp (`chunk_N`, `sec_N` theo phiên, tìm lexical trong nguồn), kiểm tra khi nộp `UNKNOWN_CHUNK_ID`/`CHUNK_NOT_READ`/`QUOTE_NOT_IN_CHUNK`/`EVIDENCE_REQUIRED` rồi `apply_rules` chỉ trên chunk đã đọc; V4 (abstract → như V1; agent không nộp → `PROCESSING_ERROR` gắn cờ), `V2+A2` (dòng `V2` + dòng cuối có `escalated_from`; A2 lỗi → giữ W5, gắn cờ); admin chọn được V4, `V2+A2`. Còn: chạy trên tập dev và chỉ số `13` §B.1 (chờ T-506/T-E02). | P1 | T-406, T-503 | IN_PROGRESS | Chạy được V4 và `V2+A2` trên tập dev; có chỉ số ở `13` §B.1. Dev-set run and metrics pending T-506/T-E02 |
 | T-705 | Quyết định chế độ leo thang | So sánh `V2+A2` với V2/V3 về chất lượng và chi phí; chọn cấu hình mặc định | P1 | T-704, T-701 | NOT_STARTED | Quyết định ghi vào Decision Log; cập nhật `04` §4.5.4 (bỏ hoặc giữ TK-13) |
 
 ## M8 — Cải tiến

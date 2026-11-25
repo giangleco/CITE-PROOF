@@ -20,6 +20,8 @@ __all__ = [
     "RefMeta",
     "build_judge_prompt",
     "judge_task",
+    "language_name",
+    "reference_block",
     "render_chunks",
 ]
 
@@ -45,11 +47,16 @@ class JudgeInput:
     explanation_language: ExplanationLanguage
 
 
+def language_name(language: ExplanationLanguage) -> str:
+    """Tên tiếng Anh của ngôn ngữ giải thích cho lời nhắc cuối prompt."""
+    return _LANGUAGE_NAMES[language]
+
+
 def judge_task(*, closed_book: bool) -> LLMTask:
     return LLMTask.VERDICT_JUDGE_CLOSED_BOOK if closed_book else LLMTask.VERDICT_JUDGE
 
 
-def _reference_block(ref: RefMeta, content_level: ContentLevelUsed) -> str:
+def reference_block(ref: RefMeta, content_level: ContentLevelUsed) -> str:
     lines = [
         f"Title: {ref.title or 'unknown'}",
         f"Authors: {', '.join(ref.authors) if ref.authors else 'unknown'}",
@@ -88,10 +95,10 @@ def build_judge_prompt(
     if closed_book and inp.chunks:
         raise ValueError("prompt closed-book không nhận chunk")
     variables = {
-        "reference": _reference_block(inp.ref, inp.content_level),
+        "reference": reference_block(inp.ref, inp.content_level),
         "claim": render_data_block("claim", inp.claim_text, attrs={"lang": inp.claim_language}),
         "context": render_data_block("context", inp.context_text),
-        "language": _LANGUAGE_NAMES[inp.explanation_language],
+        "language": language_name(inp.explanation_language),
     }
     if not closed_book:
         variables["chunks"] = render_chunks(inp.chunks)

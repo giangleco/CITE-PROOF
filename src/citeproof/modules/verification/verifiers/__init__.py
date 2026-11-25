@@ -1,4 +1,4 @@
-"""Verifier của S8 theo biến thể (spec §7.8). V4 và V2+A2 (Task 26) thêm sau."""
+"""Verifier của S8 theo biến thể (spec §7.8, §9)."""
 
 from citeproof.core.enums import Verifier
 from citeproof.core.errors import InternalError
@@ -7,15 +7,19 @@ from citeproof.modules.verification.verifiers.base import (
     VerificationContext,
     VerificationOutcome,
 )
+from citeproof.modules.verification.verifiers.escalation import EscalatingVerifier
 from citeproof.modules.verification.verifiers.v0 import ClosedBookVerifier
 from citeproof.modules.verification.verifiers.v1 import AbstractVerifier
 from citeproof.modules.verification.verifiers.v2 import RagVerifier
 from citeproof.modules.verification.verifiers.v3 import MultiStepVerifier
+from citeproof.modules.verification.verifiers.v4_agentic import AgenticVerifier
 from citeproof.pipeline.deps import PipelineDeps
 
 __all__ = [
     "AbstractVerifier",
+    "AgenticVerifier",
     "ClosedBookVerifier",
+    "EscalatingVerifier",
     "MultiStepVerifier",
     "PairVerifier",
     "RagVerifier",
@@ -34,4 +38,8 @@ def make_verifier(variant: Verifier, deps: PipelineDeps) -> PairVerifier:
         return RagVerifier(deps)
     if variant is Verifier.V3:
         return MultiStepVerifier(deps)
+    if variant is Verifier.V4:
+        return AgenticVerifier(deps)
+    if variant is Verifier.V2_A2:
+        return EscalatingVerifier(deps)
     raise InternalError(f"Biến thể {variant.value} chưa có verifier")

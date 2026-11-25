@@ -1,0 +1,24 @@
+# Tool descriptions for A2 (Evidence Investigator), `07a` §4.6.2 with "hybrid keyword +
+# semantic" changed to "keyword" (search is lexical only).
+# Bump the catalog version (RunConfig.tool_catalogs["source"]) whenever a description changes.
+source_outline: >
+  List the structure of the cited source you are investigating: title, content
+  level (FULL_TEXT or ABSTRACT), and sections with section_id, heading, page range
+  and number of chunks. Call it first to decide where the claim is likely
+  discussed (e.g. Experiments for numeric results, Related Work for background).
+source_search: >
+  Search inside the cited source only (keyword). Returns up to
+  k chunks with chunk_id, section, page, region (BODY/TABLE/FIGURE) and a 240-
+  character preview. Previews are NOT enough to cite: read a chunk with
+  source_read before using it as evidence. Rephrase and search again if results
+  are off-topic; use the source's language and its terminology.
+source_read: >
+  Return the full text of 1–3 chunks of the cited source, with page, section and
+  region. Set neighbors=1 to also get the chunk before and after each one (useful
+  when a sentence is cut). Only chunks you have read with this tool can be cited
+  in submit_verdict. Response is capped at about 1,500 tokens.
+submit_verdict: >
+  Submit your final verdict for this claim and end the task. Every evidence item
+  names a chunk you have read with source_read and copies its quote verbatim from
+  that chunk, in the source's original language. When what you read does not
+  settle the claim, answer UNVERIFIABLE instead of guessing.

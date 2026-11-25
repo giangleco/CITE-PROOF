@@ -10,6 +10,7 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
 from citeproof.core.settings import Settings
+from citeproof.services.documents import ADMIN_VARIANTS
 from citeproof.web import labels
 from citeproof.web.deps import CSRF_COOKIE, CurrentUser, anonymous_csrf_token
 
@@ -17,6 +18,8 @@ TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 templates.env.globals["labels"] = labels
+# Biến thể admin chọn được (tạo bài mới và kiểm tra lại dùng chung một danh sách).
+templates.env.globals["admin_variants"] = [v.value for v in ADMIN_VARIANTS]
 
 
 def highlight_claim(sentence: str, span: str, marker: str) -> Markup:

@@ -185,6 +185,7 @@ class VerifyStage:
             call_ctx=call_ctx,
             llm_budget=gate.allow,
             lease=ctx.lease,
+            is_last_attempt=ctx.is_last_attempt,
         )
         try:
             return await verifier.verify(vc)

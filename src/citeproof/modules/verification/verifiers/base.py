@@ -56,6 +56,7 @@ __all__ = [
     "guarded",
     "load_chunks",
     "source_chunk_ids",
+    "title_mismatch",
 ]
 
 # Kết quả tất định (không gọi LLM) ghi `model` và `prompt_version` là "none".
@@ -75,6 +76,8 @@ class VerificationContext:
     llm_budget: Callable[[], Awaitable[bool]] | None = None
     # Lease của job S8, cho verifier phải ghi DB giữa chừng (V3 ghi `retrieval_results`).
     lease: ClaimedJob | None = None
+    # Lần thử cuối của job S8: A2 coi `RetryableError` là lỗi agent thay vì ném lại.
+    is_last_attempt: bool = False
 
 
 @dataclass(frozen=True)
@@ -162,7 +165,7 @@ def _content_level(source: SourceRef) -> ContentLevelUsed:
     return ContentLevelUsed.ABSTRACT
 
 
-def _title_mismatch(source: SourceRef | None) -> bool:
+def title_mismatch(source: SourceRef | None) -> bool:
     return (
         source is not None
         and source.origin is SourceOrigin.USER_UPLOAD
@@ -217,7 +220,7 @@ class LLMVerifier:
             RuleContext(
                 content_level=content_level,
                 verifier=self.variant,
-                title_mismatch=_title_mismatch(source),
+                title_mismatch=title_mismatch(source),
                 language=language,
             ),
         )
