@@ -35,20 +35,26 @@ async def entry_works(
     stmt = (
         select(ReferenceCheck.reference_entry_id, ReferenceCheck.work_id, ReferenceCheck.run_id)
         .join(ReferenceEntry, ReferenceEntry.id == ReferenceCheck.reference_entry_id)
-        .where(ReferenceCheck.run_id.in_(run_ids), ReferenceCheck.work_id.is_not(None))
+        .where(ReferenceCheck.run_id.in_(run_ids))
         .order_by(ReferenceEntry.order_index, ReferenceEntry.id)
     )
     if reference_entry_id is not None:
         stmt = stmt.where(ReferenceCheck.reference_entry_id == reference_entry_id)
     rows = (await session.execute(stmt)).all()
-    chosen: dict[UUID, tuple[UUID, UUID]] = {}
+    chosen: dict[UUID, tuple[UUID, UUID | None]] = {}
     for entry_id, work_id, run_id in rows:
-        if work_id is None or (scoped and not info.in_scope(entry_id)):
+        if scoped and not info.in_scope(entry_id):
             continue
+        # Dòng của lần chạy này thắng dòng của lần chạy cha kể cả khi `work_id` của nó là NULL
+        # (tra lại không thấy nữa); chỉ sau đó mới bỏ reference không có work.
         if entry_id not in chosen or run_id == info.run_id:
             chosen[entry_id] = (run_id, work_id)
     order = list(dict.fromkeys(entry_id for entry_id, _, _ in rows))
-    return [(entry_id, chosen[entry_id][1]) for entry_id in order if entry_id in chosen]
+    return [
+        (entry_id, work_id)
+        for entry_id in order
+        if entry_id in chosen and (work_id := chosen[entry_id][1]) is not None
+    ]
 
 
 async def run_work_ids(session: AsyncSession, info: RunInfo) -> list[UUID]:

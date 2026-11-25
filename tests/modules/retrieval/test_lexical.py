@@ -26,6 +26,11 @@ def test_build_tsquery_dedupes_in_order_and_caps_terms() -> None:
     assert query is not None and query.count("|") == 31
 
 
+def test_build_tsquery_decimal_token() -> None:
+    assert build_tsquery("đạt 95,7% và 3.14") == "'đạt' | '95.7' | '95' | '3.14' | '14'"
+    assert build_tsquery("95.7 95,7") == "'95.7' | '95'"
+
+
 def test_build_tsquery_empty() -> None:
     assert build_tsquery("the of và của") is None
     assert build_tsquery("a b c") is None
@@ -78,3 +83,18 @@ async def test_search_section_filter(session_factory: SessionFactory, clean_db: 
         unknown = await search_chunks(session, uuid.uuid4(), "'encoder'", 5)
     assert [h.chunk_index for h in hits] == [1]
     assert unknown == []
+
+
+@pytest.mark.db
+@pytest.mark.parametrize("claim", ["accuracy đạt 95,7%", "accuracy reaches 95.7"])
+async def test_search_finds_decimal(
+    session_factory: SessionFactory, clean_db: None, claim: str
+) -> None:
+    source_id = await add_source(
+        session_factory, ["unrelated words here", "the score was 95.7% overall"]
+    )
+    query = build_tsquery(claim.replace("accuracy", ""))
+    assert query is not None
+    async with session_factory() as session:
+        hits = await search_chunks(session, source_id, query, 5)
+    assert [h.chunk_index for h in hits] == [1]

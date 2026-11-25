@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from citeproof.core.enums import ContentLevel, SourceOrigin, StageName
 from citeproof.db.models import ReferenceCheck, VerificationRun
 from citeproof.modules.retrieval.pairs import choose_sources, load_pairs
+from citeproof.modules.sources.selection import run_work_ids
 from citeproof.pipeline.config import RunScope, load_run_info
 from citeproof.pipeline.runs import create_run
 from tests.modules.retrieval.helpers import ClaimSpec, add_claims, add_source
@@ -164,3 +165,38 @@ async def test_choose_sources_uses_parent_run_work(
         own = await choose_sources(s, child, entry)
     assert choice.full_text is not None and choice.full_text.source_file_id == open_full
     assert own.full_text is None
+
+
+@pytest.mark.db
+async def test_own_null_work_overrides_parent_work(
+    session_factory: SessionFactory, clean_db: None
+) -> None:
+    # Lần chạy con tra lại không thấy work nữa (work_id NULL): không dùng work cũ của lần chạy cha.
+    work_id = await _work(session_factory, "Paper One")
+    user, parent_id = await _cite(session_factory, [work_id])
+    [entry] = await _entries(session_factory, parent_id)
+    await add_source(session_factory, ["open text"], work_id=work_id)
+    async with session_factory() as s:
+        parent = await load_run_info(s, parent_id)
+        child_id = await create_run(
+            s, document_id=parent.document_id, user_id=user.id, config={"variant": "V2"}
+        )
+        await s.execute(
+            update(VerificationRun)
+            .where(VerificationRun.id == child_id)
+            .values(parent_run_id=parent_id)
+        )
+        s.add(
+            ReferenceCheck(
+                run_id=child_id,
+                reference_entry_id=entry,
+                status="NOT_FOUND_IN_SEARCHED_SOURCES",
+                work_id=None,
+                sources_searched=["crossref"],
+            )
+        )
+        await s.commit()
+        child = await load_run_info(s, child_id)
+        choice = await choose_sources(s, child, entry)
+        assert await run_work_ids(s, child) == []
+    assert (choice.full_text, choice.abstract) == (None, None)

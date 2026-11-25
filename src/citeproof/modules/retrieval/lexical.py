@@ -18,6 +18,7 @@ from citeproof.db.models import SourceChunk
 __all__ = ["STOPWORDS", "LexicalHit", "build_tsquery", "search_chunks"]
 
 _TOKEN = re.compile(r"\w+")
+_TOKEN_OR_DECIMAL = re.compile(r"(?P<decimal>\d+[.,]\d+)|\w+")
 
 _EN = (
     "a an and are as at be been being but by can could did do does for from had has have "
@@ -36,10 +37,27 @@ STOPWORDS: frozenset[str] = frozenset(
 )
 
 
+def _tokens(text: str) -> list[str]:
+    """Token `\\w+` theo thứ tự; mỗi số thập phân thêm một token `95.7` (dấu `,` đổi thành `.`).
+
+    Parser `simple` của PostgreSQL lập chỉ mục `95.7` thành một token, nên token `\\w+` (`95`, `7`)
+    một mình không bao giờ khớp số thập phân.
+    """
+    out: list[str] = []
+    for match in _TOKEN_OR_DECIMAL.finditer(unicodedata.normalize("NFC", text).lower()):
+        word = match.group()
+        if match.group("decimal"):
+            out.append(word.replace(",", "."))
+            out.extend(_TOKEN.findall(word))
+        else:
+            out.append(word)
+    return out
+
+
 def build_tsquery(text: str, *, max_terms: int = 32) -> str | None:
     """Token của `text` (NFC, chữ thường, ≥ 2 ký tự, không stopword) nối OR; None nếu rỗng."""
     seen: dict[str, None] = {}
-    for token in _TOKEN.findall(unicodedata.normalize("NFC", text).lower()):
+    for token in _tokens(text):
         if len(token) >= 2 and token not in STOPWORDS:
             seen.setdefault(token)
         if len(seen) >= max_terms:

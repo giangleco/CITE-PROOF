@@ -201,7 +201,10 @@ async def test_retrieval_scoped_to_source_file(
 
 @pytest.mark.db
 async def test_results_written_once_on_resume(
-    session_factory: SessionFactory, clean_db: None, settings: Settings
+    session_factory: SessionFactory,
+    clean_db: None,
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Claim A xong ở lần thử 1; claim B gặp lỗi tạm thời. Lần thử 2 không gọi lại W3 cho A.
     run_id, *_ = await _setup(
@@ -211,6 +214,14 @@ async def test_results_written_once_on_resume(
             ("Residual models được huấn luyện ổn định", "vi"),
         ],
     )
+    retrieved: list[uuid.UUID] = []
+    original_retrieve = Retriever.retrieve
+
+    async def spy(self: Retriever, session: AsyncSession, **kwargs: Any) -> Any:
+        retrieved.append(kwargs["pair"].claim_id)
+        return await original_retrieve(self, session, **kwargs)
+
+    monkeypatch.setattr(Retriever, "retrieve", spy)
     provider = ScriptedProvider(
         [
             _w3("the encoder accuracy reaches 95.7%"),
@@ -232,6 +243,10 @@ async def test_results_written_once_on_resume(
     assert len(provider.requests) == 3
     rows = await _rows(session_factory, run_id)
     assert {r.query_variant for r in rows} == {"original", "translated"}
+    # Claim A (đã ghi ở lần thử 1) không được truy xuất lại; claim B chạy hai lần.
+    claim_a, claim_b = sorted({r.claim_id for r in rows}, key=lambda c: retrieved.index(c))
+    assert retrieved.count(claim_a) == 1
+    assert retrieved.count(claim_b) == 2
     keys = [(r.claim_id, r.source_chunk_id, r.query_variant) for r in rows]
     assert len(keys) == len(set(keys))
     async with session_factory() as s:
