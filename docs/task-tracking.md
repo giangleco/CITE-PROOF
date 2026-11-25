@@ -82,7 +82,7 @@ Trạng thái: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `IN_REVIEW`, `COMPLETED`
 
 | ID | Task | Mô tả | Ưu tiên | Phụ thuộc | Trạng thái | Acceptance criteria |
 |---|---|---|---|---|---|---|
-| T-501 | Truy xuất bằng chứng | Hybrid BM25 + vector tìm chính xác trong một nguồn; chế độ X1, X2; ghi `retrieval_results` | P0 | T-405 | NOT_STARTED | Recall@k đo được trên tập dev; kết quả tất định |
+| T-501 | Truy xuất bằng chứng | Tìm chính xác trong một nguồn; chế độ X1, X2; ghi `retrieval_results`. Đã có (nhánh `feat/core-pipeline`): S7 lexical v1 (ADR-007): tsquery từ claim (bỏ stopword vi/en, tối đa 32 từ, nối OR), `ts_rank_cd` trên `tsv` chỉ trong `source_file_id` đã chọn, top-k mỗi biến thể rồi RRF (k=60); biến thể `original` và `translated` (W3 `claim.translate` khi X2, có LLM, claim không phải tiếng Anh; bản dịch làm rơi số bị bỏ); `score_vector` NULL. Chọn nguồn: tệp tải lên của chính người dùng, rồi bản mở toàn văn của work (của lần chạy hoặc lần chạy cha), rồi abstract. Ghi một lần mỗi cặp (tiếp tục sau lỗi không gọi lại W3); V0, V1 không truy xuất. Hạn chế đã biết: số thập phân (`95.7`) tách thành hai token nên không khớp lexical. | P0 | T-405 | COMPLETED | Recall@k đo được trên tập dev; kết quả tất định |
 | T-502 | Phán quyết | Prompt, schema `Verdict`, kiểm tra trích dẫn nguyên văn | P0 | T-501 | NOT_STARTED | Không có bằng chứng nào lọt qua mà không khớp nguyên văn |
 | T-503 | Quy tắc trạng thái | Quy tắc abstract, lý do `UNVERIFIABLE`, cờ "nên tự kiểm tra" | P0 | T-502 | NOT_STARTED | Test cho từng quy tắc |
 | T-504 | Biến thể | V0, V1, V2 qua cấu hình; V3 nếu kịp | P0 | T-502 | NOT_STARTED | Chọn biến thể bằng file cấu hình |

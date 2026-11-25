@@ -123,8 +123,8 @@ flowchart TD
 | S3 | `reference_entries` | `reference_checks`, `works`, `agent_runs` | Agent A1 khi leo thang | Tra cứu tuần tự tất định, chạy song song có giới hạn, ngắt mạch theo nguồn, `metadata_cache`; leo thang lên A1 theo `07a` §4.3.4 |
 | S4 | Văn bản, `reference_entries` | `citations`, `citation_links`, `claims` | Có | Span claim phải là chuỗi con của câu gốc |
 | S5 | `works`, file tải lên | `source_files` | Không | Ghi trạng thái truy cập và giấy phép |
-| S6 | `source_files` | `source_chunks` + embedding + tsvector | Embedding | Giữ trang, mục, vị trí ký tự |
-| S7 | `claims`, `source_chunks` | `retrieval_results` | Embedding / dịch (X2) | Hybrid: BM25 (tsvector) + vector tìm chính xác trong một nguồn, gộp bằng RRF |
+| S6 | `source_files` | `source_chunks` + embedding + tsvector | Embedding (v1: không, ADR-007) | Giữ trang, mục, vị trí ký tự |
+| S7 | `claims`, `source_chunks` | `retrieval_results` | Embedding / dịch (X2) | Lexical v1 (ADR-007): `ts_rank_cd` trên `tsv` trong một nguồn, các biến thể truy vấn (gốc, bản dịch W3 khi X2) gộp bằng RRF; vector khi xét lại ADR-007 |
 | S8 | Claim + chunk ứng viên | `claim_verifications`, `evidence`, `agent_runs` (V4) | Có | Kiểm soát ở §4.6; worker và agent theo `07a` §4.4–§4.5 |
 | S9 | Toàn bộ kết quả | Báo cáo (tạo khi xem, xuất file khi yêu cầu) | Không | — |
 
