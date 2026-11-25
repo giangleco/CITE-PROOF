@@ -42,3 +42,23 @@ def test_quote_with_ellipsis_rejected() -> None:
 
 def test_empty_quote_rejected() -> None:
     assert locate_quote("  \n ", "abc") is None
+
+
+def test_leading_whitespace_runs() -> None:
+    for text, start in (("  abc", 2), ("\n\nabc", 2), (" \n \t abc", 5)):
+        assert locate_quote("abc", text) == (start, start + 3)
+
+
+def test_trailing_whitespace_runs() -> None:
+    for text in ("abc  ", "abc\n\n", "abc \n \t "):
+        assert locate_quote("abc", text) == (0, 3)
+    assert locate_quote("abc", "  ") is None
+    assert locate_quote("abc", "") is None
+
+
+def test_mixed_nfd_nfc_quote_exact_offsets() -> None:
+    text = "Dùng Mô hình"
+    quote = unicodedata.normalize("NFD", "Mô ") + "hình"
+    assert quote != "Mô hình"
+    assert locate_quote(quote, text) == (5, 12)
+    assert locate_quote(quote, unicodedata.normalize("NFD", text)) is not None

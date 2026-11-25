@@ -30,7 +30,7 @@ def _normalize_with_map(text: str) -> tuple[str, list[int], list[int]]:
                 out.append(" ")
                 starts.append(s)
                 ends.append(e)
-            elif prev_space:
+            elif prev_space and out:
                 ends[-1] = e
             prev_space = True
             continue
