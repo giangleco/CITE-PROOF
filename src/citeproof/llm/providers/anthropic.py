@@ -2,6 +2,11 @@
 
 Không gửi tham số sampling, `thinking` hay `tool_choice`. Lỗi SDK được đổi sang lỗi
 CiteProof có thông điệp chỉ gồm tên lớp lỗi và mã HTTP, không chứa prompt hay đầu ra.
+
+Lời gọi worker dùng luồng (`messages.stream` rồi `get_final_message()`): W5 (Sonnet, effort
+cao, 16 000 token) có thể chạy lâu hơn timeout của lời gọi không luồng, còn với luồng timeout
+chỉ áp cho khoảng lặng giữa hai sự kiện. Lỗi gửi giữa luồng đến với mã HTTP 200 (yêu cầu đã
+được nhận) và được coi là lỗi tạm thời.
 """
 
 from typing import Literal, cast, get_args
@@ -43,7 +48,8 @@ class AnthropicProvider:
         except anthropic.APIConnectionError as exc:  # gồm cả APITimeoutError
             raise RetryableError(_describe(exc, None)) from exc
         except anthropic.APIStatusError as exc:
-            if exc.status_code >= 500:
+            # < 400: lỗi giữa luồng (ví dụ quá tải) sau khi máy chủ đã trả 200.
+            if exc.status_code >= 500 or exc.status_code < 400:
                 raise RetryableError(_describe(exc, exc.status_code)) from exc
             raise ExternalServiceError(_describe(exc, exc.status_code)) from exc
 
@@ -84,7 +90,7 @@ class AnthropicProvider:
             }
             if effort is not None:
                 beta_config["effort"] = effort
-            return await self._client.beta.messages.create(
+            async with self._client.beta.messages.stream(
                 model=request.model,
                 max_tokens=request.max_tokens,
                 system=[
@@ -94,11 +100,12 @@ class AnthropicProvider:
                 output_config=beta_config,
                 betas=[FALLBACK_BETA],
                 fallbacks="default",
-            )
+            ) as beta_stream:
+                return await beta_stream.get_final_message()
         config: OutputConfigParam = {"format": {"type": "json_schema", "schema": schema}}
         if effort is not None:
             config["effort"] = effort
-        return await self._client.messages.create(
+        async with self._client.messages.stream(
             model=request.model,
             max_tokens=request.max_tokens,
             system=[
@@ -106,7 +113,8 @@ class AnthropicProvider:
             ],
             messages=cast("list[MessageParam]", messages),
             output_config=config,
-        )
+        ) as stream:
+            return await stream.get_final_message()
 
 
 def _checked_effort(effort: str | None) -> Effort | None:

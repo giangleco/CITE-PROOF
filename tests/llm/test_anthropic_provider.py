@@ -52,19 +52,43 @@ def payload(
     }
 
 
+class _Stream:
+    """Giả `AsyncMessageStreamManager`: lỗi HTTP nổ khi mở luồng, lỗi giữa luồng khi đọc."""
+
+    def __init__(self, endpoint: "_Endpoint") -> None:
+        self._endpoint = endpoint
+
+    async def __aenter__(self) -> "_Stream":
+        if isinstance(self._endpoint.result, BaseException):
+            raise self._endpoint.result
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+    async def get_final_message(self) -> Any:
+        if self._endpoint.mid_stream_error is not None:
+            raise self._endpoint.mid_stream_error
+        return self._endpoint.parse(self._endpoint.result)
+
+
 class _Endpoint:
-    """Giả `messages.create`: ghi kwargs, trả Message dựng từ payload hoặc ném lỗi."""
+    """Giả `messages`: ghi kwargs của `stream` (và `create` riêng, để thấy không dùng tới)."""
 
     def __init__(self, parse: Callable[[Any], Any], result: dict[str, Any] | BaseException) -> None:
-        self._parse = parse
-        self._result = result
+        self.parse = parse
+        self.result = result
+        self.mid_stream_error: BaseException | None = None
         self.calls: list[dict[str, Any]] = []
+        self.create_calls: list[dict[str, Any]] = []
+
+    def stream(self, **kwargs: Any) -> _Stream:
+        self.calls.append(kwargs)
+        return _Stream(self)
 
     async def create(self, **kwargs: Any) -> Any:
-        self.calls.append(kwargs)
-        if isinstance(self._result, BaseException):
-            raise self._result
-        return self._parse(self._result)
+        self.create_calls.append(kwargs)
+        raise AssertionError("worker calls must stream")
 
 
 class StubSDK:
@@ -116,6 +140,33 @@ async def test_request_shape_structured_output() -> None:
     assert kwargs["messages"] == [{"role": "user", "content": PROMPT}]
     assert not (FORBIDDEN & kwargs.keys())
     assert "fallbacks" not in kwargs and "betas" not in kwargs
+
+
+async def test_worker_calls_stream_and_read_final_message() -> None:
+    """W5 (Sonnet, effort high, 16 000 token) không được hết giờ như lời gọi không luồng."""
+    for model in ("claude-haiku-5-5", "claude-sonnet-5-5"):
+        provider, stub = make(payload(model=model))
+        response = await provider.complete(request(model, "high"))
+        assert response.text == '{"a":1}'
+        assert stub.messages.create_calls == [] and stub.beta.messages.create_calls == []
+        assert len(stub.messages.calls) + len(stub.beta.messages.calls) == 1
+
+
+def _mid_stream_error() -> anthropic.APIStatusError:
+    req = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+    body = {"type": "error", "error": {"type": "overloaded_error", "message": PROMPT}}
+    return anthropic.APIStatusError(
+        f"{body}", response=httpx2.Response(200, request=req), body=body
+    )
+
+
+async def test_mid_stream_error_maps_to_retryable() -> None:
+    provider, stub = make(payload())
+    stub.messages.mid_stream_error = _mid_stream_error()
+    with pytest.raises(RetryableError) as info:
+        await provider.complete(request())
+    assert str(info.value) == "anthropic APIStatusError status=200"
+    assert PROMPT not in str(info.value)
 
 
 async def test_effort_omitted_when_none() -> None:

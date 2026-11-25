@@ -8,9 +8,9 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from citeproof.core.enums import RunStatus, StageName
+from citeproof.core.enums import RunStatus, StageName, UnverifiableReason
 from citeproof.core.settings import Settings
-from citeproof.db.models import Document, VerificationRun
+from citeproof.db.models import ClaimVerification, Document, VerificationRun
 from citeproof.modules.citations.stage import CitationsStage
 from citeproof.modules.documents.stage import ParseStage
 from citeproof.modules.references.stage_check import CheckReferencesStage
@@ -18,6 +18,7 @@ from citeproof.modules.references.stage_extract import ExtractReferencesStage
 from citeproof.modules.retrieval.stage import RetrieveStage
 from citeproof.modules.sources.stage_fetch import FetchSourcesStage
 from citeproof.modules.sources.stage_index import IndexSourcesStage
+from citeproof.modules.verification.stage import VerifyStage
 from citeproof.pipeline.demo import DemoStage
 from citeproof.pipeline.registry import build_registry
 from citeproof.pipeline.stages import NoopStage
@@ -48,7 +49,8 @@ def test_build_registry_wraps_demo_only_in_local(tmp_path: Path) -> None:
         assert isinstance(other.get(StageName.S5), FetchSourcesStage)
         assert isinstance(other.get(StageName.S6), IndexSourcesStage)
         assert isinstance(other.get(StageName.S7), RetrieveStage)
-        assert isinstance(other.get(StageName.S8), NoopStage)
+        assert isinstance(other.get(StageName.S8), VerifyStage)
+        assert isinstance(other.get(StageName.S9), NoopStage)
 
 
 @pytest.mark.parametrize("env", ["local", "pilot"])
@@ -83,5 +85,18 @@ async def test_built_registry_completes_run(
             select(VerificationRun.status).where(VerificationRun.id == run_id)
         )
         parsed_key = await session.scalar(select(Document.parsed_key).where(Document.id == doc.id))
+        reasons = (
+            (
+                await session.execute(
+                    select(ClaimVerification.unverifiable_reason).where(
+                        ClaimVerification.run_id == run_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    # S8 thật: tài liệu tham khảo chưa tìm thấy, không gọi LLM.
+    assert reasons == [UnverifiableReason.REFERENCE_NOT_FOUND.value]
     assert status == RunStatus.COMPLETED_WITH_WARNINGS.value  # S4: LLM_NOT_CONFIGURED
     assert parsed_key is not None

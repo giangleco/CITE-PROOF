@@ -1,15 +1,25 @@
-"""Văn bản giải thích tất định cho người dùng (vi/en). Không dùng từ cấm (`FORBIDDEN_WORDS`)."""
+"""Văn bản giải thích tất định cho người dùng (vi/en). Không dùng từ cấm (`FORBIDDEN_WORDS`).
+
+`FORBIDDEN_WORDS` chép từ `web.labels` (test giữ hai bản trùng nhau) để worker không phải nạp
+tầng web. Giải thích của LLM chứa từ cấm được thay bằng văn bản tất định (`safe_texts`).
+"""
 
 from typing import Literal
 
-from citeproof.core.enums import UnverifiableReason
+from citeproof.core.enums import ClaimStatus, UnverifiableReason
 
 __all__ = [
+    "FORBIDDEN_WORDS",
     "ExplanationLanguage",
+    "contains_forbidden",
     "deterministic_explanation",
     "downgrade_note",
     "explanation_language",
+    "safe_texts",
+    "status_explanation",
 ]
+
+FORBIDDEN_WORDS = ("bịa đặt", "giả mạo", "không tồn tại", "gian lận", "đạo văn")
 
 ExplanationLanguage = Literal["vi", "en"]
 
@@ -53,6 +63,25 @@ _EXPLANATIONS: dict[UnverifiableReason, dict[ExplanationLanguage, str]] = {
     },
 }
 
+_STATUS_EXPLANATIONS: dict[ClaimStatus, dict[ExplanationLanguage, str]] = {
+    ClaimStatus.SUPPORTED: {
+        "vi": "Nguồn có đoạn nêu rõ điều nhận định này khẳng định; xem trích đoạn bên dưới.",
+        "en": "The source has a passage that states what this claim asserts; see the quote below.",
+    },
+    ClaimStatus.PARTIALLY_SUPPORTED: {
+        "vi": "Nguồn chỉ hỗ trợ một phần nhận định này; xem trích đoạn bên dưới.",
+        "en": "The source supports only part of this claim; see the quote below.",
+    },
+    ClaimStatus.CONTRADICTED: {
+        "vi": "Nguồn có đoạn nói khác với nhận định này; xem trích đoạn bên dưới.",
+        "en": "The source has a passage that differs from this claim; see the quote below.",
+    },
+    ClaimStatus.UNSUPPORTED: {
+        "vi": "Các đoạn đã đọc của nguồn không có nội dung hỗ trợ nhận định này.",
+        "en": "The passages read from the source do not support this claim.",
+    },
+}
+
 _NOTES: dict[str, dict[ExplanationLanguage, str]] = {
     "QUOTE_NOT_VERBATIM": {
         "vi": "Hệ thống đã bỏ các trích đoạn không khớp nguyên văn với nguồn, "
@@ -81,3 +110,39 @@ def deterministic_explanation(reason: UnverifiableReason, language: ExplanationL
 
 def downgrade_note(rule: str, language: ExplanationLanguage) -> str:
     return _NOTES[rule][language]
+
+
+def status_explanation(status: ClaimStatus, language: ExplanationLanguage) -> str:
+    """Giải thích tất định theo trạng thái kết luận (khác `UNVERIFIABLE`)."""
+    return _STATUS_EXPLANATIONS[status][language]
+
+
+def contains_forbidden(text: str | None) -> bool:
+    if not text:
+        return False
+    lowered = text.lower()
+    return any(word in lowered for word in FORBIDDEN_WORDS)
+
+
+def safe_texts(
+    status: ClaimStatus,
+    reason: UnverifiableReason | None,
+    explanation: str,
+    limitations: str | None,
+    language: ExplanationLanguage,
+) -> tuple[str, str | None]:
+    """`(explanation, limitations)` không chứa từ cấm.
+
+    Giải thích chứa từ cấm được thay bằng văn bản tất định của kết quả (theo lý do khi
+    `UNVERIFIABLE`, theo trạng thái khi khác); giới hạn chứa từ cấm bị bỏ.
+    """
+    if contains_forbidden(explanation):
+        if status is ClaimStatus.UNVERIFIABLE:
+            explanation = deterministic_explanation(
+                reason or UnverifiableReason.EVIDENCE_INCONCLUSIVE, language
+            )
+        else:
+            explanation = status_explanation(status, language)
+    if contains_forbidden(limitations):
+        limitations = None
+    return explanation, limitations
