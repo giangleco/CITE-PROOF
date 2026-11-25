@@ -42,7 +42,7 @@ MIME = {
 }
 SAMPLE_CODE = "SAMPLE_DOCUMENT"
 RUN_USAGE = "run"
-ADMIN_VARIANTS = (Verifier.V0, Verifier.V1, Verifier.V2)
+ADMIN_VARIANTS = (Verifier.V0, Verifier.V1, Verifier.V2, Verifier.V3)
 DEFAULT_VARIANT = Verifier.V2
 _ACTIVE = (RunStatus.QUEUED.value, RunStatus.RUNNING.value)
 _CHUNK = 65_536

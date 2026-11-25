@@ -190,6 +190,25 @@ async def test_variant_forced_for_non_admin(
 
 
 @pytest.mark.db
+async def test_admin_can_choose_v3(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    storage = LocalStorage(settings.storage_dir)
+    async with session_factory() as s:
+        user = await _user(s)
+        admin = await _user(s, UserRole.ADMIN, "ad@b.vn")
+        _, r1 = await documents.create_file_document(
+            s, storage, settings, user=user, filename="a.pdf", data=PDF_BYTES, variant=Verifier.V3
+        )
+        _, r2 = await documents.create_file_document(
+            s, storage, settings, user=admin, filename="a.pdf", data=PDF_BYTES, variant=Verifier.V3
+        )
+        runs = {r.id: r.config for r in (await s.execute(select(VerificationRun))).scalars()}
+    assert runs[r1]["variant"] == "V2"
+    assert runs[r2]["variant"] == "V3"
+
+
+@pytest.mark.db
 async def test_demo_kept_only_in_local(
     session_factory: SessionFactory, clean_db: None, settings: Settings
 ) -> None:

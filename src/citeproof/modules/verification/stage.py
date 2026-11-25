@@ -184,6 +184,7 @@ class VerifyStage:
             ref=unit.ref,
             call_ctx=call_ctx,
             llm_budget=gate.allow,
+            lease=ctx.lease,
         )
         try:
             return await verifier.verify(vc)

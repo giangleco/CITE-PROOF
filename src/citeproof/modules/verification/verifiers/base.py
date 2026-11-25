@@ -43,9 +43,11 @@ from citeproof.modules.verification.rules import (
 from citeproof.modules.verification.verdict import Verdict
 from citeproof.pipeline.config import RunInfo
 from citeproof.pipeline.deps import PipelineDeps
+from citeproof.pipeline.jobs import ClaimedJob
 
 __all__ = [
     "NO_MODEL",
+    "SCHEMA_VERSION",
     "LLMVerifier",
     "PairVerifier",
     "VerificationContext",
@@ -71,6 +73,8 @@ class VerificationContext:
     # Hạn mức chi phí (QĐ-32): gọi ngay trước mỗi lời gọi W5; False → `PROCESSING_ERROR`.
     # Kết quả tất định (không gọi LLM) không qua hạn mức.
     llm_budget: Callable[[], Awaitable[bool]] | None = None
+    # Lease của job S8, cho verifier phải ghi DB giữa chừng (V3 ghi `retrieval_results`).
+    lease: ClaimedJob | None = None
 
 
 @dataclass(frozen=True)

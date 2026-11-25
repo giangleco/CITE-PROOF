@@ -16,7 +16,7 @@
       {% if current.is_admin %}
       <label class="sr" for="rerun-variant">Biến thể</label>
       <select id="rerun-variant" name="variant" class="btn small">
-        {% for v in ['V0', 'V1', 'V2'] %}<option value="{{ v }}"{% if v == 'V2' %} selected{% endif %}>{{ v }}</option>{% endfor %}
+        {% for v in ['V0', 'V1', 'V2', 'V3'] %}<option value="{{ v }}"{% if v == 'V2' %} selected{% endif %}>{{ v }}</option>{% endfor %}
       </select>
       {% endif %}
       <button class="btn small" type="submit" name="action" value="rerun">Kiểm tra lại</button>

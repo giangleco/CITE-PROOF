@@ -1,9 +1,10 @@
 """S7 — truy xuất bằng chứng trong nguồn đã chọn (spec §7.7, §6.4; T-501, QĐ-24).
 
 Đơn vị là cặp claim-nguồn toàn văn có chunk; cặp đã có `retrieval_results` được bỏ qua nên
-tiếp tục sau lỗi không gọi lại W3 hay ghi trùng. V0 không truy xuất, V1 không truy xuất gì
-(S8 đọc mọi chunk abstract). Mỗi cặp: W3 và truy vấn DB trước, rồi một giao dịch rào lease
-ngắn để ghi. Mọi lỗi ngoài lỗi LLM của W3 (đã được `Retriever` xử lý) làm stage lỗi.
+tiếp tục sau lỗi không gọi lại W3 hay ghi trùng. V0 không truy xuất; V3 truy xuất theo
+từng ý ngay trong S8; V1 không truy xuất gì (S8 đọc mọi chunk abstract). Mỗi cặp: W3 và truy
+vấn DB trước, rồi một giao dịch rào lease ngắn để ghi. Mọi lỗi ngoài lỗi LLM của W3 (đã được
+`Retriever` xử lý) làm stage lỗi.
 """
 
 from dataclasses import dataclass
@@ -24,7 +25,7 @@ from citeproof.pipeline.units import process_units
 
 __all__ = ["RetrieveStage"]
 
-_SKIPPED_VARIANTS = frozenset({Verifier.V0, Verifier.V1})
+_SKIPPED_VARIANTS = frozenset({Verifier.V0, Verifier.V1, Verifier.V3})
 
 
 @dataclass(frozen=True)
