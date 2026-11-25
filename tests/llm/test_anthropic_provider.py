@@ -17,8 +17,9 @@ from citeproof.llm.calls import PgCallLogger
 from citeproof.llm.client import LLMClient
 from citeproof.llm.factory import make_llm_client
 from citeproof.llm.providers.anthropic import AnthropicProvider
+from citeproof.llm.providers.scripted import ScriptedProvider
 from citeproof.llm.schema import strict_output_schema
-from citeproof.llm.types import OutputModel, ProviderRequest
+from citeproof.llm.types import CacheMode, OutputModel, ProviderRequest
 
 SYSTEM = "You are a careful parser."
 PROMPT = "PROMPT-SECRET: Nguyễn Văn A (2020) đã chứng minh điều này."
@@ -344,6 +345,18 @@ def test_make_llm_client_none_without_key(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.delenv("CITEPROOF_ANTHROPIC_API_KEY", raising=False)
     assert make_llm_client(_settings(), async_sessionmaker()) is None
     assert make_llm_client(_settings(anthropic_api_key=""), async_sessionmaker()) is None
+
+
+def test_make_llm_client_uses_given_provider_without_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bộ đánh giá truyền provider (giả hoặc chỉ phát lại): không cần khóa API."""
+    monkeypatch.delenv("CITEPROOF_ANTHROPIC_API_KEY", raising=False)
+    provider = ScriptedProvider([])
+    client = make_llm_client(
+        _settings(), async_sessionmaker(), mode=CacheMode.REPLAY_ONLY, provider=provider
+    )
+    assert isinstance(client, LLMClient)
+    assert client._provider is provider
+    assert client._mode is CacheMode.REPLAY_ONLY
 
 
 def test_make_llm_client_with_key_uses_anthropic_provider() -> None:

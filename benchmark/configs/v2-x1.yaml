@@ -1,0 +1,3 @@
+# V2-X1: lexical retrieval on the original claim only, then W5.
+variant: V2
+cross_lingual: X1

@@ -7,7 +7,7 @@ thêm đúng một lần). Run đã FAILED hoặc CANCELLED không bao giờ b�
 thái. Các hàm không commit: caller quyết định ranh giới giao dịch.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from types import MappingProxyType
 from typing import Any
 from uuid import UUID
@@ -69,19 +69,21 @@ async def create_run(
     return run_id
 
 
-async def create_partial_run(
+async def create_seeded_run(
     session: AsyncSession,
     *,
-    parent_run_id: UUID,
-    user_id: UUID,
     document_id: UUID,
+    user_id: UUID,
     config: dict[str, Any],
     start: StageName,
+    skipped: Collection[StageName],
+    parent_run_id: UUID | None = None,
 ) -> UUID:
-    """Tạo lần chạy con QUEUED: job của stage bỏ qua ghi DONE, rồi đưa `start` vào hàng đợi."""
-    skipped = PARTIAL_SKIPS.get(start)
-    if skipped is None:
-        raise ValueError(f"lần chạy con không bắt đầu được từ {start.value}")
+    """Tạo run QUEUED: job của các stage `skipped` ghi DONE (`{"skipped": true}`), rồi đưa `start`
+    vào hàng đợi. Dùng cho lần chạy con và cho bộ đánh giá (dữ liệu nhập sẵn tới S5, spec §11).
+    """
+    if start in skipped:
+        raise ValueError(f"stage bắt đầu {start.value} không được nằm trong tập bỏ qua")
     run_id: UUID = (
         await session.execute(
             insert(VerificationRun)
@@ -95,22 +97,47 @@ async def create_partial_run(
             .returning(VerificationRun.id)
         )
     ).scalar_one()
-    await session.execute(
-        insert(Job).values(
-            [
-                {
-                    "run_id": run_id,
-                    "stage": stage.value,
-                    "status": JobStatus.DONE.value,
-                    "payload": dict(_SKIPPED_PAYLOAD),
-                    "finished_at": func.now(),
-                }
-                for stage in sorted(skipped)
-            ]
+    if skipped:
+        await session.execute(
+            insert(Job).values(
+                [
+                    {
+                        "run_id": run_id,
+                        "stage": stage.value,
+                        "status": JobStatus.DONE.value,
+                        "payload": dict(_SKIPPED_PAYLOAD),
+                        "finished_at": func.now(),
+                    }
+                    for stage in sorted(skipped)
+                ]
+            )
         )
-    )
     await enqueue(session, run_id, start)
     return run_id
+
+
+async def create_partial_run(
+    session: AsyncSession,
+    *,
+    parent_run_id: UUID,
+    user_id: UUID,
+    document_id: UUID,
+    config: dict[str, Any],
+    start: StageName,
+) -> UUID:
+    """Tạo lần chạy con QUEUED: job của stage bỏ qua ghi DONE, rồi đưa `start` vào hàng đợi."""
+    skipped = PARTIAL_SKIPS.get(start)
+    if skipped is None:
+        raise ValueError(f"lần chạy con không bắt đầu được từ {start.value}")
+    return await create_seeded_run(
+        session,
+        document_id=document_id,
+        user_id=user_id,
+        config=config,
+        start=start,
+        skipped=skipped,
+        parent_run_id=parent_run_id,
+    )
 
 
 async def _lock_run(session: AsyncSession, run_id: UUID) -> Row[tuple[str, list[Any]]] | None:

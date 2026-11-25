@@ -24,7 +24,8 @@ from citeproof.llm.cache import doc_namespace
 from citeproof.llm.client import LLMClient
 from citeproof.llm.factory import make_llm_client
 from citeproof.llm.prompts import PromptLoader
-from citeproof.llm.types import CallContext
+from citeproof.llm.providers.base import LLMProvider
+from citeproof.llm.types import CacheMode, CallContext
 from citeproof.modules.retrieval.embedding import Embedder, NoEmbedder
 from citeproof.pipeline.config import RunInfo
 from citeproof.storage import Storage, make_storage
@@ -66,12 +67,25 @@ class PipelineDeps:
 
 @asynccontextmanager
 async def open_deps(
-    settings: Settings, session_factory: async_sessionmaker[AsyncSession]
+    settings: Settings,
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    cache_mode: CacheMode = CacheMode.READ_WRITE,
+    provider: LLMProvider | None = None,
+    cache_namespace: str | None = None,
+    metadata_ttl: bool = True,
+    transport: httpx.AsyncBaseTransport | None = None,
 ) -> AsyncIterator[PipelineDeps]:
-    """Dựng phụ thuộc thật; đóng client LLM rồi client HTTP khi thoát (kể cả khi lỗi)."""
+    """Dựng phụ thuộc thật; đóng client LLM rồi client HTTP khi thoát (kể cả khi lỗi).
+
+    Tham số từ khóa chỉ bộ đánh giá dùng (spec §11): chế độ cache và namespace `eval:…`, provider
+    thay Anthropic, metadata cache không TTL, `transport` cho mọi client HTTP (test không mạng).
+    """
     async with AsyncExitStack() as stack:
-        http = await stack.enter_async_context(httpx.AsyncClient(timeout=_HTTP_TIMEOUT_S))
-        llm = make_llm_client(settings, session_factory)
+        http = await stack.enter_async_context(
+            httpx.AsyncClient(timeout=_HTTP_TIMEOUT_S, transport=transport)
+        )
+        llm = make_llm_client(settings, session_factory, mode=cache_mode, provider=provider)
         if llm is not None:
             stack.push_async_callback(llm.aclose)
         yield PipelineDeps(
@@ -81,11 +95,14 @@ async def open_deps(
             llm=llm,
             prompts=PromptLoader(PROMPTS_ROOT),
             http=http,
-            safe_http=SafeHttpClient(),
-            source_http=make_source_http(settings),
+            safe_http=SafeHttpClient(transport=transport),
+            source_http=make_source_http(settings, transport=transport),
             source_limits=HostRateLimits(),
+            cache_namespace=cache_namespace,
             grobid=make_grobid_client(settings, http),
-            metadata=make_gateway_factory(settings, http, session_factory),
+            metadata=make_gateway_factory(
+                settings, http, session_factory, ttl_enabled=metadata_ttl
+            ),
         )
 
 

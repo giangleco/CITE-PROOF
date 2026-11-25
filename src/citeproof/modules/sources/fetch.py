@@ -34,7 +34,7 @@ class FetchedFile:
     sha256: str
 
 
-def open_source_key(sha256: str, ext: Literal["pdf", "abstract.json"]) -> str:
+def open_source_key(sha256: str, ext: Literal["pdf", "abstract.json", "txt"]) -> str:
     """Khóa lưu trữ của nội dung mở dùng chung, đặt theo SHA-256 của nội dung."""
     return f"{OPEN_SOURCE_PREFIX}/{sha256}.{ext}"
 

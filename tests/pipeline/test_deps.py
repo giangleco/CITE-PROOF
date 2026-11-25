@@ -57,15 +57,19 @@ class ClosingProvider(ScriptedProvider):
 
 
 def _patch_llm(monkeypatch: pytest.MonkeyPatch) -> ClosingProvider:
-    provider = ClosingProvider()
+    closing = ClosingProvider()
 
     def fake_make_llm_client(
-        settings: Settings, session_factory: object, *, mode: CacheMode = CacheMode.READ_WRITE
+        settings: Settings,
+        session_factory: object,
+        *,
+        mode: CacheMode = CacheMode.READ_WRITE,
+        provider: object = None,
     ) -> LLMClient:
-        return LLMClient(provider, InMemoryCacheStore(), InMemoryCallLogger())
+        return LLMClient(closing, InMemoryCacheStore(), InMemoryCallLogger())
 
     monkeypatch.setattr(deps_module, "make_llm_client", fake_make_llm_client)
-    return provider
+    return closing
 
 
 def test_prompts_root_is_inside_package() -> None:
@@ -246,3 +250,32 @@ async def test_embedder_defaults_to_no_embedder(tmp_path: Path) -> None:
     test_deps = make_test_deps(_settings(tmp_path), async_sessionmaker())
     assert isinstance(test_deps.embedder, NoEmbedder)
     await test_deps.http.aclose()
+
+
+async def test_open_deps_evaluation_options(tmp_path: Path) -> None:
+    """Bộ đánh giá: provider thay Anthropic (không cần khóa), namespace `eval:`, metadata không
+    TTL và `transport` cho client HTTP dùng chung (spec §11, preflight F11, F17)."""
+    provider = ScriptedProvider([])
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.host)
+        return httpx.Response(204)
+
+    async with open_deps(
+        _settings(tmp_path),
+        async_sessionmaker[AsyncSession](),
+        cache_mode=CacheMode.REPLAY_ONLY,
+        provider=provider,
+        cache_namespace="eval:mini@abc",
+        metadata_ttl=False,
+        transport=httpx.MockTransport(handler),
+    ) as deps:
+        assert deps.llm is not None
+        assert deps.cache_namespace == "eval:mini@abc"
+        cache = deps.metadata().cache if deps.metadata is not None else None
+        assert isinstance(cache, MetadataCache)
+        assert cache.ok_ttl is None and cache.not_found_ttl is None
+        await deps.http.get("https://api.crossref.org/works")
+    assert seen == ["api.crossref.org"]
+    assert call_context(deps, _info(), StageName.S8).namespace == "eval:mini@abc"

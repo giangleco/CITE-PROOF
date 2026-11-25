@@ -41,7 +41,12 @@ from citeproof.llm.providers.base import LLMProvider
 from citeproof.modules.reports.merge import merge_parent_results
 from citeproof.pipeline.config import RunConfig, RunScope, load_run_info
 from citeproof.pipeline.registry import build_registry
-from citeproof.pipeline.runs import PARTIAL_SKIPS, create_partial_run, resume_run
+from citeproof.pipeline.runs import (
+    PARTIAL_SKIPS,
+    create_partial_run,
+    create_seeded_run,
+    resume_run,
+)
 from citeproof.pipeline.stages import PipelineStage, StageContext, StageRegistry, StageResult
 from citeproof.services import reverify, sources
 from citeproof.services.report import list_claims, list_references
@@ -436,3 +441,20 @@ async def test_lookup_retry_rechecks_only_failed_refs(
             assert statuses[n] == ReferenceStatus.NOT_FOUND_IN_SEARCHED_SOURCES
         else:
             assert statuses[n] == ReferenceStatus.MATCHED
+
+
+@pytest.mark.db
+async def test_seeded_run_rejects_start_in_skipped(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    async with session_factory() as s:
+        user = await new_user(s)
+        with pytest.raises(ValueError):
+            await create_seeded_run(
+                s,
+                document_id=uuid.uuid4(),
+                user_id=user.id,
+                config={},
+                start=StageName.S6,
+                skipped={StageName.S5, StageName.S6},
+            )

@@ -1,0 +1,3 @@
+Residual connections allow very deep convolutional networks to be trained without degradation. In our experiments, a 152-layer residual network reached a top-5 error of 4.5 percent on the image classification benchmark.
+
+The improvement held for both the validation split and the test split. Training the deepest model took three weeks on eight graphics processors.
