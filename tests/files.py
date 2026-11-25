@@ -28,3 +28,17 @@ def stamped_pdf() -> bytes:
         canvas.showPage()
     canvas.save()
     return buffer.getvalue()
+
+
+def titled_pdf(title: str, *, pages: int = 1, metadata: bool = True) -> bytes:
+    """PDF có chữ tiêu đề ở trang đầu (và tiêu đề trong metadata nếu `metadata`)."""
+    buffer = io.BytesIO()
+    canvas = Canvas(buffer, pagesize=A4, invariant=1)
+    if metadata:
+        canvas.setTitle(title)
+    for number in range(pages):
+        canvas.setFont("Helvetica", 14)
+        canvas.drawString(72, 760, title if number == 0 else f"Trang {number + 1}")
+        canvas.showPage()
+    canvas.save()
+    return buffer.getvalue()

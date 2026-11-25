@@ -4,14 +4,23 @@ import json
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse, Response
 
 from citeproof.core.enums import ClaimStatus, FeedbackVerdict, ReferenceStatus
-from citeproof.core.errors import InputError
+from citeproof.core.errors import CiteProofError, InputError
 from citeproof.schemas.report import Overview
-from citeproof.services import feedback, report
-from citeproof.web.deps import Csrf, CurrentUser, Db, UserDep, is_htmx, rollback_keeping_user
+from citeproof.services import documents, feedback, report, sources
+from citeproof.web.deps import (
+    AppSettings,
+    AppStorage,
+    Csrf,
+    CurrentUser,
+    Db,
+    UserDep,
+    is_htmx,
+    rollback_keeping_user,
+)
 from citeproof.web.rendering import render
 
 router = APIRouter()
@@ -174,13 +183,77 @@ async def claim_sheet(
     )
 
 
-@router.get("/runs/{run_id}/missing")
-async def missing_page(request: Request, db: Db, current: UserDep, run_id: UUID) -> Response:
+async def _missing(
+    request: Request,
+    db: Db,
+    current: CurrentUser,
+    run_id: UUID,
+    *,
+    status: int = 200,
+    error: str | None = None,
+) -> Response:
     overview = await report.get_overview(db, user=current.user, run_id=run_id)
     _, items = await report.list_missing(db, user=current.user, run_id=run_id)
-    return _page(
-        request, current, overview, "missing", "pages/report_missing.html", {"items": items}
+    response = _page(
+        request,
+        current,
+        overview,
+        "missing",
+        "pages/report_missing.html",
+        {"items": items, "upload_error": error},
     )
+    response.status_code = status
+    return response
+
+
+@router.get("/runs/{run_id}/missing")
+async def missing_page(request: Request, db: Db, current: UserDep, run_id: UUID) -> Response:
+    return await _missing(request, db, current, run_id)
+
+
+@router.post("/runs/{run_id}/missing/{reference_entry_id}/upload", dependencies=[Csrf])
+async def upload_source(
+    request: Request,
+    db: Db,
+    storage: AppStorage,
+    settings: AppSettings,
+    current: UserDep,
+    run_id: UUID,
+    reference_entry_id: UUID,
+    file: Annotated[UploadFile | None, File()] = None,
+) -> Response:
+    try:
+        if file is None:
+            raise InputError("Hãy chọn một tệp PDF.", code="EMPTY_FILE")
+        data = await documents.read_upload(file, settings.max_upload_bytes)
+        await sources.upload_source(
+            db,
+            storage,
+            settings,
+            user=current.user,
+            run_id=run_id,
+            reference_entry_id=reference_entry_id,
+            data=data,
+        )
+    except InputError as exc:
+        await rollback_keeping_user(db, current)
+        code = 413 if exc.code == "FILE_TOO_LARGE" else 400
+        return await _missing(request, db, current, run_id, status=code, error=str(exc))
+    except CiteProofError:
+        await rollback_keeping_user(db, current)
+        raise
+    await db.commit()
+    return RedirectResponse(f"/runs/{run_id}/missing", status_code=303)
+
+
+@router.post("/runs/{run_id}/sources/{source_file_id}/discard", dependencies=[Csrf])
+async def discard_source(
+    db: Db, storage: AppStorage, current: UserDep, run_id: UUID, source_file_id: UUID
+) -> Response:
+    await sources.discard_source(
+        db, storage, user=current.user, run_id=run_id, source_file_id=source_file_id
+    )
+    return RedirectResponse(f"/runs/{run_id}/missing", status_code=303)
 
 
 @router.get("/runs/{run_id}/report.md")

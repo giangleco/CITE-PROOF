@@ -1,8 +1,10 @@
 {% extends "base.html" %}
+{% from "partials/ui.html" import csrf, notice %}
 {% block title %}Thiếu toàn văn: {{ header.document_name }} | CiteProof{% endblock %}
 {% block content %}
 {% include "partials/report_head.html" %}
-<p class="lede">Hệ thống chưa lấy được toàn văn mở cho các tài liệu dưới đây. Khi có chức năng tải nguồn lên, bạn sẽ tải PDF của từng tài liệu để đối chiếu các nhận định liên quan; chỉ những nhận định đó được kiểm tra lại.</p>
+<p class="lede">Hệ thống chưa lấy được toàn văn mở cho các tài liệu dưới đây. Bạn có thể tải PDF của từng tài liệu lên để đối chiếu các nhận định liên quan; chỉ những nhận định đó được kiểm tra lại.</p>
+{% if upload_error %}{{ notice(upload_error, "err") }}{% endif %}
 {% if items %}
 <div class="panel">
   <ul class="missing">
@@ -14,9 +16,20 @@
         <p class="small muted m0">{{ item.waiting_claims }} nhận định đang chờ toàn văn</p>
       </div>
       <div class="stack-sm">
-        <label class="sr" for="src-{{ item.ref_index }}">Tải PDF cho tài liệu [{{ item.ref_index }}]</label>
-        <input id="src-{{ item.ref_index }}" type="file" accept=".pdf" disabled>
-        <p class="small muted m0">Tải nguồn lên sẽ có ở bản sau.</p>
+      {% if item.uploaded %}
+        {{ notice(labels.TITLE_MATCH[item.uploaded.title_match], "warn" if item.uploaded.title_match.value == "MISMATCH" else "") }}
+        <form method="post" action="/runs/{{ header.run_id }}/sources/{{ item.uploaded.source_file_id }}/discard">
+          {{ csrf(csrf_token) }}
+          <button class="btn small" type="submit">{{ labels.DISCARD_BUTTON }}</button>
+        </form>
+      {% else %}
+        <form method="post" enctype="multipart/form-data" action="/runs/{{ header.run_id }}/missing/{{ item.reference_entry_id }}/upload">
+          {{ csrf(csrf_token) }}
+          <label class="sr" for="src-{{ item.ref_index }}">Tải PDF cho tài liệu [{{ item.ref_index }}]</label>
+          <input id="src-{{ item.ref_index }}" name="file" type="file" accept=".pdf,application/pdf" required>
+          <button class="btn small primary" type="submit">{{ labels.UPLOAD_BUTTON }}</button>
+        </form>
+      {% endif %}
       </div>
     </li>
   {% endfor %}

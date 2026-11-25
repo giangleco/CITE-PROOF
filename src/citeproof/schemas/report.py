@@ -14,6 +14,7 @@ from citeproof.core.enums import (
     ReferenceStatus,
     RefType,
     RunStatus,
+    TitleMatch,
     UnverifiableReason,
     Verifier,
 )
@@ -130,9 +131,16 @@ class ClaimSheet(_View):
     my_comment: str | None
 
 
+class UploadedView(_View):
+    title_match: TitleMatch
+    source_file_id: UUID
+
+
 class MissingSource(_View):
+    reference_entry_id: UUID
     ref_index: int
     raw_text: str
     waiting_claims: int
     # `NO_ACCESSIBLE_TEXT` hoặc `REFERENCE_NOT_FOUND` (QĐ-31).
     reason: UnverifiableReason
+    uploaded: UploadedView | None = None

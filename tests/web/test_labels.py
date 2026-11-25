@@ -9,6 +9,7 @@ from citeproof.core.enums import (
     RefType,
     RunStatus,
     StageName,
+    TitleMatch,
     UnverifiableReason,
 )
 from citeproof.web import labels
@@ -105,3 +106,13 @@ def test_report_labels_in_design_md() -> None:
     assert labels.UNCITED_REFERENCE == "Không được trích lần nào trong bài."
     for code in ("UNRESOLVED_REF", "UNCITED_REFERENCE"):
         assert f"`{code}` {getattr(labels, code)}" in design, code
+
+
+def test_upload_labels_in_design_md() -> None:
+    design = DESIGN_MD.read_text(encoding="utf-8")
+    assert set(labels.TITLE_MATCH) == set(TitleMatch)
+    for match, text in labels.TITLE_MATCH.items():
+        assert f"`{match.value}` {text}" in design
+        assert not any(word in text.lower() for word in labels.FORBIDDEN_WORDS)
+    assert labels.UPLOAD_BUTTON == "Tải lên" and labels.DISCARD_BUTTON == "Xóa tệp này"
+    assert "`UPLOAD_BUTTON` Tải lên" in design and "`DISCARD_BUTTON` Xóa tệp này" in design

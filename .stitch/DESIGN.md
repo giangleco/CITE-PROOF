@@ -236,6 +236,8 @@ Bảng nhãn này là nguồn duy nhất; mã nguồn sinh nhãn từ đây, tem
 | Phản hồi | `AGREE` Đồng ý; `DISAGREE` Không đồng ý; `UNSURE` Không chắc |
 | Tài liệu của nhận định chưa xác định | `UNRESOLVED_REF` [chưa xác định] |
 | Tài liệu không có trích dẫn | `UNCITED_REFERENCE` Không được trích lần nào trong bài. |
+| Khớp tên bài của tệp tải lên | `MATCH` Tên bài trong tệp khớp với tài liệu tham khảo.; `MISMATCH` Tên bài trong tệp có vẻ không khớp với tài liệu tham khảo. Kiểm tra lại trước khi dùng.; `UNKNOWN` Chưa kiểm tra được tên bài trong tệp. |
+| Nút tải nguồn | `UPLOAD_BUTTON` Tải lên; `DISCARD_BUTTON` Xóa tệp này |
 
 ### 8.6 Cảnh báo khi xử lý
 

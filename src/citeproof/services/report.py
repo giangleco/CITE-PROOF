@@ -59,9 +59,11 @@ from citeproof.schemas.report import (
     RunHeader,
     Tally,
     TodoItem,
+    UploadedView,
     WarningView,
 )
 from citeproof.services.documents import is_sample
+from citeproof.services.sources import uploads_for_document
 from citeproof.web import labels
 
 GENERAL_LIMITATION = (
@@ -428,6 +430,7 @@ async def list_missing(
     rows = (
         await session.execute(
             select(
+                ReferenceEntry.id,
                 ReferenceEntry.order_index,
                 ReferenceEntry.raw_text,
                 func.count(ClaimVerification.id),
@@ -445,14 +448,21 @@ async def list_missing(
             .order_by(ReferenceEntry.order_index)
         )
     ).all()
+    uploads = await uploads_for_document(session, user_id=user.id, document_id=header.document_id)
     return header, [
         MissingSource(
+            reference_entry_id=entry_id,
+            uploaded=(
+                UploadedView(title_match=up.title_match, source_file_id=up.source_file_id)
+                if (up := uploads.get(entry_id))
+                else None
+            ),
             ref_index=index + 1,
             raw_text=raw,
             waiting_claims=int(count),
             reason=UnverifiableReason(str(reason)),  # lọc theo MISSING_REASONS: không NULL
         )
-        for index, raw, count, reason in rows
+        for entry_id, index, raw, count, reason in rows
     ]
 
 

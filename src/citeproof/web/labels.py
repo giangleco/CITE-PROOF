@@ -16,6 +16,7 @@ from citeproof.core.enums import (
     RefType,
     RunStatus,
     StageName,
+    TitleMatch,
     UnverifiableReason,
 )
 
@@ -175,6 +176,15 @@ GENERIC_WARNING = "Có cảnh báo khi xử lý."
 # tài liệu nào; tài liệu tham khảo không có trích dẫn nào trong bài (FR-21).
 UNRESOLVED_REF = "[chưa xác định]"
 UNCITED_REFERENCE = "Không được trích lần nào trong bài."
+TITLE_MATCH: Mapping[TitleMatch, str] = {
+    TitleMatch.MATCH: "Tên bài trong tệp khớp với tài liệu tham khảo.",
+    TitleMatch.MISMATCH: (
+        "Tên bài trong tệp có vẻ không khớp với tài liệu tham khảo. Kiểm tra lại trước khi dùng."
+    ),
+    TitleMatch.UNKNOWN: "Chưa kiểm tra được tên bài trong tệp.",
+}
+UPLOAD_BUTTON = "Tải lên"
+DISCARD_BUTTON = "Xóa tệp này"
 HIDDEN_WARNINGS = frozenset({"SAMPLE_DOCUMENT"})
 
 

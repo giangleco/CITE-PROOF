@@ -144,13 +144,14 @@ async def test_foreign_report_404(
 
 
 @pytest.mark.db
-async def test_missing_tab_upload_disabled(
+async def test_missing_tab_has_upload_forms(
     client: httpx.AsyncClient, session_factory: SessionFactory
 ) -> None:
     run_id = await sample_run(client, session_factory)
     html = (await client.get(f"/runs/{run_id}/missing")).text
     assert "Speech and Language Processing" in html
-    assert "disabled" in html and "Tải nguồn lên sẽ có ở bản sau." in html
+    assert 'enctype="multipart/form-data"' in html and "disabled" not in html
+    assert "Tải lên" in html
 
 
 @pytest.mark.db
