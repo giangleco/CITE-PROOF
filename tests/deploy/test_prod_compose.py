@@ -75,3 +75,13 @@ def test_shell_scripts_parse() -> None:
     for script in SCRIPTS:
         result = subprocess.run(["bash", "-n", str(ROOT / script)], capture_output=True)
         assert result.returncode == 0, (script, result.stderr)
+
+
+def test_restore_waits_for_db_health() -> None:
+    text = (ROOT / "scripts/restore.sh").read_text()
+    assert "up -d --wait db" in text
+
+
+def test_backup_files_are_private() -> None:
+    lines = (ROOT / "scripts/backup.sh").read_text().splitlines()
+    assert "umask 077" in lines

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Khôi phục từ bản sao lưu (chạy trên máy chủ, thư mục gốc repo).
 #   scripts/restore.sh <citeproof.dump> <storage.tar.gz> [citeproof_eval.dump]
+# Bản sao lưu có quyền 600 của root: chạy bằng sudo (hoặc chown tệp trước).
 # Dừng app/worker, nạp lại DB và storage, rồi khởi động lại. Ghi đè dữ liệu hiện tại.
 set -euo pipefail
 
@@ -21,7 +22,7 @@ done
 
 COMPOSE=(docker compose -f docker-compose.prod.yml --env-file .env.production)
 
-"${COMPOSE[@]}" up -d db
+"${COMPOSE[@]}" up -d --wait db
 "${COMPOSE[@]}" stop app worker
 
 "${COMPOSE[@]}" exec -T db pg_restore -U citeproof -d citeproof --clean --if-exists \

@@ -2,6 +2,8 @@
 # Sao lưu DB (citeproof, citeproof_eval) và volume storage vào /backups; xóa bản cũ.
 # Chạy trong service `backup` (PGHOST/PGUSER/PGPASSWORD từ môi trường). Không in bí mật.
 set -euo pipefail
+# Bản sao lưu chứa tài liệu người dùng: chỉ chủ sở hữu (root trong container) đọc được.
+umask 077
 
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
 STORAGE_DIR="${STORAGE_DIR:-/storage}"
