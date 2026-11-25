@@ -1,4 +1,5 @@
 {% from "partials/ui.html" import badge, flag %}
+{% set ref_label = labels.UNRESOLVED_REF if sheet.ref_index is none else '[' ~ sheet.ref_index ~ ']' %}
 <div class="sheet-head">
   <div class="row">{{ badge(labels.CLAIM_STATUS[sheet.status]) }}{% if sheet.needs_user_review %}{{ flag() }}{% endif %}</div>
   <span class="muted small">Trang {{ sheet.page or '[chưa có]' }} trong bài</span>
@@ -10,7 +11,7 @@
     {% if sheet.section %}<div class="context">Mục {{ sheet.section }}</div>{% endif %}
   </section>
   <section>
-    <div class="side-label">Nguồn [{{ sheet.ref_index }}] nói</div>
+    <div class="side-label">Nguồn {{ ref_label }} nói</div>
     {% for ev in sheet.evidence %}
     <blockquote class="quote {{ ev.relation.value }}" lang="{{ ev.language }}">{{ ev.quote }}</blockquote>
     <div class="quote-meta">
@@ -20,13 +21,13 @@
     </div>
     {% else %}
     <p class="no-evidence">{{ labels.REASONS[sheet.unverifiable_reason] if sheet.unverifiable_reason else 'Chưa có đoạn nguồn cho nhận định này.' }}</p>
-    {% if sheet.unverifiable_reason == 'NO_ACCESSIBLE_TEXT' %}
+    {% if sheet.unverifiable_reason in ('NO_ACCESSIBLE_TEXT', 'REFERENCE_NOT_FOUND') %}
     <p><a class="btn small" href="/runs/{{ run_id }}/missing">Xem tài liệu thiếu toàn văn</a></p>
-    {% else %}
-    <p><a class="btn small" href="/runs/{{ run_id }}/references">Xem tài liệu [{{ sheet.ref_index }}]</a></p>
+    {% elif sheet.ref_index is not none %}
+    <p><a class="btn small" href="/runs/{{ run_id }}/references">Xem tài liệu {{ ref_label }}</a></p>
     {% endif %}
     {% endfor %}
-    <div class="ref-line">{{ sheet.ref_raw }}</div>
+    {% if sheet.ref_raw %}<div class="ref-line">{{ sheet.ref_raw }}</div>{% endif %}
   </section>
 </div>
 <div class="verdict">

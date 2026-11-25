@@ -5,6 +5,7 @@ from citeproof.modules.citations.stage import CitationsStage
 from citeproof.modules.documents.stage import ParseStage
 from citeproof.modules.references.stage_check import CheckReferencesStage
 from citeproof.modules.references.stage_extract import ExtractReferencesStage
+from citeproof.modules.reports.stage import FinalizeStage
 from citeproof.modules.retrieval.stage import RetrieveStage
 from citeproof.modules.sources.stage_fetch import FetchSourcesStage
 from citeproof.modules.sources.stage_index import IndexSourcesStage
@@ -25,6 +26,7 @@ def _real_stages(deps: PipelineDeps) -> dict[StageName, PipelineStage]:
         StageName.S6: IndexSourcesStage(deps),
         StageName.S7: RetrieveStage(deps),
         StageName.S8: VerifyStage(deps),
+        StageName.S9: FinalizeStage(deps),
     }
 
 

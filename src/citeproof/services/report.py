@@ -3,6 +3,11 @@ văn, xuất Markdown (spec web UI §7.5, `04` §4.8).
 
 Mỗi hàm dùng số truy vấn cố định, không phụ thuộc số dòng. Mọi hàm kiểm tra quyền sở hữu
 lần chạy và ném `NotFoundError` cho lần chạy của người khác.
+
+Dữ liệu thật (spec §7.9): chỉ dòng `claim_verifications` của verifier cuối
+(`RunConfig.variant`, QĐ-28) được tính và hiển thị; dòng `REFERENCE_UNRESOLVED` (không có
+reference) vẫn được liệt kê nhờ outer join; tab "Thiếu toàn văn" gồm cả `REFERENCE_NOT_FOUND`
+(QĐ-31).
 """
 
 from collections import Counter
@@ -23,10 +28,12 @@ from citeproof.core.enums import (
     RefType,
     RunStatus,
     UnverifiableReason,
+    Verifier,
 )
 from citeproof.core.errors import NotFoundError
 from citeproof.db.models import (
     Citation,
+    CitationLink,
     Claim,
     ClaimVerification,
     Document,
@@ -40,6 +47,7 @@ from citeproof.db.models import (
     VerificationRun,
     Work,
 )
+from citeproof.pipeline.config import RunConfig
 from citeproof.schemas.report import (
     ClaimRow,
     ClaimSheet,
@@ -59,6 +67,16 @@ from citeproof.web import labels
 GENERAL_LIMITATION = (
     "Chỉ đối chiếu nhận định với chính tài liệu được trích, không tìm bằng chứng ở nguồn khác."
 )
+
+# Lý do khiến nhận định chờ người dùng tải toàn văn lên (QĐ-31).
+MISSING_REASONS = (
+    UnverifiableReason.NO_ACCESSIBLE_TEXT.value,
+    UnverifiableReason.REFERENCE_NOT_FOUND.value,
+)
+
+
+def _ref_label(ref_index: int | None) -> str:
+    return labels.UNRESOLVED_REF if ref_index is None else f"[{ref_index}]"
 
 
 async def _header(session: AsyncSession, *, user: User, run_id: UUID) -> RunHeader:
@@ -90,6 +108,7 @@ async def _header(session: AsyncSession, *, user: User, run_id: UUID) -> RunHead
         status=RunStatus(run.status),
         finished_at=run.finished_at,
         warnings=warnings,
+        verifier=RunConfig.load(run.config).variant,
     )
 
 
@@ -130,7 +149,10 @@ async def get_overview(session: AsyncSession, *, user: User, run_id: UUID) -> Ov
                 ClaimVerification.needs_user_review,
                 ClaimVerification.unverifiable_reason,
                 ClaimVerification.reference_entry_id,
-            ).where(ClaimVerification.run_id == run_id)
+            ).where(
+                ClaimVerification.run_id == run_id,
+                ClaimVerification.verifier == header.verifier.value,
+            )
         )
     ).all()
     ref_rows = (
@@ -170,7 +192,7 @@ async def get_overview(session: AsyncSession, *, user: User, run_id: UUID) -> Ov
         {
             entry
             for _, _, reason, entry in claim_rows
-            if reason == UnverifiableReason.NO_ACCESSIBLE_TEXT.value
+            if reason in MISSING_REASONS and entry is not None
         }
     )
     if missing:
@@ -230,6 +252,18 @@ async def list_references(
     )
     if status is not None:
         query = query.where(ReferenceCheck.status == status.value)
+    cited: dict[UUID, int] = {
+        entry_id: int(count)
+        for entry_id, count in (
+            await session.execute(
+                select(CitationLink.reference_entry_id, func.count(CitationLink.id))
+                .join(ReferenceEntry, ReferenceEntry.id == CitationLink.reference_entry_id)
+                .where(ReferenceEntry.document_id == header.document_id)
+                .group_by(CitationLink.reference_entry_id)
+            )
+        ).all()
+        if entry_id is not None
+    }
     items = []
     for check, entry, work in (await session.execute(query)).all():
         doi = work.doi if work and work.doi else entry.doi_normalized
@@ -247,32 +281,34 @@ async def list_references(
                 doi=doi,
                 url=f"https://doi.org/{doi}" if doi else None,
                 needs_user_review=check.needs_user_review,
+                cited_count=cited.get(entry.id, 0),
             )
         )
     return header, items
 
 
 def _claims_query(
-    run_id: UUID,
+    run_id: UUID, verifier: Verifier
 ) -> Select[ClaimVerification, Claim, Citation, ReferenceEntry]:
+    """Dòng của verifier cuối; outer join reference để giữ dòng `REFERENCE_UNRESOLVED`."""
     return (
         select(ClaimVerification, Claim, Citation, ReferenceEntry)
         .join(Claim, Claim.id == ClaimVerification.claim_id)
         .join(Citation, Citation.id == Claim.citation_id)
-        .join(ReferenceEntry, ReferenceEntry.id == ClaimVerification.reference_entry_id)
-        .where(ClaimVerification.run_id == run_id)
+        .outerjoin(ReferenceEntry, ReferenceEntry.id == ClaimVerification.reference_entry_id)
+        .where(ClaimVerification.run_id == run_id, ClaimVerification.verifier == verifier.value)
         .order_by(Citation.page.asc().nulls_last(), Citation.char_start, ClaimVerification.id)
     )
 
 
-def _row(cv: ClaimVerification, citation: Citation, entry: ReferenceEntry) -> ClaimRow:
+def _row(cv: ClaimVerification, citation: Citation, entry: ReferenceEntry | None) -> ClaimRow:
     return ClaimRow(
         id=cv.id,
         sentence=citation.sentence_text,
         status=ClaimStatus(cv.status),
         needs_user_review=cv.needs_user_review,
         page=citation.page,
-        ref_index=entry.order_index + 1,
+        ref_index=entry.order_index + 1 if entry is not None else None,
     )
 
 
@@ -286,7 +322,7 @@ async def list_claims(
     flagged: bool = False,
 ) -> tuple[RunHeader, list[ClaimRow]]:
     header = await _header(session, user=user, run_id=run_id)
-    query = _claims_query(run_id)
+    query = _claims_query(run_id, header.verifier)
     if status is not None:
         query = query.where(ClaimVerification.status == status.value)
     if ref_index is not None:
@@ -332,7 +368,7 @@ def _sheet(
     cv: ClaimVerification,
     claim: Claim,
     citation: Citation,
-    entry: ReferenceEntry,
+    entry: ReferenceEntry | None,
     evidence: list[EvidenceView],
     feedback: Feedback | None,
 ) -> ClaimSheet:
@@ -342,7 +378,7 @@ def _sheet(
         span=claim.claim_text,
         marker=citation.marker_text,
         section=citation.section,
-        ref_raw=entry.raw_text,
+        ref_raw=entry.raw_text if entry is not None else None,
         unverifiable_reason=(
             UnverifiableReason(cv.unverifiable_reason) if cv.unverifiable_reason else None
         ),
@@ -361,10 +397,12 @@ def _sheet(
 async def get_claim_sheet(
     session: AsyncSession, *, user: User, run_id: UUID, claim_verification_id: UUID
 ) -> ClaimSheet:
-    await _header(session, user=user, run_id=run_id)
+    header = await _header(session, user=user, run_id=run_id)
     row = (
         await session.execute(
-            _claims_query(run_id).where(ClaimVerification.id == claim_verification_id)
+            _claims_query(run_id, header.verifier).where(
+                ClaimVerification.id == claim_verification_id
+            )
         )
     ).first()
     if row is None:
@@ -393,20 +431,28 @@ async def list_missing(
                 ReferenceEntry.order_index,
                 ReferenceEntry.raw_text,
                 func.count(ClaimVerification.id),
+                # Một reference có một trạng thái nên thường chỉ có một lý do; nếu có cả hai
+                # thì lấy `NO_ACCESSIBLE_TEXT` (đứng trước theo thứ tự chữ).
+                func.min(ClaimVerification.unverifiable_reason),
             )
             .join(ClaimVerification, ClaimVerification.reference_entry_id == ReferenceEntry.id)
             .where(
                 ClaimVerification.run_id == run_id,
-                ClaimVerification.unverifiable_reason
-                == UnverifiableReason.NO_ACCESSIBLE_TEXT.value,
+                ClaimVerification.verifier == header.verifier.value,
+                ClaimVerification.unverifiable_reason.in_(MISSING_REASONS),
             )
             .group_by(ReferenceEntry.id, ReferenceEntry.order_index, ReferenceEntry.raw_text)
             .order_by(ReferenceEntry.order_index)
         )
     ).all()
     return header, [
-        MissingSource(ref_index=index + 1, raw_text=raw, waiting_claims=int(count))
-        for index, raw, count in rows
+        MissingSource(
+            ref_index=index + 1,
+            raw_text=raw,
+            waiting_claims=int(count),
+            reason=UnverifiableReason(str(reason)),  # lọc theo MISSING_REASONS: không NULL
+        )
+        for index, raw, count, reason in rows
     ]
 
 
@@ -417,7 +463,7 @@ def _md_quote(text: str) -> str:
 async def render_markdown(session: AsyncSession, *, user: User, run_id: UUID) -> str:
     overview = await get_overview(session, user=user, run_id=run_id)
     _, references = await list_references(session, user=user, run_id=run_id)
-    rows = (await session.execute(_claims_query(run_id))).all()
+    rows = (await session.execute(_claims_query(run_id, overview.header.verifier))).all()
     evidence = await _evidence_for(session, [cv.id for cv, *_ in rows])
     sheets = [
         _sheet(cv, claim, citation, entry, evidence.get(cv.id, []), None)
@@ -463,13 +509,15 @@ async def render_markdown(session: AsyncSession, *, user: User, run_id: UUID) ->
             out.append(f"   - Đã tra: {names}")
         if ref.doi:
             out.append(f"   - DOI: {ref.doi}")
+        if ref.cited_count == 0:
+            out.append(f"   - {labels.UNCITED_REFERENCE}")
     out.append("")
 
     out += ["## Nhận định", ""]
     for sheet in (s for s in sheets if s.status != ClaimStatus.UNVERIFIABLE):
         flag = " (nên tự kiểm tra)" if sheet.needs_user_review else ""
         out += [
-            f"### Trang {sheet.page or '[chưa có]'}, tài liệu [{sheet.ref_index}]{flag}",
+            f"### Trang {sheet.page or '[chưa có]'}, tài liệu {_ref_label(sheet.ref_index)}{flag}",
             "",
             f"- Câu trong bài: {sheet.sentence}",
             f"- Trạng thái: {labels.CLAIM_STATUS[sheet.status].label}",
@@ -486,7 +534,10 @@ async def render_markdown(session: AsyncSession, *, user: User, run_id: UUID) ->
     out += ["## Nhận định chưa kiểm chứng được", ""]
     for sheet in (s for s in sheets if s.status == ClaimStatus.UNVERIFIABLE):
         reason = labels.REASONS[sheet.unverifiable_reason] if sheet.unverifiable_reason else ""
-        out.append(f"- Trang {sheet.page or '[chưa có]'}: {sheet.sentence} ({reason})")
+        out.append(
+            f"- Trang {sheet.page or '[chưa có]'}, tài liệu {_ref_label(sheet.ref_index)}: "
+            f"{sheet.sentence} ({reason})"
+        )
     out.append("")
 
     out += ["## Giới hạn", "", f"- {GENERAL_LIMITATION}", ""]

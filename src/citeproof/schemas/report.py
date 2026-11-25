@@ -15,6 +15,7 @@ from citeproof.core.enums import (
     RefType,
     RunStatus,
     UnverifiableReason,
+    Verifier,
 )
 
 
@@ -35,6 +36,8 @@ class RunHeader(_View):
     status: RunStatus
     finished_at: datetime | None
     warnings: list[WarningView]
+    # Biến thể cuối của lần chạy: báo cáo chỉ hiện dòng của verifier này (QĐ-28).
+    verifier: Verifier
 
 
 class Tally(_View):
@@ -80,6 +83,8 @@ class ReferenceView(_View):
     doi: str | None
     url: str | None
     needs_user_review: bool
+    # Số trích dẫn trong bài trỏ tới tài liệu này; 0 → "không được trích lần nào" (FR-21).
+    cited_count: int
 
 
 class ClaimRow(_View):
@@ -88,7 +93,8 @@ class ClaimRow(_View):
     status: ClaimStatus
     needs_user_review: bool
     page: int | None
-    ref_index: int
+    # None: nhận định `REFERENCE_UNRESOLVED`, chưa trỏ được tới tài liệu nào.
+    ref_index: int | None
 
 
 class EvidenceView(_View):
@@ -107,11 +113,11 @@ class ClaimSheet(_View):
     status: ClaimStatus
     needs_user_review: bool
     page: int | None
-    ref_index: int
+    ref_index: int | None
     span: str
     marker: str
     section: str | None
-    ref_raw: str
+    ref_raw: str | None
     unverifiable_reason: UnverifiableReason | None
     explanation: str
     limitations: str | None
@@ -128,3 +134,5 @@ class MissingSource(_View):
     ref_index: int
     raw_text: str
     waiting_claims: int
+    # `NO_ACCESSIBLE_TEXT` hoặc `REFERENCE_NOT_FOUND` (QĐ-31).
+    reason: UnverifiableReason

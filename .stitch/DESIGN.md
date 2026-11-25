@@ -234,6 +234,8 @@ Bảng nhãn này là nguồn duy nhất; mã nguồn sinh nhãn từ đây, tem
 | Loại tài liệu | `ARTICLE` Bài báo; `CONFERENCE` Bài hội nghị; `PREPRINT` Bản tiền ấn phẩm; `BOOK` Sách; `THESIS` Luận văn, luận án; `WEB` Trang web; `OTHER` Loại khác; `UNKNOWN` Chưa rõ loại |
 | Nguồn tra cứu | `crossref` Crossref; `openalex` OpenAlex; `semantic_scholar` Semantic Scholar |
 | Phản hồi | `AGREE` Đồng ý; `DISAGREE` Không đồng ý; `UNSURE` Không chắc |
+| Tài liệu của nhận định chưa xác định | `UNRESOLVED_REF` [chưa xác định] |
+| Tài liệu không có trích dẫn | `UNCITED_REFERENCE` Không được trích lần nào trong bài. |
 
 ### 8.6 Cảnh báo khi xử lý
 

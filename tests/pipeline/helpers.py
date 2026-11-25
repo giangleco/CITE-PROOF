@@ -1,8 +1,10 @@
 """Helper cho test pipeline: dựng PipelineDeps, chạy cạn hàng đợi, các stage giả lập."""
 
+import json
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -17,6 +19,12 @@ from citeproof.llm.calls import PgCallLogger
 from citeproof.llm.client import LLMClient
 from citeproof.llm.prompts import PromptLoader
 from citeproof.llm.providers.base import LLMProvider
+from citeproof.llm.types import ProviderRequest, ProviderResponse
+from citeproof.modules.citations.llm_extract import ClaimExtractionBatch
+from citeproof.modules.references.llm_parse import ParsedReferenceBatch
+from citeproof.modules.retrieval.translate import TranslatedClaim
+from citeproof.modules.verification.decompose import SubClaims
+from citeproof.modules.verification.verdict import Verdict
 from citeproof.pipeline.deps import (
     PROMPTS_ROOT,
     PipelineDeps,
@@ -196,3 +204,77 @@ def pipeline_settings(
         job_heartbeat_seconds=job_heartbeat_seconds,
         worker_poll_interval_seconds=0.01,
     )
+
+
+# --- LLM giả theo tác vụ ----------------------------------------------------------------------
+
+# Tác vụ worker nhận ra từ tiêu đề JSON Schema đầu ra (tên lớp Pydantic) của request.
+LLM_TASK_BY_SCHEMA: Mapping[str, str] = {
+    ParsedReferenceBatch.__name__: "W1",
+    ClaimExtractionBatch.__name__: "W2",
+    TranslatedClaim.__name__: "W3",
+    SubClaims.__name__: "W4",
+    Verdict.__name__: "W5",
+}
+
+RouteHandler = Callable[[ProviderRequest], ProviderResponse]
+
+
+def json_response(payload: Mapping[str, Any], *, model: str = "") -> ProviderResponse:
+    """Phản hồi provider hợp lệ chứa `payload` dạng JSON."""
+    return ProviderResponse(
+        text=json.dumps(payload, ensure_ascii=False),
+        input_tokens=1000,
+        output_tokens=200,
+        stop_reason="end_turn",
+        model=model,
+    )
+
+
+class RoutedProvider:
+    """Provider giả trả lời theo tác vụ (W1…W5) thay vì theo thứ tự gọi.
+
+    Stage chạy song song (S4, S7, S8 gọi LLM đồng thời) nên `ScriptedProvider` không giữ được
+    thứ tự; ở đây mỗi tác vụ có một handler `request -> ProviderResponse` (hoặc danh sách phản
+    hồi lấy lần lượt). Tác vụ không có kịch bản → `AssertionError`. `requests` ghi lại
+    `(tác vụ, request)` theo thứ tự đến.
+    """
+
+    name = "routed"
+
+    def __init__(
+        self, routes: Mapping[str, RouteHandler | Sequence[ProviderResponse | BaseException]]
+    ) -> None:
+        self._handlers: dict[str, RouteHandler] = {}
+        self._queues: dict[str, list[ProviderResponse | BaseException]] = {}
+        for task, route in routes.items():
+            if callable(route):
+                self._handlers[task] = route
+            else:
+                self._queues[task] = list(route)
+        self.requests: list[tuple[str, ProviderRequest]] = []
+
+    @staticmethod
+    def task_of(request: ProviderRequest) -> str:
+        title = request.output_schema.get("title")
+        task = LLM_TASK_BY_SCHEMA.get(title) if isinstance(title, str) else None
+        if task is None:
+            raise AssertionError(f"RoutedProvider: schema đầu ra lạ {title!r}")
+        return task
+
+    def calls(self, task: str) -> list[ProviderRequest]:
+        return [request for name, request in self.requests if name == task]
+
+    async def complete(self, request: ProviderRequest) -> ProviderResponse:
+        task = self.task_of(request)
+        self.requests.append((task, request))
+        handler = self._handlers.get(task)
+        if handler is not None:
+            return handler(request)
+        queue = self._queues.get(task)
+        if not queue:
+            raise AssertionError(f"RoutedProvider: hết kịch bản cho {task}")
+        item = queue.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        return item

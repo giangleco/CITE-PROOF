@@ -97,3 +97,11 @@ def test_new_warning_rows_in_design_md() -> None:
     design = DESIGN_MD.read_text(encoding="utf-8")
     for code, text in NEW_WARNINGS.items():
         assert f"| `{code}` | {text} |" in design, code
+
+
+def test_report_labels_in_design_md() -> None:
+    design = DESIGN_MD.read_text(encoding="utf-8")
+    assert labels.UNRESOLVED_REF == "[chưa xác định]"
+    assert labels.UNCITED_REFERENCE == "Không được trích lần nào trong bài."
+    for code in ("UNRESOLVED_REF", "UNCITED_REFERENCE"):
+        assert f"`{code}` {getattr(labels, code)}" in design, code

@@ -3,9 +3,16 @@ import pytest
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from citeproof.core.enums import ClaimStatus, UserRole
+from citeproof.core.enums import ClaimStatus, UnverifiableReason, UserRole
 from citeproof.db.models import ClaimVerification, ReferenceEntry
-from citeproof.web.labels import CLAIM_STATUS, FORBIDDEN_WORDS
+from citeproof.web.labels import (
+    CLAIM_STATUS,
+    FORBIDDEN_WORDS,
+    REASONS,
+    UNCITED_REFERENCE,
+    UNRESOLVED_REF,
+)
+from tests.services.helpers import UNRESOLVED_SENTENCE, add_claim_verification
 from tests.web.report_helpers import sample_run
 
 SessionFactory = async_sessionmaker[AsyncSession]
@@ -164,3 +171,44 @@ async def test_report_head_actions(
     assert f'href="/runs/{run_id}/report.md"' in html
     assert 'data-dialog="delete-dialog"' in html and "Xóa vĩnh viễn" in html
     assert 'value="rerun"' not in html  # bài mẫu
+
+
+@pytest.mark.db
+async def test_unresolved_claim_page(
+    client: httpx.AsyncClient, session_factory: SessionFactory
+) -> None:
+    run_id = await sample_run(client, session_factory)
+    async with session_factory() as s:
+        cv_id = await add_claim_verification(s, run_id, entry_id=None, sentence=UNRESOLVED_SENTENCE)
+        await s.commit()
+    html = (await client.get(f"/runs/{run_id}/claims?c={cv_id}")).text
+    assert UNRESOLVED_SENTENCE in html
+    assert f"Nguồn {UNRESOLVED_REF} nói" in html
+    assert REASONS[UnverifiableReason.REFERENCE_UNRESOLVED] in html
+    assert "Xem tài liệu [None]" not in html and "[None]" not in html
+    fragment = await client.get(f"/runs/{run_id}/claims/{cv_id}", headers={"HX-Request": "true"})
+    assert fragment.status_code == 200 and UNRESOLVED_REF in fragment.text
+    _no_forbidden(html)
+
+
+@pytest.mark.db
+async def test_uncited_reference_page(
+    client: httpx.AsyncClient, session_factory: SessionFactory
+) -> None:
+    run_id = await sample_run(client, session_factory)
+    html = (await client.get(f"/runs/{run_id}/references")).text
+    assert html.count(UNCITED_REFERENCE) == 2  # [6] và [7] của bài mẫu
+    cited = (await client.get(f"/runs/{run_id}/references?status=MATCHED")).text
+    assert UNCITED_REFERENCE not in cited
+
+
+@pytest.mark.db
+async def test_missing_tab_lists_not_found_with_reason(
+    client: httpx.AsyncClient, session_factory: SessionFactory
+) -> None:
+    run_id = await sample_run(client, session_factory)
+    html = (await client.get(f"/runs/{run_id}/missing")).text
+    assert "Phát hiện tin giả trên mạng xã hội tiếng Việt" in html  # [4], REFERENCE_NOT_FOUND
+    assert REASONS[UnverifiableReason.REFERENCE_NOT_FOUND] in html
+    assert REASONS[UnverifiableReason.NO_ACCESSIBLE_TEXT] in html
+    _no_forbidden(html)

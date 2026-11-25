@@ -170,6 +170,11 @@ WARNINGS: Mapping[str, str] = {
     ),
 }
 GENERIC_WARNING = "Có cảnh báo khi xử lý."
+
+# Báo cáo trên dữ liệu thật (DESIGN.md §8.5): nhận định `REFERENCE_UNRESOLVED` không trỏ tới
+# tài liệu nào; tài liệu tham khảo không có trích dẫn nào trong bài (FR-21).
+UNRESOLVED_REF = "[chưa xác định]"
+UNCITED_REFERENCE = "Không được trích lần nào trong bài."
 HIDDEN_WARNINGS = frozenset({"SAMPLE_DOCUMENT"})
 
 

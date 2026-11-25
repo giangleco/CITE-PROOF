@@ -39,6 +39,7 @@
             {% endif %}
           {% endif %}
           {% if ref.doi %}<p>DOI <a class="doi" href="{{ ref.url }}" rel="noopener noreferrer" target="_blank">{{ ref.doi }}</a></p>{% endif %}
+          {% if ref.cited_count == 0 %}<p class="muted">{{ labels.UNCITED_REFERENCE }}</p>{% endif %}
           {% if ref.needs_user_review and ref.status not in ('MATCHED',) %}<p>{{ flag() }}</p>{% endif %}
         </div>
       </div>

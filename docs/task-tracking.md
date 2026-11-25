@@ -93,8 +93,8 @@ Trạng thái: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `IN_REVIEW`, `COMPLETED`
 
 | ID | Task | Mô tả | Ưu tiên | Phụ thuộc | Trạng thái | Acceptance criteria |
 |---|---|---|---|---|---|---|
-| T-601 | Báo cáo | Các phần ở `04` §4.8. Phần giao diện và xuất Markdown đã có (web UI v1); chờ dữ liệu thật từ T-503. | P0 | T-503 | IN_PROGRESS | Báo cáo đủ phần trên bài thật |
-| T-602 | Xem bằng chứng | Đoạn trích, trang, mục, liên kết (FR-51). Tờ đối chiếu đã có (web UI v1); chờ dữ liệu thật. | P0 | T-601 | IN_PROGRESS | US-06 đạt |
+| T-601 | Báo cáo | Các phần ở `04` §4.8. S9 ghi `verification_runs.cost_estimate`; báo cáo trên dữ liệu thật: chỉ dòng của verifier cuối (QĐ-28), nhận định `REFERENCE_UNRESOLVED` hiện `[chưa xác định]`, tài liệu không được trích lần nào được đánh dấu (FR-21), tab "Thiếu toàn văn" gồm cả `REFERENCE_NOT_FOUND` (QĐ-31); test toàn pipeline S1–S9. Chép kết quả từ lần chạy cha ở S9 thuộc T-505. | P0 | T-503 | COMPLETED | Báo cáo đủ phần trên bài thật |
+| T-602 | Xem bằng chứng | Đoạn trích, trang, mục, liên kết (FR-51). Tờ đối chiếu hiển thị bằng chứng thật của S8 (test toàn pipeline). | P0 | T-601 | COMPLETED | US-06 đạt |
 | T-603 | Phản hồi | FR-70. Web UI v1. | P0 | T-601 | COMPLETED | US-09 đạt |
 | T-604 | Xuất báo cáo | Markdown/HTML (FR-53). Markdown đã có; HTML in được để sau. | P1 | T-601 | IN_PROGRESS | File xuất mở được, đủ nội dung |
 | T-605 | Xóa dữ liệu | FR-62 theo `08` §4.5. Kèm: xóa `feedback` theo mục tiêu và đặt `llm_calls.cache_key` về NULL khi xóa tài liệu (quyết định ở nhánh M1). Web UI v1: xóa tài liệu và tài khoản, kèm dọn storage. | P0 | T-104 | COMPLETED | US-10 đạt; không còn file trong storage |

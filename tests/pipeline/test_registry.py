@@ -15,13 +15,13 @@ from citeproof.modules.citations.stage import CitationsStage
 from citeproof.modules.documents.stage import ParseStage
 from citeproof.modules.references.stage_check import CheckReferencesStage
 from citeproof.modules.references.stage_extract import ExtractReferencesStage
+from citeproof.modules.reports.stage import FinalizeStage
 from citeproof.modules.retrieval.stage import RetrieveStage
 from citeproof.modules.sources.stage_fetch import FetchSourcesStage
 from citeproof.modules.sources.stage_index import IndexSourcesStage
 from citeproof.modules.verification.stage import VerifyStage
 from citeproof.pipeline.demo import DemoStage
 from citeproof.pipeline.registry import build_registry
-from citeproof.pipeline.stages import NoopStage
 from citeproof.services import documents
 from citeproof.storage import LocalStorage
 from tests.pipeline.helpers import drain, make_test_deps, metadata_not_found, pipeline_settings
@@ -50,7 +50,7 @@ def test_build_registry_wraps_demo_only_in_local(tmp_path: Path) -> None:
         assert isinstance(other.get(StageName.S6), IndexSourcesStage)
         assert isinstance(other.get(StageName.S7), RetrieveStage)
         assert isinstance(other.get(StageName.S8), VerifyStage)
-        assert isinstance(other.get(StageName.S9), NoopStage)
+        assert isinstance(other.get(StageName.S9), FinalizeStage)
 
 
 @pytest.mark.parametrize("env", ["local", "pilot"])
