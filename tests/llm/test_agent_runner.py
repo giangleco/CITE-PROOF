@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from citeproof.core.enums import AgentName, AgentRunStatus, AgentTargetType
-from citeproof.core.errors import RetryableError
+from citeproof.core.errors import ExternalServiceError, LeaseLostError, RetryableError
 from citeproof.db.models.agents import AgentRun
 from citeproof.db.models.llm import LLMCall
 from citeproof.llm.agent_runner import AgentBudget, AgentOutcome, AgentRunner
@@ -568,7 +568,7 @@ async def test_provider_error_status_error(
             return await super().__call__(args)
 
     agent_runner, _ = runner(
-        session_factory, [lookup("a", "t1"), RetryableError("anthropic X status=529")]
+        session_factory, [lookup("a", "t1"), ExternalServiceError("anthropic X status=400")]
     )
     outcome = await run(agent_runner, ctx, [Probe()])
 
@@ -579,6 +579,24 @@ async def test_provider_error_status_error(
     assert row.finished_at is not None and len(row.steps) == 1
     calls = await call_rows(session_factory, outcome.agent_run_id)
     assert [c.step_index for c in calls] == [0]
+
+
+@pytest.mark.parametrize(
+    "error",
+    [RetryableError("anthropic X status=529"), LeaseLostError("lease lost")],
+    ids=["retryable", "lease_lost"],
+)
+async def test_transient_errors_propagate_and_mark_error(
+    session_factory: async_sessionmaker[AsyncSession], ctx: CallContext, error: Exception
+) -> None:
+    """Stage gọi quyết định thử lại (`is_last_attempt`); dòng agent_runs vẫn là ERROR."""
+    agent_runner, _ = runner(session_factory, [lookup("a", "t1"), error])
+    with pytest.raises(type(error)):
+        await run(agent_runner, ctx, [LookupTool()])
+    async with session_factory() as session:
+        (row,) = (await session.execute(select(AgentRun))).scalars().all()
+    assert row.status == AgentRunStatus.ERROR.value
+    assert row.finished_at is not None and len(row.steps) == 1
 
 
 async def test_wall_clock_budget(

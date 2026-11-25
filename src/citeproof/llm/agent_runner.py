@@ -11,8 +11,10 @@ trong một lượt người dùng. Dừng khi:
   `max_total_input_tokens` với tổng input; `max_wall_seconds` cắt cả lời gọi LLM lẫn công cụ.
   Submit hợp lệ trong lượt vượt ngân sách token vẫn được nhận (token đã tiêu).
 - model dừng mà chưa nộp → nhắc một lần → `NO_SUBMIT`.
-- lỗi provider (`CiteProofError`) → `ERROR`. Lỗi cache (`CacheMissError`,
-  `CacheEntryInvalidError`), `InternalError` và lỗi lập trình được ném lại sau khi ghi `ERROR`.
+- lỗi provider không tạm thời (`CiteProofError`) → `ERROR`. Lỗi cache (`CacheMissError`,
+  `CacheEntryInvalidError`), `InternalError`, `RetryableError`, `LeaseLostError` và lỗi lập trình
+  được ném lại sau khi ghi `ERROR`; với `RetryableError`, stage gọi ném lại để job được thử lại,
+  trừ lần thử cuối thì coi như `ERROR`.
 
 Với trạng thái khác `SUBMITTED`, `output` là bản nộp cuối đã parse được nhưng bị từ chối (nếu
 có); A1 bỏ qua nó, A2 có thể dùng.
@@ -42,7 +44,7 @@ from sqlalchemy import insert, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from citeproof.core.enums import AgentName, AgentRunStatus, AgentTargetType
-from citeproof.core.errors import CiteProofError, InternalError
+from citeproof.core.errors import CiteProofError, InternalError, LeaseLostError, RetryableError
 from citeproof.db.models.agents import AgentRun
 from citeproof.llm.cache import CacheEntryMeta, CacheStore, agent_step_cache_key, validate_namespace
 from citeproof.llm.calls import CallLogger, LLMCallRecord, estimate_cost
@@ -71,7 +73,15 @@ TRUNCATED_MARK = "\n[truncated]"
 # Bản rút gọn kết quả lưu trong `agent_runs.steps` (spec §13).
 PREVIEW_LIMIT = 2_000
 
-_PROPAGATE = (CacheMissError, CacheEntryInvalidError, InternalError)
+# Ném lại sau khi ghi ERROR: lỗi cache và lỗi lập trình; lỗi tạm thời (stage gọi thử lại
+# job, hoặc coi là ERROR ở lần thử cuối theo `is_last_attempt`); lease đã mất.
+_PROPAGATE = (
+    CacheMissError,
+    CacheEntryInvalidError,
+    InternalError,
+    RetryableError,
+    LeaseLostError,
+)
 
 
 @dataclass(frozen=True)

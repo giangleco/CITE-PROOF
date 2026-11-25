@@ -35,6 +35,13 @@ class ToolResult:
 
 
 class Tool(Protocol):
+    """Công cụ chỉ đọc của agent.
+
+    Runner gửi `ToolResult.content` cho model nguyên văn, không bọc gì thêm: công cụ phải tự bọc
+    mọi văn bản không tin cậy (metadata bên thứ ba, văn bản nguồn, tiêu đề, tóm tắt) bằng
+    `render_data_block(..., untrusted=True)` trước khi trả về.
+    """
+
     name: str
     description: str
     input_model: type[BaseModel]
