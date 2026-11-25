@@ -70,10 +70,8 @@ SessionFactory = async_sessionmaker[AsyncSession]
 HE_TITLE = "Deep Residual Learning for Image Recognition"
 HE_DOI = "10.1109/cvpr.2016.90"
 TYPO_TITLE = "Deep Resdual Lerning for Imag Recogniton"
-# Tiêu đề dịch giữ thuật ngữ gốc (title_similarity 60 ≥ `CASE2_TITLE_FLOOR`).
-VI_TITLE = "Học sâu residual cho nhận dạng image"
-# Bản dịch hoàn toàn (title_similarity 39): trường hợp 2 không nhận (controller, fix round 1).
-VI_FULL_TITLE = "Học sâu dư cho nhận dạng hình ảnh"
+# Tiêu đề dịch hoàn toàn (title_similarity 39 so với bản tiếng Anh).
+VI_TITLE = "Học sâu dư cho nhận dạng hình ảnh"
 IDENTITY_TITLE = "Identity Mappings in Deep Residual Networks"
 MODEL = "claude-sonnet-5-5"
 ENABLED = {"reference_resolver": {"enabled": True}}
@@ -164,6 +162,9 @@ def test_verify_missing_year_needs_strong_title() -> None:
 
 def test_verify_translated_title_with_venue_needs_review() -> None:
     status, match, review = _verified(_ref(title=VI_TITLE, venue="CVPR"), "", _he())
+    assert match.title_score < 50  # không có ngưỡng tiêu đề ở trường hợp 2
+    two = _ref(title=VI_TITLE, venue="CVPR", authors=["He, K.", "Zhang, X."])
+    assert _verified(two, "", _he())[2]
     assert status is ReferenceStatus.METADATA_MISMATCH
     assert [m.field for m in match.mismatches] == ["title"]
     assert match.mismatches[0].in_document == VI_TITLE
@@ -179,7 +180,8 @@ def test_verify_translated_title_with_venue_needs_review() -> None:
         {"title": VI_TITLE, "venue": "CVPR", "year": 2015},
         {"title": VI_TITLE, "venue": "CVPR", "authors": ["Nguyễn Văn An"]},
         {"title": VI_TITLE, "venue": "CVPR", "doi": "10.1145/other"},
-        {"title": VI_FULL_TITLE, "venue": "CVPR"},  # dưới ngưỡng tiêu đề của trường hợp 2
+        # Cùng venue, năm, tác giả đầu nhưng tác giả thứ hai khác.
+        {"title": VI_TITLE, "venue": "CVPR", "authors": ["He, K.", "Nguyễn, V. A."]},
     ],
 )
 def test_verify_rejects_title_mismatch_without_full_agreement(fields: dict[str, Any]) -> None:
@@ -266,6 +268,12 @@ def test_verify_parse_failed_venue_must_be_multiword_phrase() -> None:
     assert status is ReferenceStatus.METADATA_MISMATCH
     assert [m.field for m in match.mismatches] == ["title"]
     assert review
+    # Ứng viên có hai tác giả: họ tác giả thứ hai phải có trong chuỗi gốc.
+    other_second = cand.model_copy(
+        update={"authors": [*cand.authors[:1], WorkAuthor(family="Ren")]}
+    )
+    raw_venue = raw.format(venue="Computer Vision and Pattern Recognition")
+    assert verify_agent_candidate(None, raw_venue, other_second) is None
     # Venue nhiều từ nhưng không liền mạch trong chuỗi gốc → từ chối.
     raw_split = raw.format(venue="Computer Graphics and Vision and Pattern Recognition Letters")
     assert verify_agent_candidate(None, raw_split, cand) is None

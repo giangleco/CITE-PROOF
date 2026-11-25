@@ -14,10 +14,12 @@ do agent viết lại không bao giờ được dùng. Ba trường hợp:
    chuẩn hóa), hoặc tiêu đề có trong chuỗi gốc kèm họ tác giả đầu hoặc năm (tiêu đề ngắn cần cả
    hai); trường nào của ứng viên không có trong chuỗi gốc thì tính là lệch; DOI trùng mà tiêu đề
    không có trong chuỗi gốc thì gắn `needs_user_review`.
-2. Tiêu đề lệch nhưng vẫn ≥ `CASE2_TITLE_FLOOR`, cùng họ tác giả đầu, cùng năm và cùng venue
-   (so đối xứng `venues_equal`, không theo tập con; với `PARSE_FAILED` venue ≥ 2 từ phải xuất
-   hiện liền mạch trong chuỗi gốc), không có DOI mâu thuẫn (thường do tiêu đề dịch giữ thuật
-   ngữ gốc) → `METADATA_MISMATCH` với trường `title` và `needs_user_review`.
+2. Tiêu đề lệch (không có ngưỡng tiêu đề: thường là tiêu đề dịch hoàn toàn) nhưng cùng năm,
+   cùng venue (so đối xứng `venues_equal`, không theo tập con; với `PARSE_FAILED` venue ≥ 2 từ
+   phải xuất hiện liền mạch trong chuỗi gốc), cùng họ tác giả đầu và cùng họ tác giả thứ hai khi
+   cả hai bên có ≥ 2 tác giả (với `PARSE_FAILED`: khi ứng viên có ≥ 2 tác giả, họ tác giả thứ hai
+   phải có trong chuỗi gốc), không có DOI mâu thuẫn → luôn `METADATA_MISMATCH` với trường
+   `title` và `needs_user_review`.
 3. Còn lại, hoặc agent trả `NO_MATCH` (kể cả `MATCH` không có ứng viên sau khi hết lượt nộp,
    preflight) → giữ nguyên kết quả chuỗi tra cứu; đề xuất của agent chỉ nằm trong `agent_runs`.
 
@@ -85,8 +87,7 @@ _NAME_CHARS = re.compile(r"[\W_]+")
 _LINKS = re.compile(r"(?:https?://|www\.|doi:\s*)\S+|\b10\.\d{4,9}/\S+", re.IGNORECASE)
 # DOI viết trong chuỗi gốc; mỗi chuỗi tìm được qua `normalize_doi` rồi so bằng (không so chuỗi con).
 _DOI_IN_TEXT = re.compile(r"10\.\d{4,9}/[^\s\"'<>]+", re.IGNORECASE)
-# Trường hợp 2 (tiêu đề lệch): tiêu đề vẫn phải gần ở mức này, venue so đối xứng ở mức kia.
-CASE2_TITLE_FLOOR = 50
+# Trường hợp 2 (tiêu đề lệch): venue so đối xứng ở mức này.
 VENUE_STRICT = 90
 # Venue chỉ được tìm trong chuỗi gốc khi có ít nhất chừng này từ ("Nature" một mình không tính).
 RAW_VENUE_MIN_TOKENS = 2
@@ -140,6 +141,13 @@ def verify_agent_candidate(
     return _verify_parsed(ref, cand)
 
 
+def _second_author_ok(ref: ParsedReference, cand: WorkRecord) -> bool:
+    """Họ tác giả thứ hai khớp khi cả bài lẫn ứng viên có ít nhất hai tác giả."""
+    if len(ref.authors) < 2 or len(cand.authors) < 2:
+        return True
+    return first_author_matches(ref.authors[1], cand.authors[1])
+
+
 def _verify_parsed(ref: ParsedReference, cand: WorkRecord) -> Verdict | None:
     match = match_candidate(ref, cand)
     ref_doi = normalize_doi(ref.doi)
@@ -161,8 +169,8 @@ def _verify_parsed(ref: ParsedReference, cand: WorkRecord) -> Verdict | None:
     title_mismatch = any(m.field == "title" for m in match.mismatches)
     if (
         title_mismatch
-        and match.title_score >= CASE2_TITLE_FLOOR
         and same_author
+        and _second_author_ok(ref, cand)
         and year_delta == 0
         and not doi_conflict
         and venues_equal(ref.venue, cand.venue)
@@ -202,8 +210,8 @@ def _verify_raw(raw_text: str, cand: WorkRecord) -> Verdict | None:
         return match_status(result), result, doi_in and not title_in
     if (
         not title_in
-        and title_score >= CASE2_TITLE_FLOOR
         and author_in
+        and (len(cand.authors) < 2 or bool(record_family_keys(cand.authors[1]) & tokens))
         and year_in
         and venue_in_raw(cand.venue, folded)
     ):
