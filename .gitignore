@@ -14,3 +14,5 @@ var/
 # Kết quả và bộ dữ liệu đánh giá cục bộ (spec §11)
 benchmark/results/
 benchmark/datasets/
+.env.production
+backups/

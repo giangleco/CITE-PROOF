@@ -93,6 +93,28 @@ Health check `/api/v1/health`; theo dõi uptime từ bên ngoài; công cụ the
 
 Giữ image phiên bản trước; rollback bằng cách triển khai lại tag cũ. Nếu migration không đảo ngược được, khôi phục DB từ bản sao lưu ngay trước migration.
 
+### 4.10 Vận hành pilot
+
+Tệp: `docker-compose.prod.yml`, `docker/caddy/Caddyfile`, `.env.production.example`, `scripts/backup.sh`, `scripts/restore.sh`, `scripts/smoke.py`. Pilot dùng volume cục bộ cộng sao lưu hằng ngày (không dùng S3), không mở cổng nào ngoài 80/443 (Caddy). Mọi lệnh `docker compose` dưới đây có dạng `docker compose -f docker-compose.prod.yml --env-file .env.production …`.
+
+**Triển khai lần đầu**
+
+1. Trỏ DNS của `CITEPROOF_DOMAIN` về máy chủ; tường lửa chỉ mở 80, 443 và SSH.
+2. `cp .env.production.example .env.production && chmod 600 .env.production`, thay mọi giá trị `CHANGE_ME_*` (xem danh sách bí mật), đặt `CITEPROOF_DOMAIN`. Để trống `CITEPROOF_CONTACT_EMAIL`, `CITEPROOF_WEB_ARCHIVE_LOOKUP=false` cho tới khi có quyết định. `CITEPROOF_LLM_PROVIDER_NAME` và `CITEPROOF_LLM_PROVIDER_POLICY_URL` chưa đặt: bắt buộc điền trước khi mời người dùng (`10` §5).
+3. `docker compose … build && docker compose … up -d`. Service `migrate` chạy `alembic upgrade head` trước app/worker. Volume DB mới tạo cả `citeproof` lẫn `citeproof_eval` nhờ `./docker/db/init`; volume DB đã có từ trước thì tạo tay: `docker compose … exec db createdb -U citeproof citeproof_eval`.
+4. Kiểm tra: `docker compose … ps`, `curl -fsS https://$DOMAIN/api/v1/health`, rồi `uv run python scripts/smoke.py --base-url https://$DOMAIN --email … --password …` (tài khoản thử có sẵn; mật khẩu không ghi vào file hay lịch sử shell chia sẻ).
+5. Kiểm tra cấu hình tĩnh (thủ công, không chạy trong CI): `docker compose -f docker-compose.prod.yml --env-file .env.production config`.
+
+**Cập nhật**: `git fetch && git checkout <tag đã qua CI>`, `scripts/backup.sh` chạy tay qua `docker compose … exec backup /scripts/backup.sh` (bắt buộc nếu có migration phá vỡ dữ liệu), `docker compose … build`, `docker compose … up -d`, chạy lại smoke test. `CITEPROOF_CONSENT_TEXT_UPDATED_AT` được sao chép cùng file env nên không tự đổi: khi nội dung màn hình đồng ý thay đổi, cập nhật giá trị này trong `.env.production` (người đã đồng ý trước mốc đó phải đồng ý lại).
+
+**Sao lưu**: service `backup` chạy `scripts/backup.sh` mỗi 24 giờ: `pg_dump -Fc` hai DB (`citeproof`, `citeproof_eval`) và `tar czf` volume storage vào `./backups` (`<db>-<UTC>.dump`, `storage-<UTC>.tar.gz`), xóa tệp cũ hơn `BACKUP_KEEP_DAYS` (mặc định 14). Thư mục `./backups` nằm trên cùng máy: định kỳ chép sang nơi khác (rsync/scp) vì một máy là điểm lỗi duy nhất.
+
+**Thử khôi phục** (trước pilot và định kỳ): trên máy thử hoặc ngay tại máy pilot ngoài giờ, `scripts/restore.sh backups/citeproof-<UTC>.dump backups/storage-<UTC>.tar.gz [backups/citeproof_eval-<UTC>.dump]`. Script dừng app/worker, `pg_restore --clean --if-exists`, nạp lại storage, khởi động lại; sau đó chạy smoke test và mở một báo cáo cũ để chắc dữ liệu và tệp khớp nhau. Ghi ngày thử vào Decision Log.
+
+**Rollback**: `git checkout <tag cũ>`, `docker compose … build`, `docker compose … up -d`. Nếu bản mới đã chạy migration không đảo ngược được, chạy `scripts/restore.sh` với bản sao lưu lấy ngay trước cập nhật.
+
+**Danh sách bí mật** (chỉ trong `.env.production`, quyền 600, không vào repo hay image): `POSTGRES_PASSWORD` (và cùng giá trị trong `CITEPROOF_DATABASE_URL`, `CITEPROOF_EVAL_DATABASE_URL`), `CITEPROOF_ANTHROPIC_API_KEY`, `CITEPROOF_SEMANTIC_SCHOLAR_API_KEY`, `CITEPROOF_OPENALEX_API_KEY` (hai khóa sau tùy chọn). Xoay khi nghi lộ và ghi ngày xoay. Script không in bí mật ra log.
+
 ## 5. Implementation Steps
 
 **Checklist triển khai pilot:**
