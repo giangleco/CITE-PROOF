@@ -129,6 +129,7 @@ async def _setup(
     variant: str = "V2",
     limits: dict[str, Any] | None = None,
     document_language: str = "vi",
+    config_extra: dict[str, Any] | None = None,
 ) -> Setup:
     """Một reference (MATCHED), nguồn của work, các claim và dòng truy xuất theo `retrieved`."""
     work_id = await _work(sf, "Encoder Paper") if matched else None
@@ -146,7 +147,7 @@ async def _setup(
     claim_ids = await add_claims(
         sf, run_id, [ClaimSpec(text, "vi", (entry if linked else None,)) for text in claims]
     )
-    config: dict[str, Any] = {"variant": variant}
+    config: dict[str, Any] = {"variant": variant, **(config_extra or {})}
     if limits is not None:
         config["limits"] = limits
     async with sf() as s:

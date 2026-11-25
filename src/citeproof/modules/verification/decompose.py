@@ -50,7 +50,8 @@ async def decompose(
         claim=render_data_block("claim", claim_text, untrusted=True),
         context=render_data_block("context", context_text, untrusted=True),
     )
-    fallback = [SubClaim(id="s1", text=claim_text[:300])]
+    # Dự phòng giữ nguyên cả claim (có thể > 300 ký tự, nên không qua kiểm tra độ dài).
+    fallback = [SubClaim.model_construct(id="s1", text=claim_text)]
     try:
         result = await llm.complete_structured(
             parts=parts,

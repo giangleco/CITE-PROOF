@@ -9,11 +9,13 @@ qua `fenced_session` ngắn.
 """
 
 import dataclasses
+import logging
 from uuid import UUID
 
 from citeproof.core.enums import ContentLevelUsed, LLMTask, UnverifiableReason, Verifier
-from citeproof.core.errors import InternalError
+from citeproof.core.errors import InternalError, LLMOutputError
 from citeproof.modules.retrieval.retriever import Retriever
+from citeproof.modules.retrieval.translate import translate_claim
 from citeproof.modules.verification.aggregation import aggregate
 from citeproof.modules.verification.decompose import SubClaim, decompose
 from citeproof.modules.verification.explanations import explanation_language
@@ -31,6 +33,8 @@ from citeproof.pipeline.deps import PipelineDeps
 from citeproof.pipeline.jobs import fenced_session
 
 __all__ = ["MultiStepVerifier", "subclaim_variant"]
+
+logger = logging.getLogger(__name__)
 
 
 def subclaim_variant(sub: SubClaim) -> str:
@@ -83,11 +87,34 @@ class MultiStepVerifier(LLMVerifier):
             )
         ]
 
+    async def _translated(self, vc: VerificationContext, sub: SubClaim) -> str | None:
+        """W3 cho truy vấn X2 (qua hạn mức chi phí); chỉ làm rơi biến thể khi lỗi đầu ra."""
+        llm = self._deps.llm
+        if vc.info.config.cross_lingual != "X2" or llm is None or vc.pair.language == "en":
+            return None
+        if vc.llm_budget is not None and not await vc.llm_budget():
+            return None
+        try:
+            return await translate_claim(
+                llm,
+                self._deps.prompts,
+                vc.info.config.task(LLMTask.CLAIM_TRANSLATE),
+                vc.call_ctx,
+                sub.text,
+            )
+        except LLMOutputError:
+            logger.warning("w3_output_invalid", extra={"error_type": "LLMOutputError"})
+            return None
+
     async def _sub_claim(
         self, vc: VerificationContext, source_file_id: UUID, sub: SubClaim
     ) -> VerificationOutcome:
         assert vc.lease is not None
         pair = dataclasses.replace(vc.pair, claim_text=sub.text)
+        queries = {subclaim_variant(sub): sub.text}
+        translated = await self._translated(vc, sub)
+        if translated is not None:
+            queries[f"{subclaim_variant(sub)}:translated"] = translated
         async with self._deps.session_factory() as session:
             output = await self._retriever.retrieve(
                 session,
@@ -95,7 +122,7 @@ class MultiStepVerifier(LLMVerifier):
                 pair=pair,
                 source_file_id=source_file_id,
                 ctx=vc.call_ctx,
-                queries={subclaim_variant(sub): sub.text},
+                queries=queries,
             )
         async with fenced_session(self._deps.session_factory, vc.lease) as session:
             await self._retriever.write_results(
