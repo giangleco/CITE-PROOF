@@ -5,6 +5,7 @@ chạy một process app. Middleware ASGI thuần để không chặn luồng up
 """
 
 import math
+import re
 import time
 from collections.abc import Callable
 
@@ -13,6 +14,8 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 WINDOW_SECONDS = 60.0
 EXEMPT_PREFIXES = ("/static/", "/api/v1/health")
+# Trang tiến độ poll mỗi 2 giây; chỉ GET đúng đường dẫn này được miễn.
+_PROGRESS_RE = re.compile(r"^/runs/[^/]+/progress$")
 
 
 def _bucket(method: str, path: str) -> str:
@@ -57,7 +60,9 @@ class RateLimitMiddleware:
             await self.app(scope, receive, send)
             return
         path: str = scope["path"]
-        if path.startswith(EXEMPT_PREFIXES):
+        if path.startswith(EXEMPT_PREFIXES) or (
+            scope["method"] == "GET" and _PROGRESS_RE.match(path)
+        ):
             await self.app(scope, receive, send)
             return
         client = scope.get("client")

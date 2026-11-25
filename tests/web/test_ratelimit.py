@@ -36,6 +36,14 @@ def build_app(
     async def health() -> dict[str, str]:
         return {"ok": "1"}
 
+    @app.get("/runs/{run_id}/progress")
+    async def progress(run_id: str) -> dict[str, str]:
+        return {"ok": "1"}
+
+    @app.post("/runs/{run_id}/progress")
+    async def progress_post(run_id: str) -> dict[str, str]:
+        return {"ok": "1"}
+
     @app.get("/api/v1/things")
     async def things() -> dict[str, str]:
         return {"ok": "1"}
@@ -95,6 +103,16 @@ async def test_static_and_health_exempt() -> None:
             assert (await c.get("/api/v1/health")).status_code == 200
         assert (await c.get("/login")).status_code == 200
         assert (await c.get("/login")).status_code == 429
+
+
+async def test_progress_polling_exempt() -> None:
+    async with client_of(build_app(Clock(), per_minute=1)) as c:
+        for _ in range(5):
+            assert (await c.get("/runs/x/progress")).status_code == 200
+        assert (await c.get("/login")).status_code == 200
+        assert (await c.get("/login")).status_code == 429
+        # chỉ GET đúng đường dẫn được miễn
+        assert (await c.post("/runs/x/progress")).status_code == 429
 
 
 async def test_window_resets() -> None:
