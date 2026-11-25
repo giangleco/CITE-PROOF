@@ -42,3 +42,29 @@ def test_title_only_in_metadata() -> None:
 def test_vietnamese_diacritics_folded() -> None:
     pdf = titled_pdf("Kiem chung trich dan")
     assert title_match(pdf, "Kiểm chứng trích dẫn") is TitleMatch.MATCH
+
+
+def _pdf(*, title: str | None, text: str | None) -> bytes:
+    import io
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen.canvas import Canvas
+
+    buffer = io.BytesIO()
+    canvas = Canvas(buffer, pagesize=A4, invariant=1)
+    if title:
+        canvas.setTitle(title)
+    if text:
+        canvas.drawString(72, 700, text)
+    canvas.showPage()
+    canvas.save()
+    return buffer.getvalue()
+
+
+def test_text_shorter_than_title_is_unknown() -> None:
+    # Tiêu đề metadata chỉ là đầu của tiêu đề reference: không được MATCH oan.
+    assert title_match(_pdf(title="Attention", text=None), TITLE) is TitleMatch.UNKNOWN
+
+
+def test_empty_text_is_unknown() -> None:
+    assert title_match(_pdf(title=None, text=None), TITLE) is TitleMatch.UNKNOWN

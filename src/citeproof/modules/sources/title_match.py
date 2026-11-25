@@ -25,6 +25,9 @@ def title_match(pdf: bytes, title: str | None) -> TitleMatch:
         return TitleMatch.UNKNOWN
     parts = [pdf_metadata_title(pdf) or "", *pdf_page_texts(pdf, max_pages=_FIRST_PAGES)]
     text = _key("\n".join(parts))
-    if text and fuzz.partial_ratio(wanted, text) >= TITLE_MATCH_THRESHOLD:
+    # `partial_ratio` đặt chuỗi ngắn vào chuỗi dài: văn bản ngắn hơn tiêu đề sẽ chấm 100 oan.
+    if len(text) < len(wanted):
+        return TitleMatch.UNKNOWN
+    if fuzz.partial_ratio(wanted, text) >= TITLE_MATCH_THRESHOLD:
         return TitleMatch.MATCH
     return TitleMatch.MISMATCH

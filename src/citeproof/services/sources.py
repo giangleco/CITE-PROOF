@@ -16,11 +16,13 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from citeproof.core.enums import AccessStatus, ContentLevel, SourceOrigin, TitleMatch
-from citeproof.core.errors import InputError, NotFoundError
+from citeproof.core.errors import ConflictError, InputError, NotFoundError
 from citeproof.core.settings import Settings
 from citeproof.db.models import (
+    Evidence,
     ReferenceCheck,
     ReferenceEntry,
+    SourceChunk,
     SourceFile,
     User,
     VerificationRun,
@@ -30,6 +32,7 @@ from citeproof.modules.sources.title_match import title_match
 from citeproof.parsing.pdf import pdf_page_count
 from citeproof.services.documents import sniff_kind
 from citeproof.storage import Storage, document_prefix
+from citeproof.web import labels
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +160,15 @@ async def discard_source(
     ).scalar_one_or_none()
     if row is None:
         raise NotFoundError()
+    in_use = await session.scalar(
+        select(Evidence.id)
+        .join(SourceChunk, SourceChunk.id == Evidence.source_chunk_id)
+        .where(SourceChunk.source_file_id == row.id)
+        .limit(1)
+    )
+    if in_use is not None:
+        # Xóa dòng sẽ cascade sang `evidence` của lần chạy đã xong.
+        raise ConflictError(labels.SOURCE_IN_USE, code="SOURCE_IN_USE")
     key = row.storage_key
     await session.execute(delete(SourceFile).where(SourceFile.id == row.id))
     await session.commit()

@@ -39,6 +39,7 @@ def titled_pdf(title: str, *, pages: int = 1, metadata: bool = True) -> bytes:
     for number in range(pages):
         canvas.setFont("Helvetica", 14)
         canvas.drawString(72, 760, title if number == 0 else f"Trang {number + 1}")
+        canvas.drawString(72, 700, "Nội dung chính của bài viết nằm ở các trang tiếp theo sau.")
         canvas.showPage()
     canvas.save()
     return buffer.getvalue()

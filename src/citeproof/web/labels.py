@@ -183,6 +183,10 @@ TITLE_MATCH: Mapping[TitleMatch, str] = {
     ),
     TitleMatch.UNKNOWN: "Chưa kiểm tra được tên bài trong tệp.",
 }
+SOURCE_IN_USE = (
+    "Tệp này đã được dùng trong một lần kiểm tra nên chưa xóa được, "
+    "để kết quả của lần đó vẫn đầy đủ."
+)
 UPLOAD_BUTTON = "Tải lên"
 DISCARD_BUTTON = "Xóa tệp này"
 HIDDEN_WARNINGS = frozenset({"SAMPLE_DOCUMENT"})

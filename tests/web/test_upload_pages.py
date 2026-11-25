@@ -147,3 +147,28 @@ async def test_upload_stores_file_under_document(
     action = await _first_upload_action(client, run_id)
     await _upload(client, run_id, action, titled_pdf("Bài A"))
     assert len(_stored(web_settings)) == 1
+
+
+@pytest.mark.db
+async def test_discard_in_use_source_is_409(
+    client: httpx.AsyncClient, session_factory: SessionFactory
+) -> None:
+    from citeproof.web import labels
+    from tests.services.test_sources import _add_evidence
+
+    run_id = await sample_run(client, session_factory)
+    action = await _first_upload_action(client, run_id)
+    await _upload(client, run_id, action, titled_pdf("Bài A"))
+    async with session_factory() as s:
+        source_id = await s.scalar(
+            select(SourceFile.id).where(SourceFile.storage_key.like("documents/%/sources/%"))
+        )
+        assert source_id is not None
+        await _add_evidence(s, run_id, source_id)
+    token = await page_csrf(client, f"/runs/{run_id}/missing")
+    response = await client.post(
+        f"/runs/{run_id}/sources/{source_id}/discard", data={"csrf_token": token}
+    )
+    assert response.status_code == 409
+    assert labels.SOURCE_IN_USE in response.text
+    assert await _count(session_factory) == 1

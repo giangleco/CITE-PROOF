@@ -8,7 +8,7 @@ from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse, Response
 
 from citeproof.core.enums import ClaimStatus, FeedbackVerdict, ReferenceStatus
-from citeproof.core.errors import CiteProofError, InputError
+from citeproof.core.errors import CiteProofError, ConflictError, InputError
 from citeproof.schemas.report import Overview
 from citeproof.services import documents, feedback, report, sources
 from citeproof.web.deps import (
@@ -248,11 +248,20 @@ async def upload_source(
 
 @router.post("/runs/{run_id}/sources/{source_file_id}/discard", dependencies=[Csrf])
 async def discard_source(
-    db: Db, storage: AppStorage, current: UserDep, run_id: UUID, source_file_id: UUID
+    request: Request,
+    db: Db,
+    storage: AppStorage,
+    current: UserDep,
+    run_id: UUID,
+    source_file_id: UUID,
 ) -> Response:
-    await sources.discard_source(
-        db, storage, user=current.user, run_id=run_id, source_file_id=source_file_id
-    )
+    try:
+        await sources.discard_source(
+            db, storage, user=current.user, run_id=run_id, source_file_id=source_file_id
+        )
+    except ConflictError as exc:
+        await rollback_keeping_user(db, current)
+        return await _missing(request, db, current, run_id, status=409, error=str(exc))
     return RedirectResponse(f"/runs/{run_id}/missing", status_code=303)
 
 

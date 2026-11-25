@@ -306,3 +306,64 @@ async def test_list_missing_attaches_upload(
     assert all(
         i.uploaded is None for i in after if i.reference_entry_id != target.reference_entry_id
     )
+
+
+async def _add_evidence(s: AsyncSession, run_id: uuid.UUID, source_file_id: uuid.UUID) -> None:
+    from citeproof.core.enums import ChunkRegion, EvidenceRelation
+    from citeproof.db.models import Evidence, SourceChunk
+    from tests.services.helpers import add_claim_verification
+
+    cv_id = await add_claim_verification(s, run_id, entry_id=None, sentence="Câu [1].")
+    chunk = SourceChunk(
+        source_file_id=source_file_id,
+        chunk_index=0,
+        text="văn bản",
+        page=1,
+        char_start=0,
+        char_end=7,
+        region=ChunkRegion.BODY.value,
+        language="vi",
+    )
+    s.add(chunk)
+    await s.flush()
+    s.add(
+        Evidence(
+            claim_verification_id=cv_id,
+            source_chunk_id=chunk.id,
+            relation=EvidenceRelation.SUPPORTS.value,
+            quote_text="văn bản",
+            char_start=0,
+            char_end=7,
+        )
+    )
+    await s.commit()
+
+
+@pytest.mark.db
+async def test_discard_refused_when_evidence_uses_source(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    from citeproof.core.errors import ConflictError
+    from citeproof.db.models import Evidence
+
+    storage = LocalStorage(settings.storage_dir)
+    async with session_factory() as s:
+        user, run_id, entry_id = await _setup(s, settings)
+        up = await sources.upload_source(
+            s,
+            storage,
+            settings,
+            user=user,
+            run_id=run_id,
+            reference_entry_id=entry_id,
+            data=titled_pdf(TITLE),
+        )
+        await s.commit()
+        await _add_evidence(s, run_id, up.source_file_id)
+        with pytest.raises(ConflictError) as info:
+            await sources.discard_source(
+                s, storage, user=user, run_id=run_id, source_file_id=up.source_file_id
+            )
+        assert info.value.code == "SOURCE_IN_USE"
+        assert await s.get(SourceFile, up.source_file_id) is not None
+        assert await s.scalar(select(func.count()).select_from(Evidence)) == 1
