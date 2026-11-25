@@ -5,7 +5,7 @@
 `reference_concurrency`:
 
 1. Chuỗi tra cứu (`CascadeResolver`) qua gateway của lần chạy (ngắt mạch theo lần chạy),
-   rồi bước leo thang tùy chọn (A1, Task 25).
+   rồi bước leo thang tùy chọn (A1, `AgentResolver`) trên cùng gateway.
 2. Tài liệu `WEB` có URL: kiểm tra URL qua `SafeHttpClient`; tra archive.org khi
    `web_archive_lookup` bật.
 3. Ghi `works` (nếu khớp) và `reference_checks` trong một giao dịch rào lease ngắn. Mọi lời
@@ -13,8 +13,10 @@
 
 Lỗi của nguồn metadata đã thành nguồn lỗi trong gateway. Lỗi nghiệp vụ khác của một mục
 (`CiteProofError`) được cô lập: lỗi ở chuỗi tra cứu → `LOOKUP_FAILED`; lỗi ở bước leo thang
-→ giữ kết quả chuỗi tra cứu và gắn cờ. `InternalError`, lỗi cache phát lại, mất lease và lỗi
-không phải `CiteProofError` (DB, lỗi lập trình) làm stage lỗi (preflight F12, F13).
+→ giữ kết quả chuỗi tra cứu và gắn cờ. `RetryableError` của bước leo thang (LLM quá tải) làm
+stage lỗi để job được thử lại, trừ lần thử cuối thì cũng giữ kết quả và gắn cờ. `InternalError`,
+lỗi cache phát lại, mất lease và lỗi không phải `CiteProofError` (DB, lỗi lập trình) làm stage
+lỗi (preflight F12, F13).
 
 Xong mọi mục (lần chạy không có phạm vi): `documents.domain_flag` theo lĩnh vực OpenAlex của
 các tài liệu đã khớp và cảnh báo `OUT_OF_DOMAIN` trong `parse_warnings` (QĐ-41). Lần chạy
@@ -35,8 +37,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from citeproof.core.domain import ParsedReference
 from citeproof.core.enums import ReferenceStatus, RefType, ResolvedBy, StageName
-from citeproof.core.errors import CiteProofError, InternalError, LeaseLostError
+from citeproof.core.errors import CiteProofError, InternalError, LeaseLostError, RetryableError
 from citeproof.db.models import Document, ReferenceCheck, ReferenceEntry, Work
+from citeproof.integrations.metadata import MetadataGateway
 from citeproof.llm.types import CacheEntryInvalidError, CacheMissError
 from citeproof.modules.references.cascade import (
     CascadeResolver,
@@ -110,6 +113,10 @@ class CheckReferencesStage:
         self._deps = deps
         self._escalation = escalation
 
+    @property
+    def escalation(self) -> ReferenceEscalation | None:
+        return self._escalation
+
     async def run(self, ctx: StageContext) -> StageResult:
         if self._deps.metadata is None:
             raise InternalError("S3 cần gateway metadata (PipelineDeps.metadata chưa được đặt).")
@@ -117,10 +124,11 @@ class CheckReferencesStage:
             info = await load_run_info(session, ctx.run_id)
             entries = await _entries(session, info)
             done = await _done(session, ctx.run_id)
-        resolver = CascadeResolver(self._deps.metadata())
+        gateway = self._deps.metadata()
+        resolver = CascadeResolver(gateway)
 
         async def handle(entry: ReferenceEntryView) -> None:
-            outcome = await self._check(resolver, entry, info)
+            outcome = await self._check(ctx, gateway, resolver, entry, info)
             await self._write(ctx, entry, outcome)
 
         report = await process_units(
@@ -138,7 +146,12 @@ class CheckReferencesStage:
         return StageResult()
 
     async def _check(
-        self, resolver: CascadeResolver, entry: ReferenceEntryView, info: RunInfo
+        self,
+        ctx: StageContext,
+        gateway: MetadataGateway,
+        resolver: CascadeResolver,
+        entry: ReferenceEntryView,
+        info: RunInfo,
     ) -> _Outcome:
         try:
             result = await resolver.resolve(entry, None)
@@ -147,7 +160,7 @@ class CheckReferencesStage:
                 raise
             logger.warning("reference_lookup_failed", extra={"error_type": type(exc).__name__})
             result = _lookup_failed()
-        outcome = await self._escalate(entry, result, info)
+        outcome = await self._escalate(ctx, gateway, entry, result, info)
         url = entry.parsed.url
         if entry.ref_type is RefType.WEB and url:
             safe_http = self._deps.safe_http
@@ -161,15 +174,22 @@ class CheckReferencesStage:
         return outcome
 
     async def _escalate(
-        self, entry: ReferenceEntryView, result: CascadeResult, info: RunInfo
+        self,
+        ctx: StageContext,
+        gateway: MetadataGateway,
+        entry: ReferenceEntryView,
+        result: CascadeResult,
+        info: RunInfo,
     ) -> _Outcome:
         if self._escalation is None:
             return _Outcome(result)
         try:
-            escalated = await self._escalation.maybe_resolve(entry, result, info)
+            escalated = await self._escalation.maybe_resolve(entry, result, info, gateway)
         except CiteProofError as exc:
             if not _isolated(exc):
                 raise
+            if isinstance(exc, RetryableError) and not ctx.is_last_attempt:
+                raise  # job được thử lại; lượt agent đã xong nằm trong cache LLM
             logger.warning("reference_escalation_failed", extra={"error_type": type(exc).__name__})
             return _Outcome(replace(result, needs_user_review=True))
         if escalated is None:

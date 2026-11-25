@@ -43,7 +43,7 @@ from citeproof.db.models import (
     VerificationRun,
     Work,
 )
-from citeproof.integrations.metadata import SOURCES, WorkAuthor, WorkRecord
+from citeproof.integrations.metadata import SOURCES, MetadataGateway, WorkAuthor, WorkRecord
 from citeproof.modules.references.cascade import (
     CascadeResult,
     EscalationResult,
@@ -806,7 +806,11 @@ class FakeEscalation:
     calls: list[tuple[uuid.UUID, ReferenceStatus, uuid.UUID]] = field(default_factory=list)
 
     async def maybe_resolve(
-        self, entry: ReferenceEntryView, prior: CascadeResult, info: RunInfo
+        self,
+        entry: ReferenceEntryView,
+        prior: CascadeResult,
+        info: RunInfo,
+        gateway: MetadataGateway,
     ) -> EscalationResult | None:
         self.calls.append((entry.id, prior.status, info.run_id))
         return self.result

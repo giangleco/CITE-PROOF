@@ -105,7 +105,8 @@ def _name_key(text: str) -> str:
     return _NON_ALNUM.sub("", fold(text))
 
 
-def _record_family_keys(author: WorkAuthor) -> set[str]:
+def record_family_keys(author: WorkAuthor) -> set[str]:
+    """Các dạng họ (đã gấp dấu, bỏ ký tự không phải chữ/số) chấp nhận cho tác giả của bản ghi."""
     keys = {_name_key(author.family)}
     tokens = author.family.split()
     if tokens:
@@ -119,11 +120,20 @@ def _record_family_keys(author: WorkAuthor) -> set[str]:
 def first_author_matches(ref_author: str, author: WorkAuthor) -> bool:
     """Họ tác giả viết trong bài có khớp tác giả của bản ghi không (bỏ dấu, chữ thường)."""
     key = _name_key(family_name(ref_author))
-    return bool(key) and key in _record_family_keys(author)
+    return bool(key) and key in record_family_keys(author)
 
 
-def _display(author: WorkAuthor) -> str:
+def author_display(author: WorkAuthor) -> str:
     return " ".join(part for part in (author.given, author.family) if part)
+
+
+def venue_matches(left: str | None, right: str | None) -> bool:
+    """Hai tên venue khớp (cùng cách so tiêu đề, ≥ `TITLE_ACCEPT`); thiếu một bên → False.
+
+    Chỉ A1 dùng làm bằng chứng thêm khi tiêu đề lệch (`07a` §4.5.2 trường hợp 2): tên viết tắt
+    và tên đầy đủ không khớp, nên chỉ có thể làm A1 từ chối, không bao giờ làm khớp sai.
+    """
+    return title_similarity(left, right) >= TITLE_ACCEPT
 
 
 def _has_title(ref: ParsedReference) -> bool:
@@ -180,7 +190,7 @@ def match_candidate(ref: ParsedReference, cand: WorkRecord) -> MatchResult:
         mismatches.append(Mismatch(field="title", in_document=ref.title, found=cand.title))
     if same_author is False and ref_author is not None and cand_author is not None:
         mismatches.append(
-            Mismatch(field="authors", in_document=ref_author, found=_display(cand_author))
+            Mismatch(field="authors", in_document=ref_author, found=author_display(cand_author))
         )
     if year_delta:
         mismatches.append(Mismatch(field="year", in_document=str(ref.year), found=str(cand.year)))

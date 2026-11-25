@@ -1,0 +1,24 @@
+# Tool descriptions for A1 (Reference Resolver), `07a` §4.6.2 with arXiv removed as a source.
+# Bump the catalog version (RunConfig.tool_catalogs["meta"]) whenever a description changes.
+meta_search: >
+  Search scholarly metadata sources (Crossref, OpenAlex, Semantic Scholar)
+  for records matching one free-text query. Use it to find candidates for the
+  reference you are resolving. If a query returns no plausible candidate, try a
+  different query: fix typos, translate a Vietnamese title to English, drop the
+  title and use first-author surname + year + a distinctive keyword, or use the
+  venue name. Results are merged across sources and de-duplicated by DOI/arXiv id.
+  Returns at most `limit` candidates (concise: id, title, first 3 authors, year,
+  venue, doi, type) plus the status of each source searched.
+  Response is capped at about 800 tokens; candidates that do not fit are left out.
+meta_get: >
+  Get the full record for one candidate returned by meta_search in this session:
+  all authors, all identifiers (DOI, arXiv, OpenAlex, Semantic Scholar, ISBN),
+  venue, year, type, language, and the first 600 characters of the abstract.
+  Use it to decide between near-duplicate candidates (e.g. preprint vs. conference
+  version) before submitting. Response is capped at about 800 tokens.
+submit_resolution: >
+  Submit your final decision for this reference and end the task. Choose MATCH
+  only with a candidate_id you saw in this session's meta_search results; choose
+  NO_MATCH if no candidate refers to the same work. Do not guess: NO_MATCH is a
+  valid, honest outcome. The system re-checks every MATCH against the original
+  reference fields.

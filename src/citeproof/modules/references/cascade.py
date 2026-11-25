@@ -75,9 +75,16 @@ class EscalationResult:
 
 class ReferenceEscalation(Protocol):
     async def maybe_resolve(
-        self, entry: ReferenceEntryView, prior: CascadeResult, info: RunInfo
+        self,
+        entry: ReferenceEntryView,
+        prior: CascadeResult,
+        info: RunInfo,
+        gateway: MetadataGateway,
     ) -> EscalationResult | None:
-        """None: agent không chạy, giữ `prior`."""
+        """None: agent không chạy, giữ `prior`.
+
+        `gateway` là gateway của lần chạy S3 (cùng bộ ngắt mạch với chuỗi tra cứu).
+        """
         ...
 
 

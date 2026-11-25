@@ -3,6 +3,7 @@
 from citeproof.core.enums import StageName
 from citeproof.modules.citations.stage import CitationsStage
 from citeproof.modules.documents.stage import ParseStage
+from citeproof.modules.references.resolver_agent import AgentResolver
 from citeproof.modules.references.stage_check import CheckReferencesStage
 from citeproof.modules.references.stage_extract import ExtractReferencesStage
 from citeproof.modules.reports.stage import FinalizeStage
@@ -16,11 +17,15 @@ from citeproof.pipeline.stages import NoopStage, PipelineStage, StageRegistry
 
 
 def _real_stages(deps: PipelineDeps) -> dict[StageName, PipelineStage]:
-    """Stage đã có cài đặt thật; task sau thêm vào đây."""
+    """Stage đã có cài đặt thật; task sau thêm vào đây.
+
+    S3 có bước leo thang A1 khi có `AgentRunner`; A1 chỉ chạy khi cấu hình lần chạy bật nó.
+    """
+    escalation = AgentResolver(deps) if deps.agents is not None else None
     return {
         StageName.S1: ParseStage(deps),
         StageName.S2: ExtractReferencesStage(deps),
-        StageName.S3: CheckReferencesStage(deps),
+        StageName.S3: CheckReferencesStage(deps, escalation=escalation),
         StageName.S4: CitationsStage(deps),
         StageName.S5: FetchSourcesStage(deps),
         StageName.S6: IndexSourcesStage(deps),
