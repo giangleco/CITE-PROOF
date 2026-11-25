@@ -116,3 +116,20 @@ def test_upload_labels_in_design_md() -> None:
         assert not any(word in text.lower() for word in labels.FORBIDDEN_WORDS)
     assert labels.UPLOAD_BUTTON == "Tải lên" and labels.DISCARD_BUTTON == "Xóa tệp này"
     assert "`UPLOAD_BUTTON` Tải lên" in design and "`DISCARD_BUTTON` Xóa tệp này" in design
+
+
+def test_reverify_labels_in_design_md() -> None:
+    design = DESIGN_MD.read_text(encoding="utf-8")
+    # Nguyên văn spec lõi §13 "Nhãn mới".
+    assert labels.REVERIFY_BUTTON == "Kiểm chứng lại các tài liệu đã tải"
+    assert labels.RETRY_LOOKUPS_BUTTON == "Tra lại các tài liệu lỗi kết nối"
+    for code in (
+        "REVERIFY_BUTTON",
+        "RETRY_LOOKUPS_BUTTON",
+        "NO_NEW_UPLOADS",
+        "NO_FAILED_LOOKUPS",
+        "RUN_NOT_FINISHED",
+    ):
+        text = getattr(labels, code)
+        assert f"`{code}` {text}" in design, code
+        assert not any(word in text.lower() for word in labels.FORBIDDEN_WORDS), code

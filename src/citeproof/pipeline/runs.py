@@ -7,7 +7,8 @@ thêm đúng một lần). Run đã FAILED hoặc CANCELLED không bao giờ b�
 thái. Các hàm không commit: caller quyết định ranh giới giao dịch.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from types import MappingProxyType
 from typing import Any
 from uuid import UUID
 
@@ -33,6 +34,19 @@ from citeproof.pipeline.stages import STAGE_DEPENDENCIES, StageResult
 _ACTIVE = frozenset({RunStatus.QUEUED.value, RunStatus.RUNNING.value})
 _FINAL_STAGE = StageName.S9
 _LEASE_EXPIRED = "LeaseExpired"
+_SKIPPED_PAYLOAD: Mapping[str, Any] = MappingProxyType({"skipped": True})
+
+# Lần chạy con (QĐ-30): stage bắt đầu → các stage bỏ qua (ghi DONE với `{"skipped": true}`).
+# Bỏ qua đúng các phụ thuộc bắc cầu của stage bắt đầu, cùng S4 khi bắt đầu từ S3 (claim là
+# kết quả cấp tài liệu, dùng lại theo QĐ-13), để S5 được thêm khi S3 xong.
+PARTIAL_SKIPS: Mapping[StageName, frozenset[StageName]] = MappingProxyType(
+    {
+        StageName.S3: frozenset({StageName.S1, StageName.S2, StageName.S4}),
+        StageName.S6: frozenset(
+            {StageName.S1, StageName.S2, StageName.S3, StageName.S4, StageName.S5}
+        ),
+    }
+)
 
 
 async def create_run(
@@ -52,6 +66,50 @@ async def create_run(
         )
     ).scalar_one()
     await enqueue(session, run_id, StageName.S1)
+    return run_id
+
+
+async def create_partial_run(
+    session: AsyncSession,
+    *,
+    parent_run_id: UUID,
+    user_id: UUID,
+    document_id: UUID,
+    config: dict[str, Any],
+    start: StageName,
+) -> UUID:
+    """Tạo lần chạy con QUEUED: job của stage bỏ qua ghi DONE, rồi đưa `start` vào hàng đợi."""
+    skipped = PARTIAL_SKIPS.get(start)
+    if skipped is None:
+        raise ValueError(f"lần chạy con không bắt đầu được từ {start.value}")
+    run_id: UUID = (
+        await session.execute(
+            insert(VerificationRun)
+            .values(
+                document_id=document_id,
+                user_id=user_id,
+                parent_run_id=parent_run_id,
+                status=RunStatus.QUEUED.value,
+                config=config,
+            )
+            .returning(VerificationRun.id)
+        )
+    ).scalar_one()
+    await session.execute(
+        insert(Job).values(
+            [
+                {
+                    "run_id": run_id,
+                    "stage": stage.value,
+                    "status": JobStatus.DONE.value,
+                    "payload": dict(_SKIPPED_PAYLOAD),
+                    "finished_at": func.now(),
+                }
+                for stage in sorted(skipped)
+            ]
+        )
+    )
+    await enqueue(session, run_id, start)
     return run_id
 
 

@@ -86,7 +86,7 @@ Trạng thái: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `IN_REVIEW`, `COMPLETED`
 | T-502 | Phán quyết | Prompt, schema `Verdict`, kiểm tra trích dẫn nguyên văn. Đã có: schema `verdict/2`, `locate_quote`, prompt W5 `verdict.judge`/`verdict.judge_closed_book` v1, S8 `VerifyStage` | P0 | T-501 | COMPLETED | Không có bằng chứng nào lọt qua mà không khớp nguyên văn |
 | T-503 | Quy tắc trạng thái | Quy tắc abstract, lý do `UNVERIFIABLE`, cờ "nên tự kiểm tra" | P0 | T-502 | COMPLETED | Test cho từng quy tắc |
 | T-504 | Biến thể | V0, V1, V2, V3 qua cấu hình (`verification_runs.config.variant`, `make_verifier`). V3: W4 `claim.decompose` tách ≤4 ý (lỗi → một ý), mỗi ý truy xuất `subclaim:sN` và W5 riêng qua cùng hạn mức chi phí, gộp theo `07a` §4.4.3; không có toàn văn thì như V1; chỉ quản trị viên chọn được | P0 | T-502 | COMPLETED | Chọn biến thể bằng file cấu hình |
-| T-505 | Kiểm chứng lại một phần | FR-34 | P1 | T-503 | NOT_STARTED | Chỉ claim liên quan được chạy lại |
+| T-505 | Kiểm chứng lại một phần | FR-34. Lần chạy con (`parent_run_id`, `scope`): "Kiểm chứng lại các tài liệu đã tải" bắt đầu S6 cho tài liệu có tệp tải lên mới, "Tra lại các tài liệu lỗi kết nối" bắt đầu S3 cho `LOOKUP_FAILED`; job bỏ qua ghi `DONE` `{"skipped": true}`; S9 chép kết quả còn lại từ lần chạy cha (idempotent); không tính hạn mức (QĐ-30). | P1 | T-503 | COMPLETED | Chỉ claim liên quan được chạy lại |
 | T-506 | Harness đánh giá | Nhập D1–D5 vào DB `citeproof_eval`; chạy biến thể, tính chỉ số (`13` §B); chế độ phát lại và mẫu mới; `pg_dump` sau mỗi đợt | P0 | T-504, T-E02 | NOT_STARTED | Một lệnh cho ra báo cáo chỉ số kèm cấu hình; phát lại cho đúng kết quả cũ |
 
 ## M6 — Báo cáo và Pilot-β

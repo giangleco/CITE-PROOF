@@ -9,6 +9,12 @@
   <a class="chip" href="/runs/{{ header.run_id }}/references?status={{ t.key }}"{% if status == t.key %} aria-current="true"{% endif %}>{{ labels.REF_STATUS[t.key].label }}</a>
   {% endfor %}
 </nav>
+{% if can_retry_lookups %}
+<form method="post" action="/runs/{{ header.run_id }}/retry-lookups">
+  {{ csrf(csrf_token) }}
+  <button class="btn" type="submit">{{ labels.RETRY_LOOKUPS_BUTTON }}</button>
+</form>
+{% endif %}
 {% if items %}
 <div class="panel">
   <ul class="refs">
@@ -34,9 +40,6 @@
             <p>Chưa tách được tên bài, tác giả, năm từ chuỗi này. Hãy kiểm tra cách ghi tài liệu trong bài.</p>
           {% elif ref.status == 'LOOKUP_FAILED' %}
             <p>Không kết nối được tới nguồn tra cứu nào trong lần này. Đây là lỗi kết nối, không phải kết quả “chưa tìm thấy”.</p>
-            {% if not header.is_sample %}
-            <form method="post" action="/documents/{{ header.document_id }}/runs">{{ csrf(csrf_token) }}<button class="btn small" type="submit" name="action" value="rerun">Kiểm tra lại cả bài</button></form>
-            {% endif %}
           {% endif %}
           {% if ref.doi %}<p>DOI <a class="doi" href="{{ ref.url }}" rel="noopener noreferrer" target="_blank">{{ ref.doi }}</a></p>{% endif %}
           {% if ref.cited_count == 0 %}<p class="muted">{{ labels.UNCITED_REFERENCE }}</p>{% endif %}

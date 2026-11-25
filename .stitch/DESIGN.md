@@ -239,6 +239,8 @@ Bảng nhãn này là nguồn duy nhất; mã nguồn sinh nhãn từ đây, tem
 | Khớp tên bài của tệp tải lên | `MATCH` Tên bài trong tệp khớp với tài liệu tham khảo.; `MISMATCH` Tên bài trong tệp có vẻ không khớp với tài liệu tham khảo. Kiểm tra lại trước khi dùng.; `UNKNOWN` Chưa kiểm tra được tên bài trong tệp. |
 | Tệp tải lên đã được dùng | `SOURCE_IN_USE` Tệp này đã được dùng trong một lần kiểm tra nên chưa xóa được, để kết quả của lần đó vẫn đầy đủ. |
 | Nút tải nguồn | `UPLOAD_BUTTON` Tải lên; `DISCARD_BUTTON` Xóa tệp này |
+| Nút kiểm chứng lại một phần | `REVERIFY_BUTTON` Kiểm chứng lại các tài liệu đã tải; `RETRY_LOOKUPS_BUTTON` Tra lại các tài liệu lỗi kết nối |
+| Không kiểm chứng lại được | `NO_NEW_UPLOADS` Chưa có tệp nào được tải lên sau lần kiểm tra này. Hãy tải toàn văn của tài liệu cần đối chiếu trước.; `NO_FAILED_LOOKUPS` Lần kiểm tra này không có tài liệu nào bị lỗi kết nối khi tra cứu.; `RUN_NOT_FINISHED` Chỉ kiểm chứng lại được khi lần kiểm tra này đã xong. |
 
 ### 8.6 Cảnh báo khi xử lý
 

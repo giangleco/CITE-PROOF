@@ -189,6 +189,14 @@ SOURCE_IN_USE = (
 )
 UPLOAD_BUTTON = "Tải lên"
 DISCARD_BUTTON = "Xóa tệp này"
+REVERIFY_BUTTON = "Kiểm chứng lại các tài liệu đã tải"
+RETRY_LOOKUPS_BUTTON = "Tra lại các tài liệu lỗi kết nối"
+NO_NEW_UPLOADS = (
+    "Chưa có tệp nào được tải lên sau lần kiểm tra này. "
+    "Hãy tải toàn văn của tài liệu cần đối chiếu trước."
+)
+NO_FAILED_LOOKUPS = "Lần kiểm tra này không có tài liệu nào bị lỗi kết nối khi tra cứu."
+RUN_NOT_FINISHED = "Chỉ kiểm chứng lại được khi lần kiểm tra này đã xong."
 HIDDEN_WARNINGS = frozenset({"SAMPLE_DOCUMENT"})
 
 

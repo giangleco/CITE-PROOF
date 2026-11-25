@@ -88,7 +88,12 @@ async def references_page(
         overview,
         "references",
         "pages/report_references.html",
-        {"items": items, "status": chosen},
+        {
+            "items": items,
+            "status": chosen,
+            "can_retry_lookups": not overview.header.is_sample
+            and any(t.key == ReferenceStatus.LOOKUP_FAILED.value for t in overview.ref_tally),
+        },
     )
 
 
@@ -200,7 +205,12 @@ async def _missing(
         overview,
         "missing",
         "pages/report_missing.html",
-        {"items": items, "upload_error": error},
+        {
+            "items": items,
+            "upload_error": error,
+            "can_reverify": not overview.header.is_sample
+            and any(item.uploaded and item.uploaded.is_new for item in items),
+        },
     )
     response.status_code = status
     return response

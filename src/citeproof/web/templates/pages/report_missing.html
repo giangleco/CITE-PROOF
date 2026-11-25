@@ -5,6 +5,12 @@
 {% include "partials/report_head.html" %}
 <p class="lede">Hệ thống chưa lấy được toàn văn mở cho các tài liệu dưới đây. Bạn có thể tải PDF của từng tài liệu lên để đối chiếu các nhận định liên quan; chỉ những nhận định đó được kiểm tra lại.</p>
 {% if upload_error %}{{ notice(upload_error, "err") }}{% endif %}
+{% if can_reverify %}
+<form method="post" action="/runs/{{ header.run_id }}/reverify">
+  {{ csrf(csrf_token) }}
+  <button class="btn primary" type="submit">{{ labels.REVERIFY_BUTTON }}</button>
+</form>
+{% endif %}
 {% if items %}
 <div class="panel">
   <ul class="missing">

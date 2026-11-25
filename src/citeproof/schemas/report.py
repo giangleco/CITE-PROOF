@@ -35,6 +35,7 @@ class RunHeader(_View):
     document_name: str
     is_sample: bool
     status: RunStatus
+    created_at: datetime
     finished_at: datetime | None
     warnings: list[WarningView]
     # Biến thể cuối của lần chạy: báo cáo chỉ hiện dòng của verifier này (QĐ-28).
@@ -134,6 +135,8 @@ class ClaimSheet(_View):
 class UploadedView(_View):
     title_match: TitleMatch
     source_file_id: UUID
+    # Tải lên sau khi lần chạy được tạo: lần chạy chưa dùng tệp này (kiểm chứng lại, T-505).
+    is_new: bool = False
 
 
 class MissingSource(_View):

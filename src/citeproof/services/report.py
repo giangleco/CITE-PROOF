@@ -108,6 +108,7 @@ async def _header(session: AsyncSession, *, user: User, run_id: UUID) -> RunHead
         document_name=document.filename,
         is_sample=is_sample(document),
         status=RunStatus(run.status),
+        created_at=run.created_at,
         finished_at=run.finished_at,
         warnings=warnings,
         verifier=RunConfig.load(run.config).variant,
@@ -453,7 +454,11 @@ async def list_missing(
         MissingSource(
             reference_entry_id=entry_id,
             uploaded=(
-                UploadedView(title_match=up.title_match, source_file_id=up.source_file_id)
+                UploadedView(
+                    title_match=up.title_match,
+                    source_file_id=up.source_file_id,
+                    is_new=up.created_at > header.created_at,
+                )
                 if (up := uploads.get(entry_id))
                 else None
             ),

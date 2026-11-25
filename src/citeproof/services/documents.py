@@ -132,20 +132,16 @@ def _is_admin(user: User) -> bool:
     return user.role == UserRole.ADMIN.value
 
 
-async def start_run(
-    session: AsyncSession,
-    settings: Settings,
-    *,
-    user: User,
-    document: Document,
-    variant: Verifier = DEFAULT_VARIANT,
-    demo: DemoConfig | None = None,
-) -> UUID:
-    """Tạo lần chạy mới; khóa dòng tài liệu để hai yêu cầu đồng thời chỉ tạo một lần chạy."""
+async def lock_for_new_run(session: AsyncSession, *, user: User, document_id: UUID) -> Document:
+    """Khóa dòng tài liệu của chính người dùng trước khi tạo lần chạy (đầy đủ hay một phần).
+
+    Hai yêu cầu đồng thời vì thế chỉ tạo được một lần chạy: một tài liệu chỉ có một lần chạy
+    hoạt động. Tài liệu của người khác → `NotFoundError`; bài mẫu không chạy lại được.
+    """
     locked = (
         await session.execute(
             select(Document)
-            .where(Document.id == document.id, Document.user_id == user.id)
+            .where(Document.id == document_id, Document.user_id == user.id)
             .with_for_update()
         )
     ).scalar_one_or_none()
@@ -163,6 +159,20 @@ async def start_run(
             "Bài này đang được kiểm tra. Chờ lần kiểm tra xong rồi thử lại.",
             code="RUN_IN_PROGRESS",
         )
+    return locked
+
+
+async def start_run(
+    session: AsyncSession,
+    settings: Settings,
+    *,
+    user: User,
+    document: Document,
+    variant: Verifier = DEFAULT_VARIANT,
+    demo: DemoConfig | None = None,
+) -> UUID:
+    """Tạo lần chạy mới; khóa dòng tài liệu để hai yêu cầu đồng thời chỉ tạo một lần chạy."""
+    locked = await lock_for_new_run(session, user=user, document_id=document.id)
     if not _is_admin(user):
         since = datetime.now(UTC) - timedelta(days=1)
         used = await session.scalar(
