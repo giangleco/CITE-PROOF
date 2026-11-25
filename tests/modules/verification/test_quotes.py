@@ -62,3 +62,11 @@ def test_mixed_nfd_nfc_quote_exact_offsets() -> None:
     assert quote != "Mô hình"
     assert locate_quote(quote, text) == (5, 12)
     assert locate_quote(quote, unicodedata.normalize("NFD", text)) is not None
+
+
+def test_unescape_quote_inverts_escape_data() -> None:
+    from citeproof.llm.context import escape_data
+    from citeproof.modules.verification.quotes import unescape_quote
+
+    raw = "p < 0.05 & R&D > x &lt; literal"
+    assert unescape_quote(escape_data(raw)) == raw

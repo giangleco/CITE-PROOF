@@ -207,3 +207,18 @@ async def test_verdict_check_codes(session_factory: SessionFactory, clean_db: No
         "Add it, or set status to UNVERIFIABLE."
     )
     assert check(_verdict("UNVERIFIABLE", [])) == []
+
+
+@pytest.mark.db
+async def test_verdict_check_accepts_escaped_quote(
+    session_factory: SessionFactory, clean_db: None
+) -> None:
+    text = "The effect is significant (p < 0.05) for R&D teams."
+    source = await add_source(session_factory, [text])
+    ss = await open_source_session(session_factory, source)
+    tools = make_source_tools(session_factory, ss, _descriptions())
+    read = await _read(tools, "chunk_1")
+    assert isinstance(read, ToolResult)
+    assert "p &lt; 0.05" in read.content and "R&amp;D" in read.content
+    escaped = "significant (p &lt; 0.05) for R&amp;D teams"
+    assert verdict_check(ss)(_verdict("SUPPORTED", [("chunk_1", escaped, "SUPPORTS")])) == []

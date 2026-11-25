@@ -5,7 +5,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 
 from citeproof.core.enums import (
     AgentRunStatus,
@@ -15,8 +15,9 @@ from citeproof.core.enums import (
     UserRole,
     Verifier,
 )
+from citeproof.core.errors import RetryableError
 from citeproof.core.settings import Settings
-from citeproof.db.models import ClaimVerification, VerificationRun
+from citeproof.db.models import ClaimVerification, Job, VerificationRun
 from citeproof.db.models.agents import AgentRun
 from citeproof.llm.providers.scripted import ScriptedProvider
 from citeproof.llm.types import ProviderResponse, TurnResponse
@@ -29,11 +30,14 @@ from tests.modules.verification.test_verify_stage import (
     SUPPORTED,
     SessionFactory,
     _evidence,
+    _Recording,
+    _registry,
     _rows,
     _run,
     _setup,
     _verdict,
 )
+from tests.pipeline.helpers import drain, make_test_deps, pipeline_settings
 
 MODEL = "claude-sonnet-5-5"
 ENABLED: dict[str, Any] = {"agents": {"evidence_investigator": {"enabled": True}}}
@@ -444,3 +448,79 @@ async def test_admin_can_choose_v4_and_v2a2(
     assert templates.env.globals["admin_variants"] == [v.value for v in ADMIN_VARIANTS]
     source = templates.env.loader.get_source(templates.env, "partials/report_head.html")[0]
     assert "admin_variants" in source and "'V3'" not in source
+
+
+# --- Fix round 1: escaped quotes, retry handling ----------------------------------------------
+
+ESCAPED_CHUNKS: list[str | tuple[str, str | None]] = [
+    ("Introduction.", "1 Introduction"),
+    ("The effect is significant (p < 0.05) for R&D teams.", "5 Experiments"),
+]
+RAW_QUOTE = "significant (p < 0.05) for R&D teams"
+
+
+@pytest.mark.db
+async def test_v4_escaped_quote_accepted_with_raw_offsets(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    setup = await _setup(
+        session_factory, chunks=ESCAPED_CHUNKS, variant="V4", retrieved=(), config_extra=ENABLED
+    )
+    escaped = "significant (p &lt; 0.05) for R&amp;D teams"
+    provider = _provider(
+        [read_turn("chunk_2"), submit_turn(evidence=[("chunk_2", escaped, "SUPPORTS")])]
+    )
+    await _run(session_factory, settings, provider)
+    [row] = await _rows(session_factory, setup.run_id)
+    assert row.status == ClaimStatus.SUPPORTED.value  # nộp lần đầu được nhận
+    assert len(provider.turn_requests) == 2
+    [ev] = await _evidence(session_factory, row.id)
+    text = ESCAPED_CHUNKS[1][0]
+    start = text.index(RAW_QUOTE)
+    assert (ev.char_start, ev.char_end) == (start, start + len(RAW_QUOTE))
+    assert ev.quote_text == RAW_QUOTE
+
+
+@pytest.mark.db
+@pytest.mark.parametrize("variant", ["V4", "V2+A2"])
+async def test_a2_retryable_retried_when_not_last_attempt(
+    session_factory: SessionFactory, clean_db: None, settings: Settings, variant: str
+) -> None:
+    setup = await _setup(session_factory, variant=variant, config_extra=ENABLED)
+    responses = [V2_UNSUPPORTED, V2_UNSUPPORTED] if variant == "V2+A2" else []
+    provider = _provider([RetryableError("529"), *HAPPY], responses)
+    deps = make_test_deps(settings, session_factory, provider=provider)
+    registry = _registry(_Recording(deps))
+    await drain(session_factory, registry, pipeline_settings(job_max_attempts=2))
+    async with session_factory() as s:  # lần thử lại đã lên lịch: chạy ngay
+        await s.execute(update(Job).where(Job.run_id == setup.run_id).values(run_after=func.now()))
+        await s.commit()
+    await drain(session_factory, registry, pipeline_settings(job_max_attempts=2))
+    agent_runs = await _agent_runs(session_factory, setup.run_id)
+    assert [r.status for r in agent_runs] == ["ERROR", "SUBMITTED"]
+    final = _final(await _rows(session_factory, setup.run_id), variant)
+    assert final.status == ClaimStatus.SUPPORTED.value
+    assert final.agent_run_id == agent_runs[1].id
+
+
+@pytest.mark.db
+@pytest.mark.parametrize("variant", ["V4", "V2+A2"])
+async def test_a2_retryable_on_last_attempt_flagged_with_agent_run(
+    session_factory: SessionFactory, clean_db: None, settings: Settings, variant: str
+) -> None:
+    setup = await _setup(session_factory, variant=variant, config_extra=ENABLED)
+    responses = [V2_UNSUPPORTED] if variant == "V2+A2" else []
+    provider = _provider([RetryableError("529")], responses)
+    await _run(session_factory, settings, provider, max_attempts=1)
+    [agent_run] = await _agent_runs(session_factory, setup.run_id)
+    assert agent_run.status == AgentRunStatus.ERROR.value
+    rows = await _rows(session_factory, setup.run_id)
+    final = _final(rows, variant)
+    assert final.needs_user_review is True
+    assert final.agent_run_id == agent_run.id
+    if variant == "V4":
+        assert final.unverifiable_reason == UnverifiableReason.PROCESSING_ERROR.value
+    else:
+        v2 = _final(rows, "V2")
+        assert final.status == v2.status == ClaimStatus.UNSUPPORTED.value
+        assert final.escalated_from == v2.id

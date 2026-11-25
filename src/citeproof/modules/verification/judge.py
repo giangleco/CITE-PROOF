@@ -5,20 +5,17 @@ Lỗi của `LLMClient` được ném lại cho stage quyết định. Quote đ�
 chép nguyên dạng đó. Không log prompt hay đầu ra LLM.
 """
 
-import re
 from dataclasses import dataclass
 
 from citeproof.llm.client import LLMClient
 from citeproof.llm.prompts import PromptLoader
 from citeproof.llm.types import CallContext
 from citeproof.modules.verification.context import JudgeInput, build_judge_prompt
+from citeproof.modules.verification.quotes import unescape_evidence, unescape_quote
 from citeproof.modules.verification.verdict import Verdict
 from citeproof.pipeline.config import TaskSpec
 
 __all__ = ["JudgeResult", "judge", "unescape_quote"]
-
-_ENTITY = re.compile(r"&(amp|lt|gt);")
-_ENTITIES = {"amp": "&", "lt": "<", "gt": ">"}
 
 
 @dataclass(frozen=True)
@@ -26,11 +23,6 @@ class JudgeResult:
     verdict: Verdict
     model: str
     prompt_version: str
-
-
-def unescape_quote(quote: str) -> str:
-    """Nghịch đảo đúng của `escape_data` (một lượt, nên `&amp;lt;` thành `&lt;`)."""
-    return _ENTITY.sub(lambda m: _ENTITIES[m.group(1)], quote)
 
 
 async def judge(
@@ -51,12 +43,8 @@ async def judge(
         max_tokens=spec.max_tokens,
         effort=spec.effort,
     )
-    verdict = result.value
-    evidence = [
-        item.model_copy(update={"quote": unescape_quote(item.quote)}) for item in verdict.evidence
-    ]
     return JudgeResult(
-        verdict=verdict.model_copy(update={"evidence": evidence}),
+        verdict=unescape_evidence(result.value),
         model=result.model or spec.model,
         prompt_version=parts.prompt_version,
     )

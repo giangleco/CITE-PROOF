@@ -1,8 +1,31 @@
-"""Kiểm tra quote nguyên văn trong chunk (spec §7.8 bước 2)."""
+"""Kiểm tra quote nguyên văn trong chunk (spec §7.8 bước 2).
 
+Model (W5 và A2) thấy văn bản chunk đã qua `escape_data` của data block nên có thể chép
+`&lt;`, `&gt;`, `&amp;`; quote được giải escape (`unescape_quote`) trước khi so nguyên văn.
+"""
+
+import re
 import unicodedata
 
-__all__ = ["locate_quote"]
+from citeproof.modules.verification.verdict import Verdict
+
+__all__ = ["locate_quote", "unescape_evidence", "unescape_quote"]
+
+_ENTITY = re.compile(r"&(amp|lt|gt);")
+_ENTITIES = {"amp": "&", "lt": "<", "gt": ">"}
+
+
+def unescape_quote(quote: str) -> str:
+    """Nghịch đảo đúng của `escape_data` (một lượt, nên `&amp;lt;` thành `&lt;`)."""
+    return _ENTITY.sub(lambda m: _ENTITIES[m.group(1)], quote)
+
+
+def unescape_evidence(verdict: Verdict) -> Verdict:
+    """Verdict với mọi quote đã giải escape của data block."""
+    evidence = [
+        item.model_copy(update={"quote": unescape_quote(item.quote)}) for item in verdict.evidence
+    ]
+    return verdict.model_copy(update={"evidence": evidence})
 
 
 def _normalize_quote(quote: str) -> str:

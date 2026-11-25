@@ -33,7 +33,7 @@ from citeproof.llm.context import render_data_block
 from citeproof.llm.tools import Tool, ToolError, ToolResult
 from citeproof.modules.retrieval.lexical import build_tsquery, search_chunks
 from citeproof.modules.verification.context import render_chunks
-from citeproof.modules.verification.quotes import locate_quote
+from citeproof.modules.verification.quotes import locate_quote, unescape_quote
 from citeproof.modules.verification.rules import EVIDENCE_MINIMUM, ChunkInfo
 from citeproof.modules.verification.verdict import Verdict
 
@@ -369,7 +369,7 @@ def verdict_check(ss: SourceSession) -> Callable[[Verdict], Sequence[ToolError]]
                         f"Read {cid} with source_read before citing it.",
                     )
                 )
-            elif locate_quote(item.quote, chunk.text) is None:
+            elif locate_quote(unescape_quote(item.quote), chunk.text) is None:
                 errors.append(
                     ToolError(
                         "QUOTE_NOT_IN_CHUNK",
