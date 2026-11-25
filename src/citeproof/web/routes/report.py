@@ -10,7 +10,7 @@ from fastapi.responses import RedirectResponse, Response
 from citeproof.core.enums import ClaimStatus, FeedbackVerdict, ReferenceStatus
 from citeproof.core.errors import CiteProofError, ConflictError, InputError
 from citeproof.schemas.report import Overview
-from citeproof.services import documents, feedback, report, sources
+from citeproof.services import documents, feedback, report, reverify, sources
 from citeproof.web.deps import (
     AppSettings,
     AppStorage,
@@ -69,6 +69,12 @@ def _page(
     )
 
 
+def _can_start_child(overview: Overview) -> bool:
+    """Nút kiểm chứng lại/tra lại chỉ hiện khi lần chạy đã xong và không phải bài mẫu."""
+    header = overview.header
+    return not header.is_sample and header.status in reverify.FINISHED
+
+
 @router.get("/runs/{run_id}/report")
 async def overview_page(request: Request, db: Db, current: UserDep, run_id: UUID) -> Response:
     overview = await report.get_overview(db, user=current.user, run_id=run_id)
@@ -91,7 +97,7 @@ async def references_page(
         {
             "items": items,
             "status": chosen,
-            "can_retry_lookups": not overview.header.is_sample
+            "can_retry_lookups": _can_start_child(overview)
             and any(t.key == ReferenceStatus.LOOKUP_FAILED.value for t in overview.ref_tally),
         },
     )
@@ -208,7 +214,7 @@ async def _missing(
         {
             "items": items,
             "upload_error": error,
-            "can_reverify": not overview.header.is_sample
+            "can_reverify": _can_start_child(overview)
             and any(item.uploaded and item.uploaded.is_new for item in items),
         },
     )

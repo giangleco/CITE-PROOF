@@ -7,7 +7,8 @@ Hai loại lần chạy con của một lần chạy đã xong:
 - `lookup_retry`: các tài liệu `LOOKUP_FAILED`; bắt đầu từ S3 (tra lại rồi lấy bản mở, lập
   chỉ mục, đối chiếu lại).
 
-Lần chạy con giữ nguyên cấu hình đã đóng băng của lần chạy cha (QĐ-46), chỉ thêm `scope`.
+Lần chạy con giữ nguyên cấu hình đã đóng băng của lần chạy cha (QĐ-46), thêm `scope` và bỏ
+`demo`.
 S9 của nó chép phần còn lại từ lần chạy cha (`modules.reports.merge`). Một tài liệu chỉ có một
 lần chạy hoạt động (`documents.lock_for_new_run`); lần chạy con không ghi `UsageEvent` nên
 không tính vào hạn mức.
@@ -28,9 +29,10 @@ from citeproof.services.documents import lock_for_new_run
 from citeproof.services.report import list_missing
 from citeproof.web import labels
 
-__all__ = ["start_lookup_retry", "start_reverify_uploads"]
+__all__ = ["FINISHED", "start_lookup_retry", "start_reverify_uploads"]
 
-_FINISHED = (RunStatus.COMPLETED.value, RunStatus.COMPLETED_WITH_WARNINGS.value)
+# Lần chạy cha phải đã xong; trang báo cáo dùng cùng tập này để ẩn/hiện nút.
+FINISHED: frozenset[RunStatus] = frozenset({RunStatus.COMPLETED, RunStatus.COMPLETED_WITH_WARNINGS})
 
 
 async def _finished_parent(session: AsyncSession, *, user: User, run_id: UUID) -> VerificationRun:
@@ -45,7 +47,7 @@ async def _finished_parent(session: AsyncSession, *, user: User, run_id: UUID) -
     if run is None:
         raise NotFoundError()
     await lock_for_new_run(session, user=user, document_id=run.document_id)
-    if run.status not in _FINISHED:
+    if RunStatus(run.status) not in FINISHED:
         raise InputError(labels.RUN_NOT_FINISHED, code="RUN_NOT_FINISHED")
     return run
 
@@ -61,7 +63,9 @@ async def _start_child(
     scope = RunScope.model_validate(
         {"kind": kind, "reference_entry_ids": reference_entry_ids, "from_stage": start}
     )
-    config = RunConfig.load(parent.config).model_copy(update={"scope": scope})
+    # `demo` (chỉ môi trường local) không áp cho lần chạy con: `fail_at` của lần chạy cha
+    # sẽ làm lần chạy con lỗi theo.
+    config = RunConfig.load(parent.config).model_copy(update={"scope": scope, "demo": None})
     return await create_partial_run(
         session,
         parent_run_id=parent.id,

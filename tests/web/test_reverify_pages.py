@@ -190,3 +190,28 @@ async def test_other_user_cannot_reverify(
         await client.post(f"/runs/{run_id}/retry-lookups", data={"csrf_token": token})
     ).status_code == 404
     assert await _children(session_factory, run_id) == []
+
+
+@pytest.mark.db
+@pytest.mark.parametrize("status", [RunStatus.RUNNING, RunStatus.FAILED])
+async def test_buttons_hidden_on_unfinished_run(
+    client: httpx.AsyncClient,
+    session_factory: SessionFactory,
+    web_settings: Settings,
+    status: RunStatus,
+) -> None:
+    user = await login(client, session_factory)
+    run_id = await _run(session_factory, web_settings, user, upload=True, lookup_failed=True)
+    async with session_factory() as s:
+        await set_run(s, run_id, status=status)
+    missing = (await client.get(f"/runs/{run_id}/missing")).text
+    references = (await client.get(f"/runs/{run_id}/references")).text
+    assert labels.REVERIFY_BUTTON not in missing
+    assert "/reverify" not in missing
+    assert labels.RETRY_LOOKUPS_BUTTON not in references
+    assert "/retry-lookups" not in references
+    # Cùng dữ liệu nhưng lần chạy đã xong: cả hai nút hiện.
+    async with session_factory() as s:
+        await set_run(s, run_id, status=RunStatus.COMPLETED)
+    assert labels.REVERIFY_BUTTON in (await client.get(f"/runs/{run_id}/missing")).text
+    assert labels.RETRY_LOOKUPS_BUTTON in (await client.get(f"/runs/{run_id}/references")).text

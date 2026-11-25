@@ -100,6 +100,25 @@ async def test_reverify_creates_child_run_with_scope(
 
 
 @pytest.mark.db
+async def test_child_run_drops_demo_config(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    async with session_factory() as s:
+        user, run_id, entry_id = await _finished_run(s, settings)
+        parent = await s.get(VerificationRun, run_id)
+        assert parent is not None
+        parent.config = {**parent.config, "demo": {"step_delay_s": 0.0, "fail_at": "S8"}}
+        await s.commit()
+        await _upload(s, settings, user, run_id, entry_id)
+        child_id = await reverify.start_reverify_uploads(s, settings, user=user, run_id=run_id)
+        await s.commit()
+        child = await s.get(VerificationRun, child_id)
+    assert child is not None
+    assert RunConfig.load(child.config).demo is None
+    assert child.config["demo"] is None
+
+
+@pytest.mark.db
 async def test_partial_run_conflict_when_active(
     session_factory: SessionFactory, clean_db: None, settings: Settings
 ) -> None:

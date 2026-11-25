@@ -71,7 +71,7 @@ Chỉ một màu nhấn: **xanh mực bút bi**. Mọi màu trạng thái là m�
 ### 2.3 Quy tắc màu
 
 - **"Chưa tìm thấy trong nguồn đã tra" không bao giờ có màu đỏ hay cam.** Nó là huy hiệu rỗng: nền trong suốt, viền Đường kẻ đậm, chữ Trung tính, biểu tượng kính lúp. Lý do: chưa tìm thấy không phải là sai (`04` §4.5.2).
-- **"Chưa tra được, lỗi kết nối" (`LOOKUP_FAILED`) là huy hiệu viền nét đứt**, chữ Trung tính, biểu tượng mũi tên tròn "thử lại", luôn kèm một hành động chạy lại (ở v1 là nút "Kiểm tra lại" cả bài, ghi rõ như vậy). Không được trông giống "chưa tìm thấy".
+- **"Chưa tra được, lỗi kết nối" (`LOOKUP_FAILED`) là huy hiệu viền nét đứt**, chữ Trung tính, biểu tượng mũi tên tròn "thử lại", luôn kèm một hành động chạy lại: khi lần kiểm tra đã xong, tab tài liệu tham khảo có nút "Tra lại các tài liệu lỗi kết nối" (`RETRY_LOOKUPS_BUTTON`, chỉ tra lại các tài liệu này); lần kiểm tra tạm dừng do lỗi thì được chạy tiếp từ trang tiến độ. Không được trông giống "chưa tìm thấy".
 - Màu Mâu thuẫn chỉ dành cho điều thật sự sai hoặc nguy hiểm.
 - Không dùng gradient, không phát sáng, không dùng màu tím.
 
