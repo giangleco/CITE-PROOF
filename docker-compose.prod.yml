@@ -105,7 +105,7 @@ services:
     image: pgvector/pgvector:pg17
     restart: unless-stopped
     entrypoint: ["/bin/bash", "-c"]
-    command: ["while true; do /scripts/backup.sh || true; sleep 86400; done"]
+    command: ["while true; do /scripts/backup.sh || echo \"BACKUP FAILED (exit $$?)\" >&2; sleep 86400; done"]
     environment:
       PGHOST: db
       PGUSER: citeproof

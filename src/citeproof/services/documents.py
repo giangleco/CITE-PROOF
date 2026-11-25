@@ -139,6 +139,20 @@ def _is_admin(user: User) -> bool:
     return user.role == UserRole.ADMIN.value
 
 
+async def ensure_no_active_run(session: AsyncSession, document_id: UUID) -> None:
+    """Từ chối (`RUN_IN_PROGRESS`) khi tài liệu còn lần chạy QUEUED/RUNNING."""
+    active = await session.scalar(
+        select(VerificationRun.id)
+        .where(VerificationRun.document_id == document_id, VerificationRun.status.in_(_ACTIVE))
+        .limit(1)
+    )
+    if active is not None:
+        raise ConflictError(
+            "Bài này đang được kiểm tra. Chờ lần kiểm tra xong rồi thử lại.",
+            code="RUN_IN_PROGRESS",
+        )
+
+
 async def lock_for_new_run(session: AsyncSession, *, user: User, document_id: UUID) -> Document:
     """Khóa dòng tài liệu của chính người dùng trước khi tạo lần chạy (đầy đủ hay một phần).
 
@@ -156,16 +170,7 @@ async def lock_for_new_run(session: AsyncSession, *, user: User, document_id: UU
         raise NotFoundError()
     if is_sample(locked):
         raise InputError("Bài mẫu không kiểm tra lại được.", code="SAMPLE_NOT_RERUNNABLE")
-    active = await session.scalar(
-        select(VerificationRun.id)
-        .where(VerificationRun.document_id == locked.id, VerificationRun.status.in_(_ACTIVE))
-        .limit(1)
-    )
-    if active is not None:
-        raise ConflictError(
-            "Bài này đang được kiểm tra. Chờ lần kiểm tra xong rồi thử lại.",
-            code="RUN_IN_PROGRESS",
-        )
+    await ensure_no_active_run(session, locked.id)
     return locked
 
 

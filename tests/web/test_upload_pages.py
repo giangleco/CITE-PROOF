@@ -5,12 +5,12 @@ from uuid import UUID
 
 import httpx
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from citeproof.core.enums import SourceOrigin, TitleMatch
+from citeproof.core.enums import RunStatus, SourceOrigin, TitleMatch
 from citeproof.core.settings import Settings
-from citeproof.db.models import SourceFile
+from citeproof.db.models import SourceFile, VerificationRun
 from citeproof.web import labels
 from tests.files import PDF_BYTES, docx_bytes, titled_pdf
 from tests.web.conftest import login, page_csrf
@@ -171,4 +171,30 @@ async def test_discard_in_use_source_is_409(
     )
     assert response.status_code == 409
     assert labels.SOURCE_IN_USE in response.text
+    assert await _count(session_factory) == 1
+
+
+@pytest.mark.db
+async def test_discard_while_run_active_is_409(
+    client: httpx.AsyncClient, session_factory: SessionFactory
+) -> None:
+    run_id = await sample_run(client, session_factory)
+    action = await _first_upload_action(client, run_id)
+    await _upload(client, run_id, action, titled_pdf("Bài A"))
+    async with session_factory() as s:
+        source_id = await s.scalar(
+            select(SourceFile.id).where(SourceFile.storage_key.like("documents/%/sources/%"))
+        )
+        await s.execute(
+            update(VerificationRun)
+            .where(VerificationRun.id == run_id)
+            .values(status=RunStatus.RUNNING.value)
+        )
+        await s.commit()
+    token = await page_csrf(client, f"/runs/{run_id}/missing")
+    response = await client.post(
+        f"/runs/{run_id}/sources/{source_id}/discard", data={"csrf_token": token}
+    )
+    assert response.status_code == 409
+    assert "đang được kiểm tra" in response.text
     assert await _count(session_factory) == 1

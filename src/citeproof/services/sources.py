@@ -30,7 +30,7 @@ from citeproof.db.models import (
 )
 from citeproof.modules.sources.title_match import title_match
 from citeproof.parsing.pdf import pdf_page_count
-from citeproof.services.documents import sniff_kind
+from citeproof.services.documents import ensure_no_active_run, sniff_kind
 from citeproof.storage import Storage, document_prefix
 from citeproof.web import labels
 
@@ -160,6 +160,8 @@ async def discard_source(
     ).scalar_one_or_none()
     if row is None:
         raise NotFoundError()
+    # Lần chạy đang chạy có thể đang đọc tệp này (S4/S5): chờ nó xong rồi mới xóa.
+    await ensure_no_active_run(session, document_id)
     in_use = await session.scalar(
         select(Evidence.id)
         .join(SourceChunk, SourceChunk.id == Evidence.source_chunk_id)

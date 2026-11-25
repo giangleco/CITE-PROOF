@@ -10,7 +10,7 @@ import uuid
 
 import httpx
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from citeproof.core.enums import (
@@ -367,6 +367,40 @@ async def test_resume_partial_run_after_failure(
         await merge_parent_results(s, info)
         await s.commit()
     assert await _counts(session_factory, child_id) == counts
+
+
+@pytest.mark.db
+async def test_s9_merge_unions_parent_warnings_idempotently(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    settings = _settings(settings)
+    parent_id, _, user = await _parent_with_upload(session_factory, settings)
+    child_id = await _start_reverify(session_factory, settings, user, parent_id)
+    async with session_factory() as s:
+        await s.execute(
+            update(VerificationRun)
+            .where(VerificationRun.id == parent_id)
+            .values(warnings=["CLAIM_LIMIT_REACHED", "LLM_NOT_CONFIGURED"])
+        )
+        await s.execute(
+            update(VerificationRun)
+            .where(VerificationRun.id == child_id)
+            .values(warnings=["LLM_NOT_CONFIGURED", "COST_LIMIT_REACHED"])
+        )
+        await s.commit()
+    for _ in range(2):  # chạy lại S9 không thêm trùng
+        async with session_factory() as s:
+            info = await load_run_info(s, child_id)
+            await merge_parent_results(s, info)
+            await s.commit()
+        async with session_factory() as s:
+            child = await s.get(VerificationRun, child_id)
+            assert child is not None
+            assert child.warnings == [
+                "LLM_NOT_CONFIGURED",
+                "COST_LIMIT_REACHED",
+                "CLAIM_LIMIT_REACHED",
+            ]
 
 
 # --- Tra lại tài liệu lỗi kết nối ---------------------------------------------------------------

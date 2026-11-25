@@ -10,6 +10,7 @@ from citeproof.core.enums import (
     ContentLevel,
     ParseMethod,
     RefType,
+    RunStatus,
     SourceOrigin,
     TitleMatch,
     UserRole,
@@ -20,7 +21,7 @@ from citeproof.db.models import ReferenceEntry, SourceFile, User
 from citeproof.services import deletion, sources
 from citeproof.storage import LocalStorage
 from tests.files import PDF_BYTES, docx_bytes, titled_pdf
-from tests.services.helpers import new_run, new_user, run_document_id
+from tests.services.helpers import new_run, new_user, run_document_id, set_run
 
 SessionFactory = async_sessionmaker[AsyncSession]
 TITLE = "Attention Is All You Need"
@@ -232,6 +233,7 @@ async def test_discard_deletes_row_and_file(
         )
         await s.commit()
         key = (await s.get(SourceFile, up.source_file_id)).storage_key  # type: ignore[union-attr]
+        await set_run(s, run_id, status=RunStatus.COMPLETED)
         intruder = await new_user(s, "x@b.vn")
         with pytest.raises(NotFoundError):
             await sources.discard_source(
@@ -246,6 +248,35 @@ async def test_discard_deletes_row_and_file(
             await sources.discard_source(
                 s, storage, user=user, run_id=run_id, source_file_id=up.source_file_id
             )
+
+
+@pytest.mark.db
+@pytest.mark.parametrize("status", [RunStatus.QUEUED, RunStatus.RUNNING])
+async def test_discard_refused_while_document_has_active_run(
+    session_factory: SessionFactory, clean_db: None, settings: Settings, status: RunStatus
+) -> None:
+    from citeproof.core.errors import ConflictError
+
+    storage = LocalStorage(settings.storage_dir)
+    async with session_factory() as s:
+        user, run_id, entry_id = await _setup(s, settings)
+        up = await sources.upload_source(
+            s,
+            storage,
+            settings,
+            user=user,
+            run_id=run_id,
+            reference_entry_id=entry_id,
+            data=titled_pdf(TITLE),
+        )
+        await s.commit()
+        await set_run(s, run_id, status=status)
+        with pytest.raises(ConflictError) as info:
+            await sources.discard_source(
+                s, storage, user=user, run_id=run_id, source_file_id=up.source_file_id
+            )
+        assert info.value.code == "RUN_IN_PROGRESS"
+        assert await s.get(SourceFile, up.source_file_id) is not None
 
 
 @pytest.mark.db
@@ -359,6 +390,7 @@ async def test_discard_refused_when_evidence_uses_source(
             data=titled_pdf(TITLE),
         )
         await s.commit()
+        await set_run(s, run_id, status=RunStatus.COMPLETED)
         await _add_evidence(s, run_id, up.source_file_id)
         with pytest.raises(ConflictError) as info:
             await sources.discard_source(

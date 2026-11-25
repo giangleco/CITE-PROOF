@@ -11,17 +11,19 @@ Lần chạy con chỉ tra lại hoặc đối chiếu lại một phần; để
 Mọi lệnh là `INSERT … SELECT … ON CONFLICT DO NOTHING` trên khóa duy nhất, nên chạy lại S9
 (tiếp tục sau lỗi, mất lease) không thêm dòng. `evidence` không có khóa duy nhất: chỉ chép cho
 dòng `claim_verifications` vừa được chèn ở lần gọi này (`RETURNING`, preflight F27).
+`warnings` của lần chạy cha được hợp vào lần chạy con (bỏ trùng, giữ thứ tự), vì dòng
+`PROCESSING_ERROR` được chép mang theo lý do mà banner của lần chạy cha đã nêu.
 `escalated_from` và `agent_run_id` của bản chép đặt NULL: chúng trỏ tới dòng của lần chạy cha.
 """
 
 from uuid import UUID
 
-from sqlalchemy import and_, literal, null, select
+from sqlalchemy import and_, literal, null, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from citeproof.db.models import ClaimVerification, Evidence, ReferenceCheck
+from citeproof.db.models import ClaimVerification, Evidence, ReferenceCheck, VerificationRun
 from citeproof.pipeline.config import RunInfo
 
 __all__ = ["merge_parent_results"]
@@ -120,6 +122,23 @@ async def _copy_evidence(session: AsyncSession, parent_id: UUID, copied: list[UU
     )
 
 
+async def _merge_warnings(session: AsyncSession, run_id: UUID, parent_id: UUID) -> None:
+    parent = await session.scalar(
+        select(VerificationRun.warnings).where(VerificationRun.id == parent_id)
+    )
+    child = await session.scalar(
+        select(VerificationRun.warnings).where(VerificationRun.id == run_id).with_for_update()
+    )
+    merged = list(child or [])
+    for warning in parent or []:
+        if warning not in merged:
+            merged.append(warning)
+    if merged != list(child or []):
+        await session.execute(
+            update(VerificationRun).where(VerificationRun.id == run_id).values(warnings=merged)
+        )
+
+
 async def merge_parent_results(session: AsyncSession, info: RunInfo) -> None:
     """Chép kết quả của lần chạy cha mà lần chạy con chưa có; không làm gì nếu không có cha."""
     parent_id = info.parent_run_id
@@ -131,3 +150,4 @@ async def merge_parent_results(session: AsyncSession, info: RunInfo) -> None:
     )
     if copied:
         await _copy_evidence(session, parent_id, copied)
+    await _merge_warnings(session, info.run_id, parent_id)

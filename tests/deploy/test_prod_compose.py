@@ -85,3 +85,18 @@ def test_restore_waits_for_db_health() -> None:
 def test_backup_files_are_private() -> None:
     lines = (ROOT / "scripts/backup.sh").read_text().splitlines()
     assert "umask 077" in lines
+
+
+def test_backup_storage_runs_before_db_dumps_and_eval_is_optional() -> None:
+    text = (ROOT / "scripts/backup.sh").read_text()
+    assert "set -euo pipefail" in text
+    assert text.index("tar czf") < text.index("pg_dump -Fc")
+    assert "select 1 from pg_database where datname='$database'" in text
+
+
+def test_backup_loop_logs_failure_instead_of_hiding_it(services: dict[str, Any]) -> None:
+    command = services["backup"]["command"][0]
+    assert "/scripts/backup.sh || echo" in command
+    assert "BACKUP FAILED" in command
+    assert "|| true" not in command
+    assert "PGPASSWORD" not in command
