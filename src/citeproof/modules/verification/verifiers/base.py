@@ -7,7 +7,7 @@ bằng văn bản tất định trước khi trả về.
 """
 
 import dataclasses
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
@@ -68,6 +68,9 @@ class VerificationContext:
     sources: SourceChoice
     ref: RefMeta
     call_ctx: CallContext
+    # Hạn mức chi phí (QĐ-32): gọi ngay trước mỗi lời gọi W5; False → `PROCESSING_ERROR`.
+    # Kết quả tất định (không gọi LLM) không qua hạn mức.
+    llm_budget: Callable[[], Awaitable[bool]] | None = None
 
 
 @dataclass(frozen=True)
@@ -181,6 +184,8 @@ class LLMVerifier:
         llm = self._deps.llm
         if llm is None:
             raise InternalError("S8 gọi W5 khi chưa cấu hình LLM")
+        if vc.llm_budget is not None and not await vc.llm_budget():
+            return deterministic(vc.info, UnverifiableReason.PROCESSING_ERROR, self.variant)
         closed_book = source is None
         content_level = ContentLevelUsed.NONE if source is None else _content_level(source)
         language = explanation_language(vc.info.document_language)

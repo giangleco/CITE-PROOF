@@ -4,6 +4,7 @@
 tầng web. Giải thích của LLM chứa từ cấm được thay bằng văn bản tất định (`safe_texts`).
 """
 
+import unicodedata
 from typing import Literal
 
 from citeproof.core.enums import ClaimStatus, UnverifiableReason
@@ -120,7 +121,8 @@ def status_explanation(status: ClaimStatus, language: ExplanationLanguage) -> st
 def contains_forbidden(text: str | None) -> bool:
     if not text:
         return False
-    lowered = text.lower()
+    # NFC trước: dấu tách rời (NFD) không được lọt qua phép so khớp.
+    lowered = unicodedata.normalize("NFC", text).lower()
     return any(word in lowered for word in FORBIDDEN_WORDS)
 
 

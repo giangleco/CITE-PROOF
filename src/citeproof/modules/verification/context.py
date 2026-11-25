@@ -61,6 +61,12 @@ def _reference_block(ref: RefMeta, content_level: ContentLevelUsed) -> str:
     )
 
 
+def _attr_value(value: str) -> str:
+    """Bỏ ký tự điều khiển (trừ xuống dòng, tab) mà `render_data_block` từ chối trong thuộc tính:
+    tên mục của PDF dự phòng lấy nguyên dòng từ pdfium."""
+    return "".join(ch for ch in value if ord(ch) >= 0x20 or ch in "\n\r\t").strip()
+
+
 def render_chunks(chunks: Sequence[ChunkInfo]) -> str:
     """`<source_chunks untrusted="true">` chứa từng `<chunk id=… page=… section=… region=…>`."""
     blocks = []
@@ -68,8 +74,9 @@ def render_chunks(chunks: Sequence[ChunkInfo]) -> str:
         attrs = {"id": chunk.short_id}
         if chunk.page is not None:
             attrs["page"] = str(chunk.page)
-        if chunk.section:
-            attrs["section"] = chunk.section
+        section = _attr_value(chunk.section or "")
+        if section:
+            attrs["section"] = section
         attrs["region"] = chunk.region.value
         blocks.append(render_data_block("chunk", chunk.text, attrs=attrs, untrusted=False))
     return '<source_chunks untrusted="true">\n' + "\n".join(blocks) + "\n</source_chunks>"

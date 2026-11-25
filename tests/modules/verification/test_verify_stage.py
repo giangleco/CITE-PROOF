@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from citeproof.core.enums import (
@@ -47,7 +47,7 @@ from citeproof.modules.verification.explanations import (
 )
 from citeproof.modules.verification.rules import Outcome, ValidatedEvidence
 from citeproof.modules.verification.stage import VerifyStage
-from citeproof.modules.verification.store import run_cost, write_outcomes
+from citeproof.modules.verification.store import reference_statuses, run_cost, write_outcomes
 from citeproof.modules.verification.verifiers.base import VerificationOutcome
 from citeproof.pipeline.config import load_run_info
 from citeproof.pipeline.deps import PipelineDeps
@@ -521,6 +521,102 @@ async def test_cost_limit_stops_new_calls(
     assert [r.warnings for r in stage.results] == [("COST_LIMIT_REACHED",)]
     async with session_factory() as s:
         assert await run_cost(s, setup.run_id) > Decimal("0.000001")
+
+
+@pytest.mark.db
+async def test_cost_limit_keeps_deterministic_results(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    """Sau khi chạm hạn mức, cặp không cần LLM (V2 không có chunk truy xuất) giữ kết quả."""
+    setup = await _setup(
+        session_factory,
+        ["claim một", "claim hai", "claim ba"],
+        limits={"max_cost_usd": 0.000001},
+    )
+    async with session_factory() as s:
+        await s.execute(
+            delete(RetrievalResult).where(RetrievalResult.claim_id == setup.claim_ids[1])
+        )
+        await s.commit()
+    provider = ScriptedProvider([SUPPORTED, SUPPORTED])
+    stage = await _run(session_factory, _one_thread(settings), provider)
+    assert len(provider.requests) == 1
+    rows = await _by_claim(session_factory, setup.run_id)
+    first, zero_hits, third = (rows[c] for c in setup.claim_ids)
+    assert first.status == ClaimStatus.SUPPORTED.value
+    assert zero_hits.unverifiable_reason == R.EVIDENCE_INCONCLUSIVE.value
+    assert third.unverifiable_reason == R.PROCESSING_ERROR.value
+    assert [r.warnings for r in stage.results] == [("COST_LIMIT_REACHED",)]
+
+
+@pytest.mark.db
+async def test_reference_status_falls_back_to_parent_run(
+    session_factory: SessionFactory, clean_db: None
+) -> None:
+    """Lần chạy con không có `reference_checks` dùng trạng thái của lần chạy cha."""
+    setup = await _setup(session_factory, status=ReferenceStatus.LOOKUP_FAILED)
+    async with session_factory() as s:
+        parent = await s.get(VerificationRun, setup.run_id)
+        assert parent is not None
+        child = VerificationRun(
+            document_id=parent.document_id,
+            user_id=parent.user_id,
+            parent_run_id=parent.id,
+            config={"variant": "V2"},
+        )
+        s.add(child)
+        await s.commit()
+        child_id = child.id
+    async with session_factory() as s:
+        info = await load_run_info(s, child_id)
+        assert await reference_statuses(s, info) == {setup.entry: ReferenceStatus.LOOKUP_FAILED}
+        assert setup.entry is not None
+        s.add(
+            ReferenceCheck(
+                run_id=child_id,
+                reference_entry_id=setup.entry,
+                status=ReferenceStatus.MATCHED.value,
+                sources_searched=["crossref"],
+            )
+        )
+        await s.commit()
+    async with session_factory() as s:
+        info = await load_run_info(s, child_id)
+        assert await reference_statuses(s, info) == {setup.entry: ReferenceStatus.MATCHED}
+
+
+@pytest.mark.db
+async def test_child_run_pair_uses_parent_reference_status(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    """S8 của lần chạy con: tra cứu lỗi ở lần chạy cha → PROCESSING_ERROR, không gọi LLM."""
+    setup = await _setup(session_factory, status=ReferenceStatus.LOOKUP_FAILED)
+    async with session_factory() as s:
+        await s.execute(delete(ReferenceCheck).where(ReferenceCheck.run_id == setup.run_id))
+        parent = await s.get(VerificationRun, setup.run_id)
+        assert parent is not None
+        # Lần chạy cha khác giữ `reference_checks`; lần chạy đang kiểm là con của nó.
+        holder = VerificationRun(
+            document_id=parent.document_id, user_id=parent.user_id, config={"variant": "V2"}
+        )
+        s.add(holder)
+        await s.flush()
+        assert setup.entry is not None
+        s.add(
+            ReferenceCheck(
+                run_id=holder.id,
+                reference_entry_id=setup.entry,
+                status=ReferenceStatus.LOOKUP_FAILED.value,
+                sources_searched=["crossref"],
+            )
+        )
+        parent.parent_run_id = holder.id
+        await s.commit()
+    provider = ScriptedProvider([])
+    await _run(session_factory, settings, provider)
+    [row] = await _rows(session_factory, setup.run_id)
+    assert row.unverifiable_reason == R.PROCESSING_ERROR.value
+    assert provider.requests == []
 
 
 # --- An toàn và cô lập ------------------------------------------------------------------------

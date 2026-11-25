@@ -150,3 +150,20 @@ async def test_judge_invalid_output_raises() -> None:
     llm = LLMClient(ScriptedProvider([bad, bad]), InMemoryCacheStore(), InMemoryCallLogger())
     with pytest.raises(LLMOutputError):
         await judge(llm, PromptLoader(PROMPTS_ROOT), SPEC, CTX, _input(), closed_book=True)
+
+
+def test_control_characters_in_section_are_dropped() -> None:
+    """Tên mục từ PDF dự phòng có thể chứa ký tự điều khiển; không được làm hỏng prompt."""
+    chunk = ChunkInfo(
+        chunk_id=uuid.uuid4(),
+        short_id="chunk_1",
+        text="Body text",
+        page=3,
+        section="5\x02 Experiments\x00\x1f",
+        region=ChunkRegion.BODY,
+    )
+    parts = build_judge_prompt(
+        PromptLoader(PROMPTS_ROOT), SPEC, _input(chunks=(chunk,)), closed_book=False
+    )
+    assert 'section="5 Experiments"' in parts.user
+    assert not any(ord(ch) < 0x20 and ch not in "\n\r\t" for ch in parts.user)

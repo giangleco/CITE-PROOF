@@ -1,6 +1,9 @@
+import unicodedata
+
 from citeproof.core.enums import ClaimStatus, UnverifiableReason
 from citeproof.modules.verification import explanations
 from citeproof.modules.verification.explanations import (
+    contains_forbidden,
     deterministic_explanation,
     downgrade_note,
     explanation_language,
@@ -56,3 +59,11 @@ def test_safe_texts_replaces_forbidden_explanation() -> None:
         "vi",
     )
     assert text == deterministic_explanation(UnverifiableReason.ABSTRACT_ONLY_INSUFFICIENT, "vi")
+
+
+def test_forbidden_words_detected_in_nfd_text() -> None:
+    decomposed = unicodedata.normalize("NFD", "Số liệu BỊA ĐẶT.")
+    assert decomposed != unicodedata.normalize("NFC", decomposed)
+    assert contains_forbidden(decomposed)
+    text, _ = safe_texts(ClaimStatus.SUPPORTED, None, decomposed, None, "vi")
+    assert text == status_explanation(ClaimStatus.SUPPORTED, "vi")

@@ -169,6 +169,22 @@ async def test_mid_stream_error_maps_to_retryable() -> None:
     assert PROMPT not in str(info.value)
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        httpx2.ReadTimeout("timed out"),
+        httpx2.RemoteProtocolError("peer closed"),
+        httpx2.ReadError("reset"),
+    ],
+)
+async def test_mid_stream_transport_error_maps_to_retryable(error: Exception) -> None:
+    provider, stub = make(payload(model="claude-sonnet-5-5"))
+    stub.beta.messages.mid_stream_error = error
+    with pytest.raises(RetryableError) as info:
+        await provider.complete(request("claude-sonnet-5-5", "high"))
+    assert str(info.value) == f"anthropic {type(error).__name__} status=None"
+
+
 async def test_effort_omitted_when_none() -> None:
     provider, stub = make(payload())
     await provider.complete(request(effort=None))

@@ -2,9 +2,10 @@
 
 Đơn vị là cặp claim-reference của `load_pairs` (kể cả link NULL); cặp đã có dòng
 `claim_verifications` cho verifier của lần chạy được bỏ qua. Mỗi cặp: tiền kiểm tất định,
-giới hạn số cặp (`limits.max_claims`, theo thứ tự trong bài) và chi phí (`limits.max_cost_usd`,
-kiểm trước mỗi cặp cần LLM, dưới một khóa để không có hai cặp cùng vượt), rồi verifier của
-biến thể (đọc DB và gọi W5 ngoài giao dịch), cuối cùng một `fenced_session` ngắn để ghi.
+giới hạn số cặp (`limits.max_claims`, theo thứ tự trong bài), rồi verifier của biến thể (đọc DB
+và gọi W5 ngoài giao dịch), cuối cùng một `fenced_session` ngắn để ghi. Hạn mức chi phí
+(`limits.max_cost_usd`) được verifier kiểm ngay trước mỗi lời gọi W5 (`llm_budget`, dưới một
+khóa); cặp có kết quả tất định (kể cả V2 không có chunk truy xuất) giữ kết quả đó.
 
 Cô lập theo cặp: `CiteProofError` của một cặp cho dòng `PROCESSING_ERROR` của cặp đó (log
 chỉ tên lớp lỗi), cặp khác vẫn chạy. Ngoại lệ: `InternalError`, `LeaseLostError`, lỗi cache
@@ -176,14 +177,13 @@ class VerifyStage:
         if reason is not None:
             return [deterministic(info, reason, variant)]
         assert verifier is not None  # precheck đã trả PROCESSING_ERROR khi không có LLM
-        if not await gate.allow():
-            return [deterministic(info, error, variant)]
         vc = VerificationContext(
             info=info,
             pair=unit.pair,
             sources=unit.state.sources,
             ref=unit.ref,
             call_ctx=call_ctx,
+            llm_budget=gate.allow,
         )
         try:
             return await verifier.verify(vc)

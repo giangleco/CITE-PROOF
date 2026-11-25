@@ -12,6 +12,7 @@ chỉ áp cho khoảng lặng giữa hai sự kiện. Lỗi gửi giữa luồng
 from typing import Literal, cast, get_args
 
 import anthropic
+import httpx2
 from anthropic.types import Message, MessageParam, OutputConfigParam, TextBlock
 from anthropic.types.beta import (
     BetaMessage,
@@ -52,6 +53,10 @@ class AnthropicProvider:
             if exc.status_code >= 500 or exc.status_code < 400:
                 raise RetryableError(_describe(exc, exc.status_code)) from exc
             raise ExternalServiceError(_describe(exc, exc.status_code)) from exc
+        except httpx2.TransportError as exc:
+            # SDK chỉ bọc lỗi mạng khi mở yêu cầu; lỗi khi đọc luồng (ReadTimeout, ReadError,
+            # RemoteProtocolError) đến nguyên dạng từ httpx2.
+            raise RetryableError(_describe(exc, None)) from exc
 
         usage = message.usage
         # Token đọc/ghi prompt cache cũng là token đầu vào của lượt gọi.
@@ -125,5 +130,5 @@ def _checked_effort(effort: str | None) -> Effort | None:
     return cast(Effort, effort)
 
 
-def _describe(exc: anthropic.APIError, status: int | None) -> str:
+def _describe(exc: Exception, status: int | None) -> str:
     return f"anthropic {type(exc).__name__} status={status}"
