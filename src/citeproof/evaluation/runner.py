@@ -83,7 +83,13 @@ from citeproof.evaluation.metrics import (
 from citeproof.llm.cache import eval_namespace
 from citeproof.llm.providers.anthropic import AnthropicProvider
 from citeproof.llm.providers.base import LLMProvider
-from citeproof.llm.types import CacheMode, ProviderRequest, ProviderResponse
+from citeproof.llm.types import (
+    CacheMode,
+    ProviderRequest,
+    ProviderResponse,
+    TurnRequest,
+    TurnResponse,
+)
 from citeproof.modules.verification.quotes import locate_quote
 from citeproof.modules.verification.verifiers.base import NO_MODEL
 from citeproof.pipeline.config import RunConfig
@@ -232,6 +238,9 @@ class ReplayOnlyProvider:
     name = AnthropicProvider.name
 
     async def complete(self, request: ProviderRequest) -> ProviderResponse:
+        raise InternalError("Chế độ phát lại không được gọi provider LLM")
+
+    async def complete_turn(self, request: TurnRequest) -> TurnResponse:
         raise InternalError("Chế độ phát lại không được gọi provider LLM")
 
 

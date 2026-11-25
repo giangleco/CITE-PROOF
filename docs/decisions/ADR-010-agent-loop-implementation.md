@@ -2,8 +2,8 @@
 
 | Thuộc tính | Giá trị |
 |---|---|
-| Trạng thái | Proposed. Chốt khi bắt đầu T-406 |
-| Ngày | 2026-11-23 |
+| Trạng thái | Accepted (25/11/2026), hiện thực ở T-406 |
+| Ngày | 2026-11-25 (đề xuất 2026-11-23) |
 | Liên quan | ADR-002, ADR-006, ADR-009, NFR-06, `07a` §4.5.1 |
 
 ## Context
@@ -28,7 +28,14 @@ Viết vòng lặp agent bằng gì để giữ được cache theo bước, ng�
 
 ## Decision
 
-Đề xuất phương án A. Trước khi viết mã, tra cú pháp mới nhất của SDK nhà cung cấp đã chọn ở ADR-006 (context7 hoặc tài liệu chính thức) cho phần tool use và structured output.
+Chọn phương án A: `llm/agent_runner.py` (`AgentRunner`) và `llm/tools.py` (`Tool`, `ToolError`, `ToolResult`, `SubmitTool`, `load_tool_catalog`), viết cạnh `LLMClient` và dùng chung `CacheStore`, `CallLogger`, bảng giá. Provider có thêm `complete_turn(TurnRequest) -> TurnResponse`; cú pháp tool use, `strict`, `output_config.effort`, `cache_control` và luồng `get_final_message()` đã đối chiếu với SDK `anthropic` 2.13 (context7 và mã nguồn gói).
+
+Hiện thực (spec §9):
+
+- Lượt agent luôn đi đường `messages.stream` thường, không dùng fallback phía server (QĐ-36); công cụ gửi `strict: true`, không gửi `tool_choice`, `thinking` hay tham số sampling. Khối nội dung trả về (kể cả thinking có chữ ký) được gửi lại nguyên vẹn; hội thoại chỉ nối thêm.
+- `max_steps` đếm lời gọi công cụ (kể cả công cụ lạ, đối số sai), không tính submit. Dùng hết thì lượt kết quả thêm "You have one call left: submit now with what you have." và lượt kế là lượt cuối, chỉ nhận submit; lời gọi song song vượt phần còn lại nhận lỗi `STEP_BUDGET_EXHAUSTED`.
+- Khóa cache từng lượt: `agent_step_cache_key` trên `[system, tools, *messages]`; entry giữ cả số token nên phát lại cho đúng quyết định ngân sách cũ.
+- `agent_runs` ghi ngay khi bắt đầu với `ERROR`, cập nhật khi kết thúc; mỗi lượt một dòng `llm_calls` (`agent_run_id`, `step_index`) commit ngay để cổng chi phí S8 thấy.
 
 ## Rationale
 

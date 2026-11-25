@@ -18,8 +18,8 @@ from citeproof.integrations.grobid import GrobidClient
 from citeproof.integrations.http_safe import SafeHttpClient
 from citeproof.integrations.metadata import MetadataCache, MetadataGateway
 from citeproof.integrations.oa import HostRateLimits
-from citeproof.llm.cache import InMemoryCacheStore, validate_namespace
-from citeproof.llm.calls import InMemoryCallLogger
+from citeproof.llm.agent_runner import AgentRunner
+from citeproof.llm.cache import validate_namespace
 from citeproof.llm.client import LLMClient
 from citeproof.llm.prompts import PromptLoader
 from citeproof.llm.providers.scripted import ScriptedProvider
@@ -57,18 +57,13 @@ class ClosingProvider(ScriptedProvider):
 
 
 def _patch_llm(monkeypatch: pytest.MonkeyPatch) -> ClosingProvider:
+    """Provider "Anthropic" giả, dùng chung cho `LLMClient` và `AgentRunner` của `open_deps`."""
     closing = ClosingProvider()
 
-    def fake_make_llm_client(
-        settings: Settings,
-        session_factory: object,
-        *,
-        mode: CacheMode = CacheMode.READ_WRITE,
-        provider: object = None,
-    ) -> LLMClient:
-        return LLMClient(closing, InMemoryCacheStore(), InMemoryCallLogger())
+    def fake_make_anthropic_provider(settings: Settings) -> ClosingProvider:
+        return closing
 
-    monkeypatch.setattr(deps_module, "make_llm_client", fake_make_llm_client)
+    monkeypatch.setattr(deps_module, "make_anthropic_provider", fake_make_anthropic_provider)
     return closing
 
 
@@ -81,7 +76,7 @@ async def test_open_deps_without_key(tmp_path: Path, monkeypatch: pytest.MonkeyP
     monkeypatch.delenv("CITEPROOF_ANTHROPIC_API_KEY", raising=False)
     settings = _settings(tmp_path)
     async with open_deps(settings, async_sessionmaker()) as deps:
-        assert deps.llm is None
+        assert deps.llm is None and deps.agents is None
         assert deps.settings is settings
         assert isinstance(deps.storage, LocalStorage)
         assert isinstance(deps.prompts, PromptLoader)
@@ -96,6 +91,8 @@ async def test_open_deps_builds_llm_client_with_key(tmp_path: Path) -> None:
     settings = _settings(tmp_path, anthropic_api_key="sk-test")
     async with open_deps(settings, async_sessionmaker()) as deps:
         assert isinstance(deps.llm, LLMClient)
+        assert isinstance(deps.agents, AgentRunner)
+        assert deps.agents._provider is deps.llm._provider  # một client HTTP của SDK
 
 
 async def test_open_deps_closes_llm_and_http(
@@ -103,7 +100,8 @@ async def test_open_deps_closes_llm_and_http(
 ) -> None:
     provider = _patch_llm(monkeypatch)
     async with open_deps(_settings(tmp_path), async_sessionmaker()) as deps:
-        assert deps.llm is not None
+        assert deps.llm is not None and deps.llm._provider is provider
+        assert deps.agents is not None and deps.agents._provider is provider
         http = deps.http
         assert provider.closed == 0
     assert provider.closed == 1

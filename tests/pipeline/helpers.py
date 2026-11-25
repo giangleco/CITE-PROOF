@@ -14,12 +14,13 @@ from citeproof.core.settings import Settings
 from citeproof.integrations.http_safe import Resolver, SafeHttpClient
 from citeproof.integrations.metadata import make_gateway_factory
 from citeproof.integrations.oa import HostRateLimits
+from citeproof.llm.agent_runner import AgentRunner
 from citeproof.llm.cache import PgCacheStore
 from citeproof.llm.calls import PgCallLogger
 from citeproof.llm.client import LLMClient
 from citeproof.llm.prompts import PromptLoader
 from citeproof.llm.providers.base import LLMProvider
-from citeproof.llm.types import ProviderRequest, ProviderResponse
+from citeproof.llm.types import ProviderRequest, ProviderResponse, TurnRequest, TurnResponse
 from citeproof.modules.citations.llm_extract import ClaimExtractionBatch
 from citeproof.modules.references.llm_parse import ParsedReferenceBatch
 from citeproof.modules.retrieval.translate import TranslatedClaim
@@ -83,6 +84,8 @@ def make_test_deps(
 ) -> PipelineDeps:
     """PipelineDeps cho test stage: không mạng thật, LLM chỉ khi truyền `provider`.
 
+    Có `provider` thì `llm` và `agents` (AgentRunner) dùng chung provider đó.
+
     `transport` (ví dụ `httpx.MockTransport`) dùng chung cho `http`, `safe_http`,
     `source_http`, `GrobidClient` (tới `settings.grobid_url`) và gateway metadata. Không truyền
     `transport` thì `grobid` là None (S1 dùng pypdfium2), còn `http` (đường gọi API metadata)
@@ -95,6 +98,17 @@ def make_test_deps(
             provider,
             PgCacheStore(session_factory),
             PgCallLogger(session_factory),
+            prices=settings.llm_prices,
+        )
+        if provider is not None
+        else None
+    )
+    agents = (
+        AgentRunner(
+            provider,
+            PgCacheStore(session_factory),
+            PgCallLogger(session_factory),
+            session_factory,
             prices=settings.llm_prices,
         )
         if provider is not None
@@ -117,6 +131,7 @@ def make_test_deps(
         source_limits=HostRateLimits(sleep=no_sleep),
         grobid=make_grobid_client(settings, http) if transport is not None else None,
         metadata=make_gateway_factory(settings, http, session_factory, sleep=no_sleep),
+        agents=agents,
     )
 
 
@@ -237,14 +252,20 @@ class RoutedProvider:
     Stage chạy song song (S4, S7, S8 gọi LLM đồng thời) nên `ScriptedProvider` không giữ được
     thứ tự; ở đây mỗi tác vụ có một handler `request -> ProviderResponse` (hoặc danh sách phản
     hồi lấy lần lượt). Tác vụ không có kịch bản → `AssertionError`. `requests` ghi lại
-    `(tác vụ, request)` theo thứ tự đến.
+    `(tác vụ, request)` theo thứ tự đến. Lượt agent (`complete_turn`) lấy lần lượt từ `turns`
+    và ghi vào `turn_requests`.
     """
 
     name = "routed"
 
     def __init__(
-        self, routes: Mapping[str, RouteHandler | Sequence[ProviderResponse | BaseException]]
+        self,
+        routes: Mapping[str, RouteHandler | Sequence[ProviderResponse | BaseException]],
+        *,
+        turns: Sequence[TurnResponse | BaseException] = (),
     ) -> None:
+        self._turns = list(turns)
+        self.turn_requests: list[TurnRequest] = []
         self._handlers: dict[str, RouteHandler] = {}
         self._queues: dict[str, list[ProviderResponse | BaseException]] = {}
         for task, route in routes.items():
@@ -275,6 +296,15 @@ class RoutedProvider:
         if not queue:
             raise AssertionError(f"RoutedProvider: hết kịch bản cho {task}")
         item = queue.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        return item
+
+    async def complete_turn(self, request: TurnRequest) -> TurnResponse:
+        self.turn_requests.append(request)
+        if not self._turns:
+            raise AssertionError("RoutedProvider: hết kịch bản lượt agent")
+        item = self._turns.pop(0)
         if isinstance(item, BaseException):
             raise item
         return item

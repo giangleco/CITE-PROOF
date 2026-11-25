@@ -211,7 +211,7 @@ claim_verification → verification_run.config (biến thể, model, prompt vers
 | ADR-007 | Embedding và chiến lược xuyên ngôn ngữ (`decisions/ADR-007-embedding-strategy.md`) | Accepted cho v1 (24/11/2026); xem lại sau SPK-04 |
 | ADR-008 | Tái sử dụng hay tự xây kiểm tra tài liệu tham khảo | Chờ T-002 |
 | ADR-009 | Agent có giới hạn trong pipeline tất định (`decisions/ADR-009-bounded-agents-in-pipeline.md`) | Accepted (D-13) |
-| ADR-010 | Hiện thực vòng lặp agent (`decisions/ADR-010-agent-loop-implementation.md`) | Proposed, chốt khi bắt đầu T-406 |
+| ADR-010 | Hiện thực vòng lặp agent (`decisions/ADR-010-agent-loop-implementation.md`) | Accepted (25/11/2026), T-406 |
 
 ## 5. Implementation Steps
 

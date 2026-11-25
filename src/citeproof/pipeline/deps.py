@@ -2,7 +2,7 @@
 
 `open_deps` dựng một lần cho mỗi tiến trình worker và đóng mọi client khi thoát. Task
 sau thêm trường (GROBID, metadata, embedder, agent) có giá trị mặc định vào cuối
-`PipelineDeps`.
+`PipelineDeps`. `LLMClient` và `AgentRunner` dùng chung một provider (một client HTTP của SDK).
 """
 
 from collections.abc import AsyncIterator, Callable
@@ -20,9 +20,10 @@ from citeproof.integrations.grobid import GrobidClient
 from citeproof.integrations.http_safe import Resolver, SafeHttpClient
 from citeproof.integrations.metadata import MetadataGateway, make_gateway_factory
 from citeproof.integrations.oa import HostRateLimits
+from citeproof.llm.agent_runner import AgentRunner
 from citeproof.llm.cache import doc_namespace
 from citeproof.llm.client import LLMClient
-from citeproof.llm.factory import make_llm_client
+from citeproof.llm.factory import make_agent_runner, make_anthropic_provider, make_llm_client
 from citeproof.llm.prompts import PromptLoader
 from citeproof.llm.providers.base import LLMProvider
 from citeproof.llm.types import CacheMode, CallContext
@@ -63,6 +64,8 @@ class PipelineDeps:
     metadata: Callable[[], MetadataGateway] | None = None
     # Embedding cho chunk nguồn ở S6 (ADR-007): v1 không dùng, `embedding` để NULL.
     embedder: Embedder = field(default_factory=NoEmbedder)
+    # Vòng lặp agent A1/A2 (ADR-010); None khi chưa có khóa API (cùng điều kiện với `llm`).
+    agents: AgentRunner | None = None
 
 
 @asynccontextmanager
@@ -85,9 +88,17 @@ async def open_deps(
         http = await stack.enter_async_context(
             httpx.AsyncClient(timeout=_HTTP_TIMEOUT_S, transport=transport)
         )
-        llm = make_llm_client(settings, session_factory, mode=cache_mode, provider=provider)
+        if provider is None:
+            provider = make_anthropic_provider(settings)
+        llm: LLMClient | None = None
+        agents: AgentRunner | None = None
+        if provider is not None:
+            llm = make_llm_client(settings, session_factory, mode=cache_mode, provider=provider)
+            agents = make_agent_runner(
+                settings, session_factory, mode=cache_mode, provider=provider
+            )
         if llm is not None:
-            stack.push_async_callback(llm.aclose)
+            stack.push_async_callback(llm.aclose)  # đóng provider dùng chung một lần
         yield PipelineDeps(
             session_factory=session_factory,
             storage=make_storage(settings),
@@ -103,6 +114,7 @@ async def open_deps(
             metadata=make_gateway_factory(
                 settings, http, session_factory, ttl_enabled=metadata_ttl
             ),
+            agents=agents,
         )
 
 

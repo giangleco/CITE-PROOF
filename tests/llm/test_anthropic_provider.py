@@ -19,7 +19,7 @@ from citeproof.llm.factory import make_llm_client
 from citeproof.llm.providers.anthropic import AnthropicProvider
 from citeproof.llm.providers.scripted import ScriptedProvider
 from citeproof.llm.schema import strict_output_schema
-from citeproof.llm.types import CacheMode, OutputModel, ProviderRequest
+from citeproof.llm.types import CacheMode, OutputModel, ProviderRequest, ToolSpec, TurnRequest
 
 SYSTEM = "You are a careful parser."
 PROMPT = "PROMPT-SECRET: Nguyễn Văn A (2020) đã chứng minh điều này."
@@ -387,3 +387,119 @@ async def test_aclose_closes_sdk_client() -> None:
     assert not sdk.is_closed()
     await provider.aclose()
     assert sdk.is_closed()
+
+
+# --- Lượt agent (`complete_turn`, Task 24) -------------------------------------------------
+
+
+class ToolArgs(OutputModel):
+    SCHEMA_VERSION: ClassVar[str] = "tool_args/1"
+    query: str = Field(min_length=3)
+    year: int | None = None
+
+
+TOOL_SCHEMA = ToolArgs.model_json_schema()
+THINKING = {"type": "thinking", "thinking": "Let me search.", "signature": "sig-1"}
+TOOL_USE = {
+    "type": "tool_use",
+    "id": "toolu_1",
+    "name": "meta_search",
+    "input": {"query": "attention", "year": None},
+}
+
+
+def turn_request(
+    messages: tuple[dict[str, Any], ...] = ({"role": "user", "content": PROMPT},),
+    *,
+    model: str = "claude-sonnet-5-5",
+    effort: str | None = "high",
+) -> TurnRequest:
+    return TurnRequest(
+        model=model,
+        system=SYSTEM,
+        messages=messages,
+        tools=(ToolSpec("meta_search", "Search metadata.", TOOL_SCHEMA),),
+        max_tokens=16000,
+        effort=effort,
+    )
+
+
+async def test_anthropic_turn_shape() -> None:
+    provider, stub = make(
+        payload(THINKING, TOOL_USE, model="claude-sonnet-5-5", stop_reason="tool_use")
+    )
+    first = await provider.complete_turn(turn_request())
+
+    # Agent không dùng fallback phía server (QĐ-36), kể cả khi Sonnet bật fallback; lượt dài
+    # chạy bằng luồng như worker.
+    assert stub.beta.messages.calls == []
+    assert stub.messages.create_calls == []
+    (kwargs,) = stub.messages.calls
+    assert kwargs["tools"] == [
+        {
+            "name": "meta_search",
+            "description": "Search metadata.",
+            "input_schema": strict_output_schema(TOOL_SCHEMA),
+            "strict": True,
+        }
+    ]
+    assert kwargs["system"] == [
+        {"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}
+    ]
+    assert kwargs["output_config"] == {"effort": "high"}
+    assert kwargs["max_tokens"] == 16000 and kwargs["model"] == "claude-sonnet-5-5"
+    assert not (FORBIDDEN & kwargs.keys())
+    assert "fallbacks" not in kwargs and "betas" not in kwargs
+
+    assert first.content == (THINKING, TOOL_USE)  # khóa None bị bỏ, `input` giữ nguyên null
+    assert first.stop_reason == "tool_use"
+    assert (first.input_tokens, first.output_tokens) == (10, 5)
+    assert first.model == "claude-sonnet-5-5"
+
+    stub.messages.result = payload({"type": "text", "text": "done"}, model="claude-sonnet-5-5")
+    second_messages = (
+        {"role": "user", "content": PROMPT},
+        {"role": "assistant", "content": list(first.content)},
+        {
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "{}"}],
+        },
+    )
+    await provider.complete_turn(turn_request(second_messages))
+    sent = stub.messages.calls[1]["messages"]
+    assert sent[1]["content"][0] == THINKING  # khối thinking gửi lại nguyên vẹn
+    assert sent == [dict(m) for m in second_messages]
+
+
+async def test_turn_effort_omitted_when_none() -> None:
+    provider, stub = make(payload())
+    await provider.complete_turn(turn_request(model="claude-haiku-5-5", effort=None))
+    sent = stub.messages.calls[0].get("output_config", anthropic.omit)
+    assert isinstance(sent, anthropic.Omit)  # SDK không gửi trường này
+
+
+async def test_turn_cache_usage_counts_as_input() -> None:
+    usage = {
+        "input_tokens": 10,
+        "output_tokens": 3,
+        "cache_read_input_tokens": 100,
+        "cache_creation_input_tokens": 50,
+    }
+    provider, _ = make(payload(usage=usage))
+    response = await provider.complete_turn(turn_request())
+    assert (response.input_tokens, response.output_tokens) == (160, 3)
+
+
+async def test_turn_mid_stream_transport_error_maps_to_retryable() -> None:
+    provider, stub = make(payload())
+    stub.messages.mid_stream_error = httpx2.ReadTimeout("timed out")
+    with pytest.raises(RetryableError) as info:
+        await provider.complete_turn(turn_request())
+    assert str(info.value) == "anthropic ReadTimeout status=None"
+
+
+async def test_turn_client_error_maps_to_external_error() -> None:
+    provider, _ = make(_status_error(anthropic.BadRequestError, 400))
+    with pytest.raises(ExternalServiceError) as info:
+        await provider.complete_turn(turn_request())
+    assert PROMPT not in str(info.value)

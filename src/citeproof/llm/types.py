@@ -1,4 +1,7 @@
-"""Kiểu dùng chung cho LLMClient (07a §4.4.2). Không có tham số sampling hay tool choice."""
+"""Kiểu dùng chung cho LLMClient và AgentRunner (07a §4.4.2, §4.5.1).
+
+Không có tham số sampling hay tool choice.
+"""
 
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -37,6 +40,38 @@ class ProviderResponse:
     stop_reason: str
     # Model thực sự trả lời (có thể là model dự phòng); rỗng nghĩa là model đã yêu cầu.
     model: str = ""
+
+
+@dataclass(frozen=True)
+class ToolSpec:
+    """Công cụ gửi cho model: `input_schema` là JSON schema thô (provider làm strict)."""
+
+    name: str
+    description: str
+    input_schema: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class TurnRequest:
+    """Một lượt agent: hội thoại gồm các khối nội dung của API, chỉ được nối thêm."""
+
+    model: str
+    system: str
+    messages: tuple[Mapping[str, Any], ...]
+    tools: tuple[ToolSpec, ...]
+    max_tokens: int
+    effort: str | None
+
+
+@dataclass(frozen=True)
+class TurnResponse:
+    # Khối nội dung (text, thinking, tool_use) đúng như API trả, để gửi lại nguyên vẹn.
+    content: tuple[Mapping[str, Any], ...]
+    stop_reason: str
+    input_tokens: int
+    output_tokens: int
+    # Model thực sự trả lời.
+    model: str
 
 
 class CacheMode(StrEnum):
