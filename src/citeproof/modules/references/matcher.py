@@ -127,15 +127,6 @@ def author_display(author: WorkAuthor) -> str:
     return " ".join(part for part in (author.given, author.family) if part)
 
 
-def venue_matches(left: str | None, right: str | None) -> bool:
-    """Hai tên venue khớp (cùng cách so tiêu đề, ≥ `TITLE_ACCEPT`); thiếu một bên → False.
-
-    Chỉ A1 dùng làm bằng chứng thêm khi tiêu đề lệch (`07a` §4.5.2 trường hợp 2): tên viết tắt
-    và tên đầy đủ không khớp, nên chỉ có thể làm A1 từ chối, không bao giờ làm khớp sai.
-    """
-    return title_similarity(left, right) >= TITLE_ACCEPT
-
-
 def _has_title(ref: ParsedReference) -> bool:
     return bool(ref.title and title_norm(ref.title))
 

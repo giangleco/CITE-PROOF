@@ -10,13 +10,19 @@ do agent viết lại không bao giờ được dùng. Ba trường hợp:
 
 1. DOI trùng, hoặc tiêu đề khớp (≥ `TITLE_WEAK`) cùng họ tác giả đầu và năm (lệch ≤ 1; bài không
    ghi năm thì cần tiêu đề ≥ `TITLE_ACCEPT`) → `MATCHED`/`METADATA_MISMATCH` như chuỗi tra cứu.
-   Với `PARSE_FAILED`: DOI của ứng viên có trong chuỗi gốc, hoặc tiêu đề có trong chuỗi gốc kèm
-   họ tác giả đầu hoặc năm (tiêu đề ngắn cần cả hai); trường nào của ứng viên không có trong
-   chuỗi gốc thì tính là lệch.
-2. Tiêu đề lệch nhưng cùng họ tác giả đầu, cùng năm và cùng venue, không có DOI mâu thuẫn
-   (thường do tiêu đề dịch) → `METADATA_MISMATCH` với trường `title` và `needs_user_review`.
+   Với `PARSE_FAILED`: DOI của ứng viên nằm trong số DOI viết trong chuỗi gốc (so bằng sau
+   chuẩn hóa), hoặc tiêu đề có trong chuỗi gốc kèm họ tác giả đầu hoặc năm (tiêu đề ngắn cần cả
+   hai); trường nào của ứng viên không có trong chuỗi gốc thì tính là lệch; DOI trùng mà tiêu đề
+   không có trong chuỗi gốc thì gắn `needs_user_review`.
+2. Tiêu đề lệch nhưng vẫn ≥ `CASE2_TITLE_FLOOR`, cùng họ tác giả đầu, cùng năm và cùng venue
+   (so đối xứng `venues_equal`, không theo tập con; với `PARSE_FAILED` venue ≥ 2 từ phải xuất
+   hiện liền mạch trong chuỗi gốc), không có DOI mâu thuẫn (thường do tiêu đề dịch giữ thuật
+   ngữ gốc) → `METADATA_MISMATCH` với trường `title` và `needs_user_review`.
 3. Còn lại, hoặc agent trả `NO_MATCH` (kể cả `MATCH` không có ứng viên sau khi hết lượt nộp,
    preflight) → giữ nguyên kết quả chuỗi tra cứu; đề xuất của agent chỉ nằm trong `agent_runs`.
+
+Leo thang vì hai ứng viên sát điểm: kết quả của agent vẫn gắn `needs_user_review`, trừ khi DOI
+ghi trong bài trùng DOI của ứng viên được chọn.
 
 Agent hết ngân sách, không nộp hay lỗi → giữ kết quả chuỗi tra cứu và gắn `needs_user_review`.
 `RetryableError` và mất lease lan ra ngoài (S3 thử lại job, trừ lần thử cuối). Không log chuỗi
@@ -29,6 +35,8 @@ from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from functools import cache
 from types import MappingProxyType
+
+from rapidfuzz import fuzz
 
 from citeproof.core.domain import ParsedReference
 from citeproof.core.enums import (
@@ -63,7 +71,6 @@ from citeproof.modules.references.matcher import (
     match_candidate,
     record_family_keys,
     title_similarity,
-    venue_matches,
 )
 from citeproof.modules.references.normalize import fold, normalize_doi, title_norm
 from citeproof.modules.references.tools import MetaSession, Resolution, make_meta_tools
@@ -76,12 +83,48 @@ _ESCALATE = frozenset({ReferenceStatus.NOT_FOUND_IN_SEARCHED_SOURCES, ReferenceS
 _NAME_CHARS = re.compile(r"[\W_]+")
 # DOI và URL trong chuỗi gốc bị bỏ trước khi tìm năm/họ ("cvpr.2016.90" không phải năm in ra).
 _LINKS = re.compile(r"(?:https?://|www\.|doi:\s*)\S+|\b10\.\d{4,9}/\S+", re.IGNORECASE)
+# DOI viết trong chuỗi gốc; mỗi chuỗi tìm được qua `normalize_doi` rồi so bằng (không so chuỗi con).
+_DOI_IN_TEXT = re.compile(r"10\.\d{4,9}/[^\s\"'<>]+", re.IGNORECASE)
+# Trường hợp 2 (tiêu đề lệch): tiêu đề vẫn phải gần ở mức này, venue so đối xứng ở mức kia.
+CASE2_TITLE_FLOOR = 50
+VENUE_STRICT = 90
+# Venue chỉ được tìm trong chuỗi gốc khi có ít nhất chừng này từ ("Nature" một mình không tính).
+RAW_VENUE_MIN_TOKENS = 2
 
 Verdict = tuple[ReferenceStatus, MatchResult, bool]
 
 
 def _has_fields(ref: ParsedReference) -> bool:
     return bool(ref.title and title_norm(ref.title)) or normalize_doi(ref.doi) is not None
+
+
+def _venue_norm(venue: str | None) -> str:
+    return fold(title_norm(venue)) if venue else ""
+
+
+def venues_equal(left: str | None, right: str | None) -> bool:
+    """Venue của bài và của ứng viên giống nhau (A1 trường hợp 2): so đối xứng, không theo tập con.
+
+    `token_sort_ratio` ≥ `VENUE_STRICT` trên tên đã chuẩn hóa, nên "IEEE" không khớp "IEEE
+    Transactions on Pattern Analysis…"; tên viết tắt so với tên đầy đủ cũng không khớp và A1
+    từ chối, không bao giờ khớp sai. Riêng của A1: chuỗi tra cứu S3 không so venue (QĐ-20).
+    """
+    a, b = _venue_norm(left), _venue_norm(right)
+    return bool(a and b) and fuzz.token_sort_ratio(a, b) >= VENUE_STRICT
+
+
+def venue_in_raw(venue: str | None, folded_raw: str) -> bool:
+    """Venue (ít nhất `RAW_VENUE_MIN_TOKENS` từ) nằm liền mạch trong chuỗi gốc đã chuẩn hóa."""
+    phrase = _venue_norm(venue)
+    if len(phrase.split()) < RAW_VENUE_MIN_TOKENS:
+        return False
+    return f" {phrase} " in f" {folded_raw} "
+
+
+def dois_in_text(text: str) -> set[str]:
+    """DOI hợp lệ viết trong chuỗi, đã chuẩn hóa."""
+    found = (normalize_doi(m.group(0)) for m in _DOI_IN_TEXT.finditer(text))
+    return {doi for doi in found if doi is not None}
 
 
 def verify_agent_candidate(
@@ -118,25 +161,22 @@ def _verify_parsed(ref: ParsedReference, cand: WorkRecord) -> Verdict | None:
     title_mismatch = any(m.field == "title" for m in match.mismatches)
     if (
         title_mismatch
+        and match.title_score >= CASE2_TITLE_FLOOR
         and same_author
         and year_delta == 0
         and not doi_conflict
-        and venue_matches(ref.venue, cand.venue)
+        and venues_equal(ref.venue, cand.venue)
     ):
         return ReferenceStatus.METADATA_MISMATCH, replace(match, accepted=True), True
     return None
 
 
-def _raw_tokens(raw_text: str) -> tuple[str, set[str]]:
+def _verify_raw(raw_text: str, cand: WorkRecord) -> Verdict | None:
     text = _LINKS.sub(" ", raw_text)
     folded = fold(title_norm(text))
-    return text, set(folded.split())
-
-
-def _verify_raw(raw_text: str, cand: WorkRecord) -> Verdict | None:
-    text, tokens = _raw_tokens(raw_text)
+    tokens = set(folded.split())
     cand_doi = normalize_doi(cand.doi)
-    doi_in = cand_doi is not None and cand_doi in raw_text.lower()
+    doi_in = cand_doi is not None and cand_doi in dois_in_text(raw_text)
     title_score = title_similarity(cand.title, text)
     title_in = title_score >= TITLE_ACCEPT
     author_in = bool(cand.authors) and bool(record_family_keys(cand.authors[0]) & tokens)
@@ -158,9 +198,15 @@ def _verify_raw(raw_text: str, cand: WorkRecord) -> Verdict | None:
             title_score=title_score,
             mismatches=tuple(mismatches),
         )
-        return match_status(result), result, False
-    venue_in = bool(cand.venue) and title_similarity(cand.venue, text) >= TITLE_ACCEPT
-    if not title_in and author_in and year_in and venue_in:
+        # DOI trùng mà tiêu đề không có trong chuỗi gốc: tự kiểm tra (quy tắc S3 sau Task 9).
+        return match_status(result), result, doi_in and not title_in
+    if (
+        not title_in
+        and title_score >= CASE2_TITLE_FLOOR
+        and author_in
+        and year_in
+        and venue_in_raw(cand.venue, folded)
+    ):
         result = MatchResult(
             accepted=True,
             score=title_score / 100,
@@ -290,6 +336,11 @@ def _accepted(
     if verdict is None:
         return None
     status, match, needs_review = verdict
+    if prior.close_call:
+        # Hai ứng viên sát điểm: lựa chọn của agent vẫn cần người dùng xem lại, trừ khi DOI ghi
+        # trong bài trùng DOI ứng viên được chọn (controller, fix round 1).
+        ref_doi = normalize_doi(ref.doi) if ref is not None else None
+        needs_review = needs_review or ref_doi is None or ref_doi != normalize_doi(cand.doi)
     return CascadeResult(
         status=status,
         record=cand,

@@ -7,7 +7,7 @@ thấy, truy vấn của agent thì có) và `ScriptedProvider` cho các lượt
 
 import uuid
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import httpx
@@ -44,10 +44,12 @@ from citeproof.modules.references.cascade import CascadeResult, ReferenceEntryVi
 from citeproof.modules.references.matcher import MatchResult
 from citeproof.modules.references.resolver_agent import (
     AgentResolver,
+    _accepted,
     should_escalate,
     verify_agent_candidate,
 )
 from citeproof.modules.references.stage_check import CheckReferencesStage
+from citeproof.modules.references.tools import MetaSession, Resolution
 from citeproof.pipeline.config import RunConfig, RunInfo
 from citeproof.pipeline.deps import PipelineDeps
 from citeproof.pipeline.registry import _real_stages
@@ -68,7 +70,10 @@ SessionFactory = async_sessionmaker[AsyncSession]
 HE_TITLE = "Deep Residual Learning for Image Recognition"
 HE_DOI = "10.1109/cvpr.2016.90"
 TYPO_TITLE = "Deep Resdual Lerning for Imag Recogniton"
-VI_TITLE = "Học sâu dư cho nhận dạng hình ảnh"
+# Tiêu đề dịch giữ thuật ngữ gốc (title_similarity 60 ≥ `CASE2_TITLE_FLOOR`).
+VI_TITLE = "Học sâu residual cho nhận dạng image"
+# Bản dịch hoàn toàn (title_similarity 39): trường hợp 2 không nhận (controller, fix round 1).
+VI_FULL_TITLE = "Học sâu dư cho nhận dạng hình ảnh"
 IDENTITY_TITLE = "Identity Mappings in Deep Residual Networks"
 MODEL = "claude-sonnet-5-5"
 ENABLED = {"reference_resolver": {"enabled": True}}
@@ -174,10 +179,31 @@ def test_verify_translated_title_with_venue_needs_review() -> None:
         {"title": VI_TITLE, "venue": "CVPR", "year": 2015},
         {"title": VI_TITLE, "venue": "CVPR", "authors": ["Nguyễn Văn An"]},
         {"title": VI_TITLE, "venue": "CVPR", "doi": "10.1145/other"},
+        {"title": VI_FULL_TITLE, "venue": "CVPR"},  # dưới ngưỡng tiêu đề của trường hợp 2
     ],
 )
 def test_verify_rejects_title_mismatch_without_full_agreement(fields: dict[str, Any]) -> None:
     assert verify_agent_candidate(_ref(**fields), "", _he()) is None
+
+
+@pytest.mark.parametrize(
+    ("ref_venue", "cand_venue"),
+    [
+        ("IEEE", "IEEE Transactions on Pattern Analysis and Machine Intelligence"),
+        ("Proceedings", "Proceedings of the AAAI Conference on Artificial Intelligence"),
+        ("Journal of Science", "VNU Journal of Science: Computer Science and Communication"),
+        ("IEEE Transactions on Pattern Analysis and Machine Intelligence", "IEEE"),
+    ],
+)
+def test_verify_case2_rejects_subset_venues(ref_venue: str, cand_venue: str) -> None:
+    ref = _ref(title=VI_TITLE, venue=ref_venue)
+    assert verify_agent_candidate(ref, "", _he(venue=cand_venue)) is None
+
+
+def test_verify_case2_venue_is_symmetric_and_normalised() -> None:
+    ref = _ref(title=VI_TITLE, venue="Proc. IEEE Conf. Computer Vision & Pattern Recognition")
+    cand = _he(venue="proc ieee conf computer vision pattern recognition")
+    assert verify_agent_candidate(ref, "", cand) is not None
 
 
 def test_verify_rejects_wrong_work() -> None:
@@ -208,10 +234,41 @@ def test_verify_parse_failed_empty_fields_use_raw_text() -> None:
 
 
 def test_verify_parse_failed_doi_in_raw() -> None:
-    raw = "Some garbled text https://doi.org/10.1109/CVPR.2016.90"
-    status, match, _ = _verified(None, raw, _he())
+    raw = "Some garbled text https://doi.org/10.1109/CVPR.2016.90."
+    status, match, review = _verified(None, raw, _he())
     assert match.score == 1.0
     assert status is ReferenceStatus.METADATA_MISMATCH  # tiêu đề, tác giả, năm không có
+    assert review  # DOI trùng nhưng tiêu đề không có trong chuỗi gốc (quy tắc S3, Task 9)
+
+
+def test_verify_parse_failed_doi_with_title_in_raw_not_flagged() -> None:
+    raw = RAW + " 2016. doi:10.1109/cvpr.2016.90"
+    status, match, review = _verified(None, raw, _he())
+    assert (status, match.score, review) == (ReferenceStatus.MATCHED, 1.0, False)
+
+
+def test_verify_parse_failed_doi_prefix_is_not_a_match() -> None:
+    cand = _he(doi="10.1145/3292500.333070", title=IDENTITY_TITLE)
+    raw = "Garbled entry https://doi.org/10.1145/3292500.3330701"
+    assert verify_agent_candidate(None, raw, cand) is None
+
+
+def test_verify_parse_failed_venue_must_be_multiword_phrase() -> None:
+    # Tiêu đề không có trong chuỗi gốc (nhưng ≥ ngưỡng), cùng tác giả và năm: chỉ venue quyết định.
+    title = "Residual networks for image recognition"  # 80 so với chuỗi gốc: < 90, ≥ 50
+    raw = "He K, Zhang X (2016). Mạng residual sâu cho image recognition. {venue}."
+    cand = _he(title=title, venue="Nature")
+    assert verify_agent_candidate(None, raw.format(venue="Nature"), cand) is None
+    cand = _he(title=title, venue="Computer Vision and Pattern Recognition")
+    status, match, review = _verified(
+        None, raw.format(venue="Computer Vision and Pattern Recognition"), cand
+    )
+    assert status is ReferenceStatus.METADATA_MISMATCH
+    assert [m.field for m in match.mismatches] == ["title"]
+    assert review
+    # Venue nhiều từ nhưng không liền mạch trong chuỗi gốc → từ chối.
+    raw_split = raw.format(venue="Computer Graphics and Vision and Pattern Recognition Letters")
+    assert verify_agent_candidate(None, raw_split, cand) is None
 
 
 def test_verify_parse_failed_rejects_unrelated() -> None:
@@ -603,6 +660,40 @@ async def test_a1_close_call_rejected_keeps_top_candidate_flagged(
     assert check.needs_user_review
     assert check.resolved_by == ResolvedBy.CASCADE.value
     assert len(await _agent_runs(session_factory, run_id)) == 1
+
+
+@pytest.mark.db
+async def test_a1_close_call_match_keeps_review(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    items = [
+        crossref_item(HE_TITLE, HE_DOI),
+        crossref_item(HE_TITLE + " (extended)", "10.1109/cvpr.2016.91"),
+    ]
+    apis = KeyedApis({"deep residual learning": items})
+    deps, _ = _deps(
+        settings,
+        session_factory,
+        apis,
+        [search_turn("deep residual learning He 2016"), submit_turn("MATCH", "cand_1")],
+    )
+    _, _, check = await _run(session_factory, deps, _ref(title=HE_TITLE))
+    assert check.status == ReferenceStatus.MATCHED.value
+    assert check.resolved_by == ResolvedBy.AGENT.value
+    assert check.needs_user_review  # agent chọn một trong hai ứng viên sát điểm: vẫn cần xem lại
+
+
+def test_close_call_review_cleared_only_by_reference_doi() -> None:
+    session = MetaSession()
+    cand_id = session.add(_he(), "crossref")
+    prior = _prior(ReferenceStatus.MATCHED, close_call=True, needs_user_review=True)
+    choice = Resolution(decision="MATCH", candidate_id=cand_id, note="Same DOI.")
+    with_doi = _accepted(choice, session, _ref(title=HE_TITLE, doi=HE_DOI), "", prior)
+    assert with_doi is not None and not with_doi.needs_user_review
+    without = _accepted(choice, session, _ref(title=HE_TITLE), "", prior)
+    assert without is not None and without.needs_user_review
+    plain = _accepted(choice, session, _ref(title=HE_TITLE), "", replace(prior, close_call=False))
+    assert plain is not None and not plain.needs_user_review
 
 
 @pytest.mark.db
