@@ -150,7 +150,7 @@ Cần bạn quyết trước khi làm: Q-03 (nội dung màn hình đồng ý), 
 
 ## 5. Phân loại việc hoãn
 
-Đã duyệt mọi dòng `minor (deferred)` của handoff 2026-11-24 (Phụ lục B, 47 dòng, Task 1–13), handoff 2026-11-25 (27 dòng `minor (deferred)` của Task 14–26 và final review, cùng 4 mục `parked` #3–#6) và 5 dòng của sổ nhánh multi-provider (Task 1, 2, 4, 5, 6; mỗi dòng tách thành 1–3 ý, ghi số Task ở cột Nguồn). Nguồn có 83 dòng; bảng có 95 hàng vì một số dòng gộp nhiều ý được tách theo phân loại. Kết quả: 5 đã xử lý, 13 sửa trong Task 11–14, 17 chấp nhận (giới hạn), 60 để sau. Mục "để sau" ghi "chưa kiểm tra" nghĩa là chưa đối chiếu với mã hiện tại, không phải đã xác nhận còn lỗi; chúng đều là nợ nhỏ (test, dọn mã, ca hiếm), không có mục P1 nào ngoài các mục đã gán Task 11–14.
+Đã duyệt mọi dòng `minor (deferred)` của handoff 2026-11-24 (Phụ lục B, 47 dòng, Task 1–13), handoff 2026-11-25 (27 dòng `minor (deferred)` của Task 14–26 và final review, cùng 4 mục `parked` #3–#6) và 5 dòng của sổ nhánh multi-provider (Task 1, 2, 4, 5, 6; mỗi dòng tách thành 1–3 ý, ghi số Task ở cột Nguồn). Nguồn có 83 dòng; bảng có 97 hàng vì một số dòng gộp nhiều ý được tách theo phân loại. Kết quả: 4 đã xử lý, 13 sửa trong Task 11–14, 18 chấp nhận (giới hạn), 62 để sau. Mục "để sau" ghi "chưa kiểm tra" nghĩa là chưa đối chiếu với mã hiện tại, không phải đã xác nhận còn lỗi; chúng đều là nợ nhỏ (test, dọn mã, ca hiếm), không có mục P1 nào ngoài các mục đã gán Task 11–14.
 
 | Nguồn | Mục (rút gọn) | Phân loại | Ghi chú |
 |---|---|---|---|
@@ -192,8 +192,9 @@ Cần bạn quyết trước khi làm: Q-03 (nội dung màn hình đồng ý), 
 | Handoff 11-24, Phụ lục B, Task 9 | Lỗi không cô lập không dừng các lookup còn lại; domain_flag bị ghi đè; race xóa sample | để sau | Tốn quota, chưa gây sai kết quả |
 | Handoff 11-24, Phụ lục B, Task 9 | check_url coi 403/429 là link chết | sửa trong Task 11–14 | Task 12 |
 | Handoff 11-24, Phụ lục B, Task 9 | Test helper import chéo, test concurrency dựa sleep, Focus #4 còn khoảng trống, migration 0008 trùng DOI khác hoa thường | để sau | Nợ test và ca lý thuyết |
-| Handoff 11-24, Phụ lục B, Task 9 | Nguồn lỗi một phần xuất hiện ở cả searched và failed; tham khảo dài phụ đề bị loại | chấp nhận (giới hạn) | Thà báo thiếu tin cậy hơn kết luận sai; văn bản đã ghi coverage thận trọng |
-| Handoff 11-24, Phụ lục B, Task 10 | Tỉ lệ `[1:2]`/`[10:30]` bị đọc là trích dẫn | đã xử lý | Ghi nhận "Hạn chế đã biết" ở spec §7.4 (`docs/superpowers/specs/2026-11-24-core-pipeline-design.md:230`) |
+| Handoff 11-24, Phụ lục B, Task 9 | Nguồn lỗi một phần xuất hiện ở cả searched và failed; văn bản NOT_FOUND nói quá độ phủ | để sau | Nguồn ghi văn bản NOT_FOUND hơi nói quá mức độ bao phủ; chưa sửa |
+| Handoff 11-24, Phụ lục B, Task 9 | Tham khảo dài có phụ đề, không năm/tác giả, bị loại so với ứng viên ngắn | chấp nhận (giới hạn) | Heuristic khớp thận trọng: bỏ sót an toàn hơn khớp sai |
+| Handoff 11-24, Phụ lục B, Task 10 | Tỉ lệ `[1:2]`/`[10:30]` bị đọc là trích dẫn | chấp nhận (giới hạn) | Đã ghi nhận "Hạn chế đã biết" ở spec §7.4 (`docs/superpowers/specs/2026-11-24-core-pipeline-design.md:230`) |
 | Handoff 11-24, Phụ lục B, Task 10 | Downgrade 0009 mất dữ liệu không có test; `Tr.` phân biệt hoa thường; `[3]–[2]`; "No." | để sau | Hiếm gặp |
 | Handoff 11-24, Phụ lục B, Task 10 | Token toàn viết tắt ("p.p.") nuốt ranh giới câu; `[2019, tr. 5, 3, tr. 7]` giải sai | chấp nhận (giới hạn) | Heuristic tách marker; ca rất hiếm |
 | Handoff 11-24, Phụ lục B, Task 11 | Suy biến W2 im lặng khi lần thử cuối lỗi | để sau | Nên thêm cảnh báo như S2; chưa kiểm tra |
@@ -240,7 +241,8 @@ Cần bạn quyết trước khi làm: Q-03 (nội dung màn hình đồng ý), 
 | Handoff 11-25, Final review | Parked #5: token cache tính theo giá input đầy đủ | chấp nhận (giới hạn) | Ước cao có chủ đích (phán quyết Task 2); trần chi phí chạm hơi sớm |
 | Handoff 11-25, Final review | Parked #6: migration 0010 unique index không khử trùng lặp | sửa trong Task 11–14 | Task 11 |
 | Handoff 11-25, Final review | Retention backup bị bỏ khi dump lỗi; guard discard không khóa dòng document; chữ RUN_IN_PROGRESS inline | để sau | Chưa kiểm tra |
-| nhánh multi-provider, Task 1 | bảng phase của project-status cũ; env_file brittle; README `echo >> .env` trùng | đã xử lý | Commit 5a75633 "load .env in app containers; refresh stale docs"; chưa kiểm tra riêng từng ý |
+| nhánh multi-provider, Task 1 | bảng phase của project-status cũ; env_file brittle | đã xử lý | Commit 5a75633 "load .env in app containers; refresh stale docs" |
+| nhánh multi-provider, Task 1 | README dùng `echo ... >> .env`, chạy lại sẽ trùng dòng | để sau | `README.md:35` vẫn dùng `>> .env` |
 | nhánh multi-provider, Task 2 | llm_models override một phần giữ tên Claude trên openai_compatible | đã xử lý | Commit 3c904f3 "require every task model when LLM is configured"; docs b6edea8 |
 | nhánh multi-provider, Task 2 | cổng 0 bị bỏ qua | chấp nhận (giới hạn) | Cổng 0 không hợp lệ cho dịch vụ LLM; negligible |
 | nhánh multi-provider, Task 4 | input None → "null"; không chặn tool_result mồ côi; trùng cảnh báo empty_choices | để sau | Chưa kiểm tra |
