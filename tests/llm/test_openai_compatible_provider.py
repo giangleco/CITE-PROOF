@@ -212,23 +212,26 @@ def _connect_error(_req: httpx.Request) -> httpx.Response:
 
 
 @pytest.mark.parametrize(
-    ("handler", "error", "expected_name"),
+    ("handler", "error", "expected_name", "status"),
     [
         (
             lambda _r: httpx.Response(429, json={"error": {"message": PROMPT}}),
             RetryableError,
             "RateLimitError",
+            429,
         ),
         (
             lambda _r: httpx.Response(503, json={"error": {"message": SYSTEM}}),
             RetryableError,
             "InternalServerError",
+            503,
         ),
-        (_connect_error, RetryableError, "APIConnectionError"),
+        (_connect_error, RetryableError, "APIConnectionError", None),
         (
             lambda _r: httpx.Response(400, json={"error": {"message": PROMPT}}),
             ExternalServiceError,
             "BadRequestError",
+            400,
         ),
     ],
 )
@@ -236,13 +239,14 @@ async def test_error_mapping(
     handler: Callable[[httpx.Request], httpx.Response],
     error: type[Exception],
     expected_name: str,
+    status: int | None,
 ) -> None:
     provider, _, http = make(handler)
     with pytest.raises(error) as info:
         await provider.complete(request())
     text = str(info.value)
     assert text.startswith(IDENTITY)
-    assert expected_name in text
+    assert text == f"{IDENTITY} {expected_name} status={status}"
     assert "SECRET" not in text
     await http.aclose()
 
@@ -255,3 +259,50 @@ async def test_aclose_closes_sdk_client() -> None:
     assert not sdk.is_closed()
     await provider.aclose()
     assert sdk.is_closed()
+
+
+async def test_empty_choices_is_external_error() -> None:
+    body = {"id": "x", "object": "chat.completion", "created": 1, "model": "m", "choices": []}
+    provider, _, http = make(lambda _r: httpx.Response(200, json=body))
+    with pytest.raises(ExternalServiceError) as info:
+        await provider.complete(request())
+    assert str(info.value) == f"{IDENTITY} empty_choices"
+    await http.aclose()
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(200, content=b"BODY-SECRET not json"),
+        httpx.Response(200, json={"BODY-SECRET": 1}),
+        httpx.Response(200, json=["BODY-SECRET"]),
+    ],
+)
+async def test_malformed_success_body_is_mapped_without_body_text(
+    response: httpx.Response,
+) -> None:
+    provider, _, http = make(lambda _r: response)
+    with pytest.raises(ExternalServiceError) as info:
+        await provider.complete(request())
+    assert str(info.value).startswith(IDENTITY)
+    assert "SECRET" not in str(info.value)
+    await http.aclose()
+
+
+async def test_null_finish_reason_gives_empty_stop_reason() -> None:
+    body = completion()
+    body["choices"][0]["finish_reason"] = None
+    provider, _, http = make(lambda _r: httpx.Response(200, json=body))
+    assert (await provider.complete(request())).stop_reason == ""
+    await http.aclose()
+
+
+async def test_timeout_is_retryable() -> None:
+    def boom(_req: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("slow")
+
+    provider, _, http = make(boom)
+    with pytest.raises(RetryableError) as info:
+        await provider.complete(request())
+    assert "APITimeoutError" in str(info.value)
+    await http.aclose()

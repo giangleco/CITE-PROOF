@@ -57,6 +57,10 @@ class OpenAICompatibleProvider:
 
     async def complete(self, request: ProviderRequest) -> ProviderResponse:
         completion = await self._mapped(self._create(request))
+        # Gateway lỗi có thể trả 200 với thân không phải ChatCompletion hoặc `choices` rỗng/null;
+        # thông điệp không chứa thân phản hồi.
+        if not isinstance(completion, ChatCompletion) or not completion.choices:
+            raise ExternalServiceError(f"{self.name} empty_choices")
         choice = completion.choices[0]
         message = choice.message
         refused = bool(message.refusal)
@@ -121,6 +125,9 @@ class OpenAICompatibleProvider:
             if exc.status_code >= 500:
                 raise RetryableError(self._describe(exc, exc.status_code)) from exc
             raise ExternalServiceError(self._describe(exc, exc.status_code)) from exc
+        except openai.APIError as exc:
+            # Lỗi SDK khác (APIResponseValidationError...): str(exc) có thể chứa thân phản hồi.
+            raise ExternalServiceError(self._describe(exc, None)) from exc
 
     def _describe(self, exc: Exception, status: int | None) -> str:
         return f"{self.name} {type(exc).__name__} status={status}"
