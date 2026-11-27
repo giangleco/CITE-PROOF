@@ -46,7 +46,7 @@ echo 'CITEPROOF_ANTHROPIC_API_KEY=sk-ant-...' >> .env
 
 Quy tắc bắt buộc (server từ chối khởi động nếu vi phạm):
 
-- **Đặt model cho TẤT CẢ tác vụ trong `CITEPROOF_LLM_MODELS`**, đủ 8 khóa: `reference.parse`, `claim.extract`, `claim.translate`, `claim.decompose`, `verdict.judge`, `verdict.judge_closed_book`, `agent.reference_resolver`, `agent.evidence_investigator`. Tác vụ bỏ trống giữ tên model Claude mặc định, mà máy chủ khác không có model đó. Nếu để nguyên mặc định, khởi động lỗi.
+- **Đặt model cho TẤT CẢ tác vụ trong `CITEPROOF_LLM_MODELS`**, đủ 8 khóa (map này thay hẳn mặc định, không trộn): `reference.parse`, `claim.extract`, `claim.translate`, `claim.decompose`, `verdict.judge`, `verdict.judge_closed_book`, `agent.reference_resolver`, `agent.evidence_investigator`. Thiếu khóa nào hoặc thiếu giá của model nào thì khởi động báo lỗi nêu tên khóa/model đó (thiếu khóa cũng bị từ chối với Anthropic khi đã có khóa API).
 - **Mọi model trong `CITEPROOF_LLM_MODELS` phải có giá** trong `CITEPROOF_LLM_PRICES`: JSON `{"model":[đầu_vào,đầu_ra]}`, USD trên 1 triệu token. Model chạy cục bộ khai `[0,0]`.
 - Nên đặt `CITEPROOF_LLM_PROVIDER_NAME` và `CITEPROOF_LLM_PROVIDER_POLICY_URL` để màn hình đồng ý nêu đúng nhà cung cấp (thiếu tên thì chỉ có cảnh báo trong log).
 
@@ -69,7 +69,7 @@ CITEPROOF_LLM_PROVIDER=openai_compatible
 CITEPROOF_OPENAI_BASE_URL=http://host.docker.internal:11434/v1
 CITEPROOF_LLM_MODELS='{"reference.parse":"qwen2.5:14b","claim.extract":"qwen2.5:14b","claim.translate":"qwen2.5:14b","claim.decompose":"qwen2.5:14b","verdict.judge":"qwen2.5:14b","verdict.judge_closed_book":"qwen2.5:14b","agent.reference_resolver":"qwen2.5:14b","agent.evidence_investigator":"qwen2.5:14b"}'
 CITEPROOF_LLM_PRICES='{"qwen2.5:14b":[0,0]}'
-CITEPROOF_LLM_PROVIDER_NAME=Ollama (máy chủ nội bộ)
+CITEPROOF_LLM_PROVIDER_NAME="Ollama (máy chủ nội bộ)"
 ```
 
 Biến tinh chỉnh (tùy chọn): `CITEPROOF_OPENAI_TIMEOUT_SECONDS` (600), `CITEPROOF_OPENAI_MAX_RETRIES` (2), `CITEPROOF_OPENAI_STRUCTURED_OUTPUT` (`json_schema` mặc định; `json_object` hoặc `none` cho máy chủ không hỗ trợ schema), `CITEPROOF_OPENAI_SEND_REASONING_EFFORT` (`false`). Fallback phía server khi model từ chối và prompt caching chỉ có ở Anthropic.
@@ -92,7 +92,7 @@ GROBID đã chạy sẵn trong compose (cổng 8070, worker gọi qua `http://gr
 ### Đánh giá
 
 ```bash
-make eval          # bộ đánh giá mini; gọi LLM thật (cần khóa) và ghi cache
+make eval          # bộ đánh giá mini; gọi LLM thật (cần khóa, trừ server cục bộ) và ghi cache
 make eval-replay   # phát lại cache đó, không gọi LLM
 ```
 

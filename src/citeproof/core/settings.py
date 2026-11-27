@@ -162,6 +162,7 @@ class Settings(BaseSettings):
                 "llm_provider=openai_compatible cần đặt CITEPROOF_LLM_MODELS: "
                 "tên model mặc định chỉ dành cho Anthropic"
             )
+        self._require_tasks()
         self._require_prices()
         if not self.llm_provider_name:
             logger.warning(
@@ -173,8 +174,14 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _anthropic_prices(self) -> Self:
         if self.llm_provider == "anthropic" and self.llm_configured:
+            self._require_tasks()
             self._require_prices()
         return self
+
+    def _require_tasks(self) -> None:
+        missing = sorted(set(defaults.LLM_MODELS) - set(self.llm_models))
+        if missing:
+            raise ValueError("CITEPROOF_LLM_MODELS thiếu model cho tác vụ: " + ", ".join(missing))
 
     def _require_prices(self) -> None:
         missing = sorted({m for m in self.llm_models.values() if m not in self.llm_prices})
