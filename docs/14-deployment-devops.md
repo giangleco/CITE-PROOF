@@ -100,7 +100,7 @@ Tệp: `docker-compose.prod.yml`, `docker/caddy/Caddyfile`, `.env.production.exa
 **Triển khai lần đầu**
 
 1. Trỏ DNS của `CITEPROOF_DOMAIN` về máy chủ; tường lửa chỉ mở 80, 443 và SSH.
-2. `cp .env.production.example .env.production && chmod 600 .env.production`, thay mọi giá trị `CHANGE_ME_*` (xem danh sách bí mật), đặt `CITEPROOF_DOMAIN`. Để trống `CITEPROOF_CONTACT_EMAIL`, `CITEPROOF_WEB_ARCHIVE_LOOKUP=false` cho tới khi có quyết định. `CITEPROOF_LLM_PROVIDER_NAME` và `CITEPROOF_LLM_PROVIDER_POLICY_URL` chưa đặt: bắt buộc điền trước khi mời người dùng (`10` §5).
+2. `cp .env.production.example .env.production && chmod 600 .env.production`, thay mọi giá trị `CHANGE_ME_*` (xem danh sách bí mật), đặt `CITEPROOF_DOMAIN`. Để trống `CITEPROOF_CONTACT_EMAIL`, `CITEPROOF_WEB_ARCHIVE_LOOKUP=false` cho tới khi có quyết định. `CITEPROOF_LLM_PROVIDER_NAME` và `CITEPROOF_LLM_PROVIDER_POLICY_URL` chưa đặt: bắt buộc điền trước khi mời người dùng (`10` §5). Chọn provider LLM ở bước này (xem "Cấu hình provider LLM" bên dưới).
 3. `docker compose … build && docker compose … up -d`. Service `migrate` chạy `alembic upgrade head` trước app/worker. Volume DB mới tạo cả `citeproof` lẫn `citeproof_eval` nhờ `./docker/db/init`; volume DB đã có từ trước thì tạo tay: `docker compose … exec db createdb -U citeproof citeproof_eval`.
 4. Kiểm tra: `docker compose … ps`, `curl -fsS https://$DOMAIN/api/v1/health`, rồi `uv run python scripts/smoke.py --base-url https://$DOMAIN --email … --password …` (tài khoản thử có sẵn; mật khẩu không ghi vào file hay lịch sử shell chia sẻ).
 5. Kiểm tra cấu hình tĩnh (thủ công, không chạy trong CI): `docker compose -f docker-compose.prod.yml --env-file .env.production config`.
@@ -113,7 +113,21 @@ Tệp: `docker-compose.prod.yml`, `docker/caddy/Caddyfile`, `.env.production.exa
 
 **Rollback**: `git checkout <tag cũ>`, `docker compose … build`, `docker compose … up -d`. Nếu bản mới đã chạy migration không đảo ngược được, chạy `scripts/restore.sh` với bản sao lưu lấy ngay trước cập nhật.
 
-**Danh sách bí mật** (chỉ trong `.env.production`, quyền 600, không vào repo hay image): `POSTGRES_PASSWORD` (và cùng giá trị trong `CITEPROOF_DATABASE_URL`, `CITEPROOF_EVAL_DATABASE_URL`), `CITEPROOF_ANTHROPIC_API_KEY`, `CITEPROOF_SEMANTIC_SCHOLAR_API_KEY`, `CITEPROOF_OPENALEX_API_KEY` (hai khóa sau tùy chọn). Xoay khi nghi lộ và ghi ngày xoay. Script không in bí mật ra log.
+**Cấu hình provider LLM** (một provider mỗi lần triển khai, ADR-011): `CITEPROOF_LLM_PROVIDER=anthropic` (mặc định, cần `CITEPROOF_ANTHROPIC_API_KEY`) hoặc `openai_compatible`. Với `openai_compatible` đặt `CITEPROOF_OPENAI_BASE_URL` (+ `CITEPROOF_OPENAI_API_KEY` nếu máy chủ cần khóa), `CITEPROOF_LLM_MODELS`, `CITEPROOF_LLM_PRICES`, `CITEPROOF_LLM_PROVIDER_NAME`, `CITEPROOF_LLM_PROVIDER_POLICY_URL`:
+
+| Provider | `CITEPROOF_OPENAI_BASE_URL` | Ghi chú |
+|---|---|---|
+| Anthropic | (không dùng) | `CITEPROOF_LLM_PROVIDER=anthropic`, model mặc định Claude |
+| OpenAI | `https://api.openai.com/v1` | Cần khóa |
+| Gemini | `https://generativelanguage.googleapis.com/v1beta/openai/` | Cần khóa Gemini |
+| OpenRouter | `https://openrouter.ai/api/v1` | Cần khóa; model dạng `hãng/model` |
+| Ollama | `http://host.docker.internal:11434/v1` (trong Docker) | Không cần khóa; giá `[0,0]`; worker có `extra_hosts: host.docker.internal:host-gateway` ở `docker-compose.yml` (file prod không có: tự thêm nếu dùng Ollama trên máy chủ) |
+
+Bắt buộc với `openai_compatible` (sai thì app/worker không khởi động): `CITEPROOF_LLM_MODELS` là JSON đặt model cho **cả 8 tác vụ** (`reference.parse`, `claim.extract`, `claim.translate`, `claim.decompose`, `verdict.judge`, `verdict.judge_closed_book`, `agent.reference_resolver`, `agent.evidence_investigator`), vì tác vụ bỏ trống giữ tên model Claude; `CITEPROOF_LLM_PRICES` là JSON `{"model":[đầu_vào,đầu_ra]}` (USD/1M token) cho mọi model đã dùng, model cục bộ `[0,0]`. Ví dụ đầy đủ cho OpenAI và Ollama ở `README.md` mục "Bật LLM". Tùy chọn: `CITEPROOF_OPENAI_TIMEOUT_SECONDS`, `CITEPROOF_OPENAI_MAX_RETRIES`, `CITEPROOF_OPENAI_STRUCTURED_OUTPUT` (`json_schema`/`json_object`/`none`), `CITEPROOF_OPENAI_SEND_REASONING_EFFORT`.
+
+Hệ quả khi đổi provider (kể cả đổi host): mỗi lần chạy đã đóng băng provider nên báo cáo cũ bị chặn kiểm chứng lại/tiếp tục (`LLM_PROVIDER_CHANGED`, hiện thông báo tạo lần kiểm tra mới); mọi người dùng phải đồng ý lại (màn hình đồng ý nêu provider mới, nên cập nhật `CITEPROOF_LLM_PROVIDER_NAME` và `CITEPROOF_LLM_PROVIDER_POLICY_URL` cùng lúc); cache LLM tách riêng theo định danh (`anthropic` hoặc `openai_compatible:<host>[:port]`). `make eval-replay` dùng cache của provider đang cấu hình; muốn phát lại cache provider khác thêm `--provider-identity <định danh>` (chỉ replay). Thêm provider mới: xem README mục "Thêm một provider mới".
+
+**Danh sách bí mật** (chỉ trong `.env.production`, quyền 600, không vào repo hay image): `POSTGRES_PASSWORD` (và cùng giá trị trong `CITEPROOF_DATABASE_URL`, `CITEPROOF_EVAL_DATABASE_URL`), `CITEPROOF_ANTHROPIC_API_KEY` hoặc `CITEPROOF_OPENAI_API_KEY` (theo provider), `CITEPROOF_SEMANTIC_SCHOLAR_API_KEY`, `CITEPROOF_OPENALEX_API_KEY` (hai khóa sau tùy chọn). Xoay khi nghi lộ và ghi ngày xoay. Script không in bí mật ra log.
 
 ## 5. Implementation Steps
 

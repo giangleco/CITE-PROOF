@@ -35,7 +35,7 @@ Trạng thái: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `IN_REVIEW`, `COMPLETED`
 | T-104 | Lược đồ DB | Model SQLAlchemy và migration đầu tiên theo `08` | P0 | T-102 | COMPLETED | Migration chạy lên và xuống được; test constraint đạt |
 | T-105 | Job runner | Hàng đợi trên PostgreSQL, retry, backoff, tiếp tục theo giai đoạn | P0 | T-104 | COMPLETED | Job lỗi được thử lại; run tiếp tục từ giai đoạn lỗi |
 | T-106 | CI | Lint, type check, test, quét bí mật | P0 | T-101 | COMPLETED | CI chạy trên mọi push |
-| T-107 | `LLMClient` | Đầu ra có cấu trúc, cache theo namespace (`llm_cache`, khóa ở `07a` §4.7.2), retry, ghi `llm_calls`, chế độ ghi/phát lại cho test | P0 | T-104 | COMPLETED | Test chạy không cần gọi mạng; mọi lời gọi được ghi log; cùng đầu vào cho cùng khóa cache |
+| T-107 | `LLMClient` | Đầu ra có cấu trúc, cache theo namespace (`llm_cache`, khóa ở `07a` §4.7.2), retry, ghi `llm_calls`, chế độ ghi/phát lại cho test Đa nhà cung cấp (ADR-011): `OpenAICompatibleProvider` bên cạnh `AnthropicProvider`, chọn bằng `CITEPROOF_LLM_PROVIDER`, cấu hình ở README mục "Bật LLM" và `14` §4.10 — COMPLETED. | P0 | T-104 | COMPLETED | Test chạy không cần gọi mạng; mọi lời gọi được ghi log; cùng đầu vào cho cùng khóa cache |
 | T-108 | `PromptParts` và `ContextBuilder` | Nạp prompt có phiên bản; phần cố định và phần thay đổi; khối dữ liệu không tin cậy; ánh xạ ID ngắn ↔ UUID (`07a` §4.8) | P0 | T-107 | COMPLETED | ID ngắn gán tất định; prompt render giống hệt qua nhiều lần chạy |
 | T-109 | `http_safe` | HTTP client chống SSRF (`07a` §4.9, SR-11) | P0 | T-101 | COMPLETED | Bộ test SSRF ở `13` §A.4 đạt |
 
