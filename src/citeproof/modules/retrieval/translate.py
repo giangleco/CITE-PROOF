@@ -29,9 +29,15 @@ class TranslatedClaim(OutputModel):
 
 
 def numbers_preserved(original: str, translated: str) -> bool:
-    """Mọi số của `original` có trong `translated` (sau khi đổi `,` thành `.`)."""
-    haystack = translated.replace(",", ".")
-    return all(n.replace(",", ".") in haystack for n in _NUMBER.findall(original))
+    """Tập số của `original` nằm trong tập số của `translated` (sau khi đổi `,` thành `.`).
+
+    So số nguyên vẹn, không so chuỗi con: "2012" không giữ được "12" và ngược lại.
+    """
+    return _numbers(original) <= _numbers(translated)
+
+
+def _numbers(text: str) -> set[str]:
+    return {n.replace(",", ".") for n in _NUMBER.findall(text)}
 
 
 async def translate_claim(

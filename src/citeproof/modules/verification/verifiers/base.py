@@ -71,7 +71,8 @@ class VerificationContext:
     sources: SourceChoice
     ref: RefMeta
     call_ctx: CallContext
-    # Hạn mức chi phí (QĐ-32): gọi ngay trước mỗi lời gọi W5; False → `PROCESSING_ERROR`.
+    # Hạn mức chi phí (QĐ-32): gọi ngay trước mỗi lời gọi LLM; False → `PROCESSING_ERROR`.
+    # Lần gọi đầu của cặp giữ chỗ (có thể chờ cặp khác trả chỗ), các lần sau không giữ thêm.
     # Kết quả tất định (không gọi LLM) không qua hạn mức.
     llm_budget: Callable[[], Awaitable[bool]] | None = None
     # Lease của job S8, cho verifier phải ghi DB giữa chừng (V3 ghi `retrieval_results`).

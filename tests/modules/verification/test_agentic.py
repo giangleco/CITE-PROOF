@@ -28,6 +28,8 @@ from citeproof.web.rendering import templates
 from tests.files import PDF_BYTES
 from tests.modules.verification.test_verify_stage import (
     SUPPORTED,
+    TINY_LIMIT,
+    TINY_RESERVE,
     SessionFactory,
     _evidence,
     _Recording,
@@ -245,8 +247,8 @@ async def test_v4_cost_gate_stops_agent(
         ["Encoder đạt 95,7%", "Encoder đạt 95,7% lần nữa"],
         variant="V4",
         retrieved=(),
-        config_extra=ENABLED,
-        limits={"max_cost_usd": 0.000001},
+        config_extra={**ENABLED, **TINY_RESERVE},
+        limits=TINY_LIMIT,
     )
     provider = _provider(HAPPY)
     await _run(session_factory, settings.model_copy(update={"llm_concurrency": 1}), provider)

@@ -87,3 +87,17 @@ async def test_translate_claim_propagates_bad_output() -> None:
     llm, _ = _client(bad, bad)
     with pytest.raises(LLMOutputError):
         await translate_claim(llm, PROMPTS, SPEC, CTX, "tăng 12%")
+
+
+@pytest.mark.parametrize(
+    ("original", "translated", "ok"),
+    [
+        ("năm 2012", "in 12", False),
+        ("95,7%", "95.7 percent", True),
+        ("12 và 2012", "2012 and 12", True),
+        ("tăng 12%", "increased 112%", False),
+        ("đạt 5", "reached 5.5", False),
+    ],
+)
+def test_numbers_preserved_compares_number_sets(original: str, translated: str, ok: bool) -> None:
+    assert numbers_preserved(original, translated) is ok
