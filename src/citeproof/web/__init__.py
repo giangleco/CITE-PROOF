@@ -160,7 +160,6 @@ def mount_web(app: FastAPI, settings: Settings) -> None:
         max_bytes=settings.max_upload_bytes + _FORM_OVERHEAD_BYTES,
         too_large=too_large,
     )
-    app.add_middleware(SecurityHeadersMiddleware)
     # Trước ProxyHeadersMiddleware để chạy bên trong nó và thấy IP thật của client.
     app.add_middleware(
         RateLimitMiddleware,
@@ -169,3 +168,6 @@ def mount_web(app: FastAPI, settings: Settings) -> None:
     )
     trusted = [host.strip() for host in settings.trusted_proxies.split(",") if host.strip()]
     app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=trusted)
+    # Ngoài cùng (add_middleware sau cùng = ngoài cùng) để cả phản hồi 429 của rate limit
+    # và 413 đều mang header bảo mật.
+    app.add_middleware(SecurityHeadersMiddleware)

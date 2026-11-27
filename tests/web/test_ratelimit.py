@@ -177,3 +177,17 @@ async def test_mount_web_applies_settings_limit(web_settings: Settings, clean_db
     async with client_for(tight) as c:
         codes = [(await c.get("/login")).status_code for _ in range(3)]
     assert codes == [200, 200, 429]
+
+
+@pytest.mark.db
+async def test_429_carries_security_headers(web_settings: Settings, clean_db: None) -> None:
+    from tests.web.conftest import client_for
+
+    tight = web_settings.model_copy(update={"rate_limit_per_minute": 1})
+    async with client_for(tight) as c:
+        await c.get("/login")
+        limited = await c.get("/login")
+    assert limited.status_code == 429
+    assert limited.headers["x-content-type-options"] == "nosniff"
+    assert "default-src 'self'" in limited.headers["content-security-policy"]
+    assert limited.headers["referrer-policy"] == "same-origin"

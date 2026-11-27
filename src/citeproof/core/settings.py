@@ -14,6 +14,8 @@ from citeproof.core import defaults
 
 logger = logging.getLogger(__name__)
 
+_PLACEHOLDER = "CHANGE_ME_"
+
 
 def base_url_authority(base_url: str) -> str:
     """`host[:port]` chữ thường của base URL; ValueError khi URL không có host."""
@@ -176,6 +178,23 @@ class Settings(BaseSettings):
         if self.llm_provider == "anthropic" and self.llm_configured:
             self._require_tasks()
             self._require_prices()
+        return self
+
+    @model_validator(mode="after")
+    def _pilot_no_placeholders(self) -> Self:
+        if self.env != "pilot":
+            return self
+        bad: list[str] = []
+        for name in type(self).model_fields:
+            value = getattr(self, name)
+            if isinstance(value, SecretStr):
+                value = value.get_secret_value()
+            if isinstance(value, str) and _PLACEHOLDER in value:
+                bad.append(f"CITEPROOF_{name}".upper())
+        if bad:
+            raise ValueError(
+                "env=pilot còn giá trị giữ chỗ CHANGE_ME_ ở: " + ", ".join(sorted(bad))
+            )
         return self
 
     def _require_tasks(self) -> None:
