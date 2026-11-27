@@ -229,3 +229,43 @@ async def test_feedback_comment_too_long_htmx_shows_error(
         headers={"HX-Request": "true", "X-CSRF-Token": token},
     )
     assert response.status_code == 200 and "Ghi chú tối đa 2000 ký tự." in response.text
+
+
+# Review cuối: người dùng đồng ý khi chưa có LLM ("none") phải đồng ý lại trước khi
+# bất kỳ POST nào có thể xếp việc cho provider mới.
+@pytest.mark.db
+async def test_consent_none_user_cannot_enqueue_after_provider_configured(
+    session_factory: SessionFactory, web_settings: Settings, clean_db: None
+) -> None:
+    import uuid
+
+    from pydantic import SecretStr
+    from sqlalchemy import func
+
+    from citeproof.core.enums import RunStatus
+    from citeproof.db.models import VerificationRun
+    from tests.services.helpers import new_run, set_run
+
+    configured = web_settings.model_copy(update={"anthropic_api_key": SecretStr("k")})
+    async with client_for(configured) as client:
+        user = await login(client, session_factory)
+        async with session_factory() as s:
+            db_user = await s.merge(user)
+            db_user.consent_llm_provider = "none"
+            run_id = await new_run(s, configured, db_user)
+            await s.commit()
+            await set_run(s, run_id, status=RunStatus.FAILED)
+        token = await page_csrf(client, "/documents")
+        paths = [
+            f"/runs/{run_id}/resume",
+            f"/runs/{run_id}/reverify",
+            f"/runs/{run_id}/retry-lookups",
+            f"/runs/{run_id}/missing/{uuid.uuid4()}/upload",
+        ]
+        for path in paths:
+            response = await client.post(path, data={"csrf_token": token})
+            assert response.status_code == 303, path
+            assert response.headers["location"] == "/consent", path
+    async with session_factory() as s:
+        runs = (await s.execute(select(func.count()).select_from(VerificationRun))).scalar_one()
+    assert runs == 1

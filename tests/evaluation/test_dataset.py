@@ -111,3 +111,24 @@ def test_config_rejects_unknown_keys(tmp_path: Path) -> None:
     with pytest.raises(InputError) as info:
         load_run_config(Settings(), path)
     assert info.value.code == "CONFIG_INVALID"
+
+
+def _anthropic() -> Settings:
+    from pydantic import SecretStr
+
+    return Settings(anthropic_api_key=SecretStr("k"))
+
+
+@pytest.mark.parametrize("path", sorted(CONFIGS.glob("*.yaml")), ids=lambda p: p.stem)
+def test_all_benchmark_configs_load_when_llm_configured(path: Path) -> None:
+    load_run_config(_anthropic(), path)
+
+
+def test_config_rejects_unpriced_model_when_llm_configured(tmp_path: Path) -> None:
+    path = tmp_path / "x.yaml"
+    path.write_text("variant: V2\nmodels:\n  verdict.judge: modelo-sin-gia\n", encoding="utf-8")
+    with pytest.raises(InputError) as info:
+        load_run_config(_anthropic(), path)
+    assert info.value.code == "CONFIG_INVALID"
+    assert "modelo-sin-gia" in str(info.value)
+    load_run_config(Settings(), path)  # chưa cấu hình LLM: không kiểm giá

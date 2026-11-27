@@ -180,6 +180,15 @@ def load_run_config(settings: Settings, path: Path) -> RunConfig:
                 merged[key] = {**current, **value}
             else:
                 merged[key] = value
-        return RunConfig.model_validate(merged)
+        config = RunConfig.model_validate(merged)
     except (ValueError, ValidationError) as exc:
         raise InputError(f"Cấu hình {path.name} không hợp lệ.", code="CONFIG_INVALID") from exc
+    if settings.llm_configured:
+        missing = sorted({m for m in config.models.values() if m not in settings.llm_prices})
+        if missing:
+            raise InputError(
+                f"Cấu hình {path.name} dùng model chưa có giá trong CITEPROOF_LLM_PRICES: "
+                f"{', '.join(missing)}.",
+                code="CONFIG_INVALID",
+            )
+    return config

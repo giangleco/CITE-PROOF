@@ -17,6 +17,7 @@ from citeproof.web import labels
 from citeproof.web.deps import (
     AppSettings,
     AppStorage,
+    ConsentedUser,
     Csrf,
     CurrentUser,
     Db,
@@ -256,7 +257,7 @@ async def upload_source(
     db: Db,
     storage: AppStorage,
     settings: AppSettings,
-    current: UserDep,
+    current: ConsentedUser,
     run_id: UUID,
     reference_entry_id: UUID,
     file: Annotated[UploadFile | None, File()] = None,

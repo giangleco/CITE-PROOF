@@ -9,7 +9,7 @@ from citeproof.core.enums import RunStatus
 from citeproof.core.settings import Settings
 from citeproof.pipeline.config import RunConfig, provider_changed
 from citeproof.services import reverify, runs_view
-from citeproof.web.deps import AppSettings, Csrf, Db, UserDep
+from citeproof.web.deps import AppSettings, ConsentedUser, Csrf, Db, UserDep
 from citeproof.web.rendering import render
 
 router = APIRouter()
@@ -75,14 +75,18 @@ async def run_progress(
 
 
 @router.post("/runs/{run_id}/resume", dependencies=[Csrf])
-async def run_resume(db: Db, settings: AppSettings, current: UserDep, run_id: UUID) -> Response:
+async def run_resume(
+    db: Db, settings: AppSettings, current: ConsentedUser, run_id: UUID
+) -> Response:
     await runs_view.resume(db, settings, user=current.user, run_id=run_id)
     await db.commit()
     return RedirectResponse(f"/runs/{run_id}", status_code=303)
 
 
 @router.post("/runs/{run_id}/reverify", dependencies=[Csrf])
-async def run_reverify(db: Db, settings: AppSettings, current: UserDep, run_id: UUID) -> Response:
+async def run_reverify(
+    db: Db, settings: AppSettings, current: ConsentedUser, run_id: UUID
+) -> Response:
     """Lần chạy con đối chiếu lại các tài liệu vừa tải toàn văn lên (T-505)."""
     child_id = await reverify.start_reverify_uploads(db, settings, user=current.user, run_id=run_id)
     await db.commit()
@@ -91,7 +95,7 @@ async def run_reverify(db: Db, settings: AppSettings, current: UserDep, run_id: 
 
 @router.post("/runs/{run_id}/retry-lookups", dependencies=[Csrf])
 async def run_retry_lookups(
-    db: Db, settings: AppSettings, current: UserDep, run_id: UUID
+    db: Db, settings: AppSettings, current: ConsentedUser, run_id: UUID
 ) -> Response:
     """Lần chạy con tra lại các tài liệu bị lỗi kết nối khi tra cứu (T-505)."""
     child_id = await reverify.start_lookup_retry(db, settings, user=current.user, run_id=run_id)

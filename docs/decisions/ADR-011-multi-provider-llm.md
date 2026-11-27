@@ -43,4 +43,5 @@ Chọn B (chủ dự án chọn ngày 27/11/2026). `make_provider(settings)` tro
   - Structured output dùng `strict: false` vì chế độ strict của OpenAI bắt mọi trường phải `required`, trái schema Pydantic có trường mặc định; Pydantic ở `LLMClient` vẫn kiểm đủ và thử lại một lần.
   - Định danh provider theo host (`openai_compatible:<host>[:<port>]`, Anthropic giữ `anthropic`): đổi host là đổi provider, không dùng chung cache với provider cũ, chặn tiếp tục run cũ (`LLM_PROVIDER_CHANGED`) và bắt người dùng đồng ý lại.
   - Tên model mặc định chỉ dành cho Anthropic; `openai_compatible` phải đặt `CITEPROOF_LLM_MODELS` và `CITEPROOF_LLM_PRICES`.
+  - Các job đã xếp hàng trước khi đổi provider vẫn tiếp tục chạy trên provider đã đóng băng của chúng (khoảng hở được spec chấp nhận); chỉ thao tác mới sau đó mới bị chặn hoặc đòi đồng ý lại.
 - Việc cần làm tiếp: đóng băng provider vào `RunConfig`, đồng ý lại khi đổi provider, bộ đánh giá dùng `make_provider` (các task sau của kế hoạch).

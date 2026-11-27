@@ -37,6 +37,10 @@ echo 'CITEPROOF_ANTHROPIC_API_KEY=sk-ant-...' >> .env
 
 **Tương thích OpenAI**: đặt `CITEPROOF_LLM_PROVIDER=openai_compatible`, `CITEPROOF_OPENAI_BASE_URL` (và `CITEPROOF_OPENAI_API_KEY` nếu máy chủ cần khóa), cùng `CITEPROOF_LLM_MODELS` và `CITEPROOF_LLM_PRICES`.
 
+`CITEPROOF_LLM_MAX_TOKENS` (mặc định 16000 cho `verdict.*` và `agent.*`) phải nằm trong giới hạn token đầu ra của model đã chọn, nếu không provider trả 400 và tác vụ ghi `PROCESSING_ERROR`.
+
+`CITEPROOF_RUN_MAX_COST_USD` phải lớn hơn một lần giữ chỗ chi phí của W5 (giá đầu ra x `max_tokens` của `verdict.judge`, khoảng 0,16 USD với mặc định); nếu thấp hơn, không lệnh gọi W5 nào chạy và các cặp nhận `COST_LIMIT_REACHED`.
+
 | Nhà cung cấp | `CITEPROOF_OPENAI_BASE_URL` | Ghi chú |
 |---|---|---|
 | OpenAI | `https://api.openai.com/v1` | Cần `CITEPROOF_OPENAI_API_KEY` |

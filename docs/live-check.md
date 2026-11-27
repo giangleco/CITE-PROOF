@@ -4,7 +4,7 @@ Các kiểm tra dưới đây cần dịch vụ thật (LLM, GROBID) nên mặc 
 
 ## (a) Cấu hình provider LLM
 
-Làm theo README mục "Bật LLM" (Anthropic hoặc tương thích OpenAI, đủ 8 khóa model và giá). Kiểm tra đã nhận cấu hình:
+Làm theo README mục "Bật LLM" (Anthropic hoặc tương thích OpenAI, đủ 8 khóa model và giá). Kiểm `CITEPROOF_LLM_MAX_TOKENS` (mặc định 16000 cho verdict/agents) không vượt giới hạn token đầu ra của model, nếu vượt provider trả 400 và tác vụ ghi `PROCESSING_ERROR`. Kiểm tra đã nhận cấu hình:
 
 ```bash
 uv run python -c "from citeproof.core.settings import Settings; print(Settings().llm_configured)"
