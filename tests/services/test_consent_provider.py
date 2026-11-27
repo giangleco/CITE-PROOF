@@ -70,6 +70,20 @@ def test_null_provider_matches_anthropic_or_unconfigured(settings: Settings, mak
     assert not auth.needs_consent(_user(s, None), s)
 
 
+@pytest.mark.parametrize("stored", ["anthropic", "openai_compatible:x.example", "none", None])
+def test_unconfigured_never_triggers_provider_condition(
+    settings: Settings, stored: str | None
+) -> None:
+    s = _fresh(_unconfigured(settings))
+    assert not auth.needs_consent(_user(s, stored), s)
+
+
+def test_consent_while_unconfigured_does_not_cover_anthropic(settings: Settings) -> None:
+    s = _fresh(_anthropic(settings))
+    assert auth.needs_consent(_user(s, auth.NO_PROVIDER), s)
+    assert auth.needs_consent(_user(s, auth.NO_PROVIDER), _fresh(_openai(settings)))
+
+
 def test_null_provider_requires_consent_for_openai(settings: Settings) -> None:
     s = _fresh(_openai(settings))
     assert auth.needs_consent(_user(s, None), s)
@@ -94,7 +108,7 @@ async def test_record_consent_stores_provider(
     for current, expected in (
         (_openai(settings), "openai_compatible:x.example"),
         (_anthropic(settings), "anthropic"),
-        (_unconfigured(settings), None),
+        (_unconfigured(settings), "none"),
     ):
         async with session_factory() as s:
             user = await auth.create_user(

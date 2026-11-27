@@ -559,3 +559,21 @@ def test_dump_needs_pg_dump(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 )
 def test_cli_modes(value: str, mode: CacheMode) -> None:
     assert parse_mode(value) is mode
+
+
+async def test_eval_user_provider_follows_latest_import(
+    session_factory: SessionFactory, clean_db: None
+) -> None:
+    from citeproof.evaluation.importer import _eval_user
+
+    for provider, expected in (
+        ("anthropic", "anthropic"),
+        (None, "none"),
+        ("openai_compatible:h", "openai_compatible:h"),
+    ):
+        async with session_factory() as session:
+            await _eval_user(session, provider)
+            await session.commit()
+        async with session_factory() as session:
+            user = (await session.scalars(select(User).where(User.email == EVAL_USER_EMAIL))).one()
+            assert user.consent_llm_provider == expected

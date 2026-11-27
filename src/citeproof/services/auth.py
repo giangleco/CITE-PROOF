@@ -216,17 +216,27 @@ async def delete_session(session: AsyncSession, token: str) -> None:
     await session.execute(delete(WebSession).where(WebSession.token_hash == _sha256(token)))
 
 
+# Giá trị `consent_llm_provider` khi đồng ý lúc chưa cấu hình LLM; phân biệt với NULL (cũ).
+NO_PROVIDER = "none"
+
+
+def consent_provider_value(identity: str | None) -> str:
+    return NO_PROVIDER if identity is None else identity
+
+
 def needs_consent(user: User, settings: Settings) -> bool:
     if user.consent_llm_at is None or user.consent_llm_at < settings.consent_text_updated_at:
         return True
     current = provider_identity(settings)
+    if current is None:  # chưa cấu hình LLM: không có provider để đồng ý
+        return False
     if user.consent_llm_provider is None:
-        # Đồng ý từ trước khi có cột: chỉ tương đương Anthropic hoặc chưa cấu hình LLM.
-        return current not in (None, "anthropic")
+        # Đồng ý từ trước khi có cột: chỉ tương đương Anthropic.
+        return current != "anthropic"
     return user.consent_llm_provider != current
 
 
 async def record_consent(session: AsyncSession, user: User, settings: Settings) -> None:
     user.consent_llm_at = _now()
-    user.consent_llm_provider = provider_identity(settings)
+    user.consent_llm_provider = consent_provider_value(provider_identity(settings))
     await session.flush()

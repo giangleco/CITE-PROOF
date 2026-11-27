@@ -56,6 +56,7 @@ from citeproof.modules.references.normalize import title_norm
 from citeproof.modules.sources.fetch import open_source_key
 from citeproof.pipeline.config import RunConfig
 from citeproof.pipeline.runs import create_seeded_run
+from citeproof.services.auth import consent_provider_value
 from citeproof.storage import Storage, document_prefix
 
 __all__ = [
@@ -145,9 +146,12 @@ async def _eval_user(session: AsyncSession, provider: str | None) -> UUID:
             password_hash=_NO_PASSWORD,
             display_name="Evaluation",
             consent_llm_at=func.now(),
-            consent_llm_provider=provider,
+            consent_llm_provider=consent_provider_value(provider),
         )
-        .on_conflict_do_nothing(index_elements=["email"])
+        .on_conflict_do_update(
+            index_elements=["email"],
+            set_={"consent_llm_provider": consent_provider_value(provider)},
+        )
     )
     user_id: UUID = (
         await session.execute(select(User.id).where(User.email == EVAL_USER_EMAIL))
