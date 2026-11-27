@@ -190,14 +190,26 @@ def parse_retry_after(value: str | None, *, now: datetime | None = None) -> floa
 
 
 def parse_records(
-    items: Iterable[Any], parse: Callable[[Any], WorkRecord | None]
+    items: Iterable[Any], parse: Callable[[Any], WorkRecord | None], *, source: str = "metadata"
 ) -> list[WorkRecord]:
-    """Dựng bản ghi từ từng mục; mục hỏng (sai kiểu, thiếu tiêu đề…) bị bỏ, không làm lỗi nguồn."""
+    """Dựng bản ghi từ từng mục; mục hỏng (sai kiểu, thiếu tiêu đề…) bị bỏ, không làm lỗi nguồn.
+
+    Ngoại lệ: nguồn trả ≥ 1 mục mà mục nào cũng hỏng → `ExternalServiceError` (gateway ghi
+    `error`, không cache) thay vì trả danh sách rỗng bị hiểu nhầm là `not_found`. Thông báo
+    không chứa nội dung phản hồi.
+    """
     records: list[WorkRecord] = []
+    total = 0
     for item in items:
+        total += 1
         record = parse_record(item, parse)
         if record is not None:
             records.append(record)
+    if total and not records:
+        raise ExternalServiceError(
+            f"Nguồn metadata {source} trả {total} mục nhưng không đọc được mục nào.",
+            code="METADATA_ALL_RECORDS_DROPPED",
+        )
     return records
 
 

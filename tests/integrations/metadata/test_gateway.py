@@ -227,6 +227,33 @@ async def test_statuses_ok_and_not_found_are_cached() -> None:
     assert api.calls == 2  # khóa cache gồm nguồn
 
 
+async def test_all_items_dropped_is_error_and_not_cached(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    items = [{"title": []}, None, "chuoi-bi-mat-khong-duoc-ghi-log"]
+    body = {"message": {"items": items}}
+    api = FakeApi(lambda request: json_response(body))
+    cache = InMemoryMetadataCache()
+    gateway = _gateway(api, cache=cache)
+    ref = ParsedReference(raw="x", title="Some title", year=2020)
+
+    with caplog.at_level("DEBUG"):
+        outcome = await gateway.search("crossref", ref)
+    assert outcome == LookupOutcome("crossref", "error", [])
+    assert "chuoi-bi-mat" not in caplog.text
+    assert api.calls == 1  # không thử lại
+    assert cache._entries == {}
+
+    await gateway.search("crossref", ref)
+    assert api.calls == 2  # lỗi không được cache
+
+
+async def test_zero_items_is_still_not_found() -> None:
+    api = FakeApi(lambda request: json_response({"message": {"items": []}}))
+    ref = ParsedReference(raw="x", title="Some title", year=2020)
+    assert (await _gateway(api).search("crossref", ref)).status == "not_found"
+
+
 async def test_invalid_doi_is_not_found_without_http() -> None:
     api = FakeApi(lambda request: json_response(HE))
     outcome = await _gateway(api).by_doi("crossref", "not a doi")

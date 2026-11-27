@@ -21,12 +21,19 @@ _FETCH_ERRORS = (UnsafeUrlError, FetchError, FetchFailedError)
 
 
 async def check_url(safe_http: SafeHttpClient, url: str) -> bool | None:
-    """2xx/3xx → True; 4xx/5xx → False; URL không an toàn hoặc lỗi mạng → None (chưa rõ)."""
+    """2xx/3xx → True; 403 và 429 → None; 4xx/5xx khác → False.
+
+    403 (chặn bot) và 429 (giới hạn tốc độ) không chứng minh URL hỏng nên là "chưa rõ" (None),
+    như URL không an toàn hoặc lỗi mạng.
+    """
     try:
         response = await safe_http.get(url)
     except _FETCH_ERRORS:
         return None
-    return 200 <= response.status_code < 400
+    status = response.status_code
+    if status in (403, 429):
+        return None
+    return 200 <= status < 400
 
 
 async def archive_lookup(safe_http: SafeHttpClient, url: str) -> str | None:

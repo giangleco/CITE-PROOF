@@ -8,6 +8,7 @@ from citeproof.integrations.metadata.abstracts import abstract_from_inverted_ind
 from citeproof.integrations.metadata.base import SOURCES, MetadataConnector, user_agent
 from citeproof.integrations.metadata.breaker import CircuitBreaker
 from citeproof.integrations.metadata.cache import (
+    METADATA_CACHE_VERSION,
     CachedLookup,
     InMemoryMetadataCache,
     LookupCache,
@@ -27,6 +28,7 @@ from citeproof.integrations.metadata.ratelimit import RateLimiter
 from citeproof.integrations.metadata.semantic_scholar import SemanticScholarConnector
 
 __all__ = [
+    "METADATA_CACHE_VERSION",
     "SOURCES",
     "CachedLookup",
     "CircuitBreaker",

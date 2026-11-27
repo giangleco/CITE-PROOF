@@ -27,9 +27,15 @@ from citeproof.llm.cache import canonical_json
 logger = logging.getLogger(__name__)
 
 
+# Tăng khi đổi cách dựng/đọc bản ghi để các dòng cache cũ (có thể thiếu bản ghi do bị bỏ nhầm)
+# không còn trúng. v2: nguồn trả toàn mục hỏng là `error`, không còn là `not_found` rỗng.
+METADATA_CACHE_VERSION: int = 2
+
+
 def query_hash(payload: Mapping[str, Any]) -> str:
-    """Hash hex sha256 của `canonical_json(payload)` (khóa sắp xếp, chuỗi NFC)."""
-    return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+    """Hash hex sha256 của `canonical_json({"v": phiên bản, **payload})` (khóa sắp xếp, NFC)."""
+    versioned = {"v": METADATA_CACHE_VERSION, **payload}
+    return hashlib.sha256(canonical_json(versioned).encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
