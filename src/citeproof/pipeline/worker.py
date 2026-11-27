@@ -113,7 +113,11 @@ async def work_once(
 ) -> bool:
     """Xử lý tối đa một job; trả về False khi không có job nào nhận được."""
     async with session_factory() as session:
-        expired = await fail_expired_jobs(session, max_attempts=settings.job_max_attempts)
+        expired = await fail_expired_jobs(
+            session,
+            max_attempts=settings.job_max_attempts,
+            lock_timeout=timedelta(seconds=settings.job_lock_timeout_seconds),
+        )
         await session.commit()
     for stale in expired:
         logger.warning(

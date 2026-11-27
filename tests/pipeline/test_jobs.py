@@ -416,7 +416,7 @@ async def test_exhausted_stale_job_is_expired_not_reclaimed(
         await _expire_lease(session, job.id)
         stale_locked_at = (await _get(session, run_id, StageName.S1)).locked_at
         assert await claim_next(session, "w2", timedelta(minutes=15), max_attempts=1) is None
-        expired = await expire_stale_jobs(session, 1)
+        expired = await expire_stale_jobs(session, 1, timedelta(minutes=15))
         await session.commit()
         assert [e.id for e in expired] == [job.id]
         assert expired[0].locked_at == stale_locked_at
@@ -425,7 +425,7 @@ async def test_exhausted_stale_job_is_expired_not_reclaimed(
         assert row.last_error == "LeaseExpired"
         assert row.locked_at is None and row.locked_by is None
         assert row.finished_at is not None
-        assert await expire_stale_jobs(session, 1) == []
+        assert await expire_stale_jobs(session, 1, timedelta(minutes=15)) == []
 
 
 @pytest.mark.db
@@ -438,7 +438,7 @@ async def test_non_exhausted_stale_job_not_expired(
         job = await claim_next(session, "w1", timedelta(minutes=15), max_attempts=3)
         assert job is not None
         await _expire_lease(session, job.id)
-        assert await expire_stale_jobs(session, 3) == []
+        assert await expire_stale_jobs(session, 3, timedelta(minutes=15)) == []
 
 
 @pytest.mark.db
@@ -521,5 +521,81 @@ async def test_stale_exhausted_matches_only_expired_leases(
             .where(Job.run_id == run_id, Job.stage.in_(["S1", "S2"]))
             .values(lease_expires_at=func.now() - timedelta(seconds=1))
         )
-        matched = (await session.scalars(select(Job.stage).where(stale_exhausted(3)))).all()
+        stale = stale_exhausted(3, timedelta(minutes=15))
+        matched = (await session.scalars(select(Job.stage).where(stale))).all()
         assert matched == ["S1"]
+
+
+async def _null_lease(
+    session: AsyncSession, job_id: uuid.UUID, started_ago: timedelta | None
+) -> None:
+    started = None if started_ago is None else func.now() - started_ago
+    await session.execute(
+        update(Job).where(Job.id == job_id).values(lease_expires_at=None, started_at=started)
+    )
+
+
+@pytest.mark.db
+async def test_null_lease_job_with_old_started_at_is_reclaimed(
+    session_factory: async_sessionmaker[AsyncSession], clean_db: None
+) -> None:
+    lease = timedelta(minutes=2)
+    async with session_factory() as session:
+        run_id = await _run_id(session)
+        await enqueue(session, run_id, StageName.S1)
+        job = await claim_next(session, "w1", lease, max_attempts=3)
+        assert job is not None
+        await _null_lease(session, job.id, timedelta(minutes=5))
+        again = await claim_next(session, "w2", lease, max_attempts=3)
+        assert again is not None and again.id == job.id and again.attempts == 2
+
+
+@pytest.mark.db
+async def test_null_lease_job_with_recent_started_at_is_not_reclaimed(
+    session_factory: async_sessionmaker[AsyncSession], clean_db: None
+) -> None:
+    lease = timedelta(minutes=2)
+    async with session_factory() as session:
+        run_id = await _run_id(session)
+        await enqueue(session, run_id, StageName.S1)
+        job = await claim_next(session, "w1", lease, max_attempts=3)
+        assert job is not None
+        await _null_lease(session, job.id, timedelta(seconds=10))
+        assert await claim_next(session, "w2", lease, max_attempts=3) is None
+
+
+@pytest.mark.db
+async def test_null_lease_and_null_started_at_is_treated_as_expired(
+    session_factory: async_sessionmaker[AsyncSession], clean_db: None
+) -> None:
+    lease = timedelta(minutes=2)
+    async with session_factory() as session:
+        run_id = await _run_id(session)
+        await enqueue(session, run_id, StageName.S1)
+        job = await claim_next(session, "w1", lease, max_attempts=3)
+        assert job is not None
+        await _null_lease(session, job.id, None)
+        again = await claim_next(session, "w2", lease, max_attempts=3)
+        assert again is not None and again.id == job.id
+
+
+@pytest.mark.db
+async def test_stale_exhausted_matches_null_lease_jobs(
+    session_factory: async_sessionmaker[AsyncSession], clean_db: None
+) -> None:
+    lease = timedelta(minutes=2)
+    async with session_factory() as session:
+        run_id = await _run_id(session)
+        for stage in (StageName.S1, StageName.S2, StageName.S3):
+            await enqueue(session, run_id, stage)
+            assert await claim_next(session, "w1", lease, max_attempts=1)
+        ids = {
+            j.stage: j.id for j in (await session.scalars(select(Job).where(Job.run_id == run_id)))
+        }
+        await _null_lease(session, ids["S1"], timedelta(minutes=5))  # cũ: hết hạn
+        await _null_lease(session, ids["S2"], timedelta(seconds=5))  # mới: còn hạn
+        await _null_lease(session, ids["S3"], None)  # không mốc nào: hết hạn
+        matched = (await session.scalars(select(Job.stage).where(stale_exhausted(1, lease)))).all()
+        assert sorted(matched) == ["S1", "S3"]
+        expired = await expire_stale_jobs(session, 1, lease)
+        assert sorted(e.stage.value for e in expired) == ["S1", "S3"]

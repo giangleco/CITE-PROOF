@@ -106,7 +106,7 @@ async def claim_next(
                 and_(Job.status == JobStatus.QUEUED.value, Job.run_after <= func.now()),
                 and_(
                     Job.status == JobStatus.RUNNING.value,
-                    Job.lease_expires_at < func.now(),
+                    _lease_expired(lease),
                     Job.attempts < max_attempts,
                 ),
             )
@@ -189,16 +189,27 @@ async def fenced_session(
         yield session
 
 
-def stale_exhausted(max_attempts: int) -> ColumnElement[bool]:
+def _lease_expired(lock_timeout: timedelta) -> ColumnElement[bool]:
+    """Lease đã hết hạn; lease NULL thì tính theo `started_at + lock_timeout`.
+
+    Job không có cả `lease_expires_at` lẫn `started_at` được coi là đã hết hạn.
+    """
+    deadline = func.coalesce(Job.lease_expires_at, Job.started_at + lock_timeout)
+    return or_(deadline.is_(None), deadline < func.now())
+
+
+def stale_exhausted(max_attempts: int, lock_timeout: timedelta) -> ColumnElement[bool]:
     """Job RUNNING đã hết hạn lease và hết lượt thử (không được claim lại nữa)."""
     return and_(
         Job.status == JobStatus.RUNNING.value,
-        Job.lease_expires_at < func.now(),
+        _lease_expired(lock_timeout),
         Job.attempts >= max_attempts,
     )
 
 
-async def expire_stale_jobs(session: AsyncSession, max_attempts: int) -> list[ClaimedJob]:
+async def expire_stale_jobs(
+    session: AsyncSession, max_attempts: int, lock_timeout: timedelta
+) -> list[ClaimedJob]:
     """Đánh dấu FAILED (LeaseExpired) các job RUNNING hết hạn lease và hết lượt thử.
 
     Trả về các lease đã hết hạn, kèm `locked_at` trước khi bị xóa.
@@ -206,7 +217,7 @@ async def expire_stale_jobs(session: AsyncSession, max_attempts: int) -> list[Cl
     rows = (
         await session.execute(
             select(*_RETURNING)
-            .where(stale_exhausted(max_attempts))
+            .where(stale_exhausted(max_attempts, lock_timeout))
             .order_by(Job.id)
             .with_for_update()
         )
