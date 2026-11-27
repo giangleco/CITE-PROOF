@@ -251,3 +251,57 @@ Cần bạn quyết trước khi làm: Q-03 (nội dung màn hình đồng ý), 
 | nhánh multi-provider, Task 5 | contract roundtrip yếu; client SDK không đóng trong test_factory; import private; không chạy RED | để sau | Nợ test |
 | nhánh multi-provider, Task 6 | run tạo trước nhánh có provider=None, không bị chặn | chấp nhận (giới hạn) | Phán quyết người điều phối: chưa có run LLM thật trước đây |
 | nhánh multi-provider, Task 6 | _provider_changed dựng RunConfig đầy đủ; test freeze DB yếu; trang overview không có thông báo | để sau | Chưa kiểm tra |
+
+---
+
+## 6. Kết quả sau khi làm
+
+Nhánh `feat/multi-provider-completion` (từ `main`, 27/11/2026). Số liệu chạy lại cuối Task 16.
+
+### 6.1 Kiểm tra mới
+
+| Lệnh | Kết quả |
+|---|---|
+| `make check` | ruff `All checks passed!`; `382 files already formatted`; mypy `Success: no issues found in 196 source files` |
+| `CITEPROOF_REQUIRE_DB=1 uv run pytest -q --cov=citeproof --cov-report=term` | **1856 passed, 3 skipped** trong 170,55 s; `TOTAL 11010 447 96%` (coverage 96%) |
+| 3 test skip | Test live LLM (`tests/llm/test_llm_live.py`, 2 mục, cần `CITEPROOF_LIVE_LLM=1`) và GROBID live (`tests/integrations/test_grobid.py`, cần `CITEPROOF_LIVE_GROBID=1`) |
+| GROBID live: `docker compose up -d grobid`, `curl -s localhost:8070/api/isalive` → `true`, rồi `CITEPROOF_LIVE_GROBID=1 uv run pytest -m grobid -q` | `1 passed, 1858 deselected in 17.40s` |
+| LLM live (`CITEPROOF_LIVE_LLM=1 uv run pytest -m live -q`) | **chưa chạy: chưa cấu hình LLM** (`Settings().llm_configured` in `False`) |
+| Một bài thật qua UI, đo chi phí thật | **chưa chạy: chưa cấu hình LLM** |
+
+### 6.2 Từng mục audit
+
+| Mục | Task / commit | Trạng thái | Kiểm chứng bằng |
+|---|---|---|---|
+| A-1 compose không nhận key | Task 1 `5a75633` | Đã sửa | `uv run pytest tests/deploy -q`; `docker compose config -q` |
+| A-2 README sai/thiếu | Task 1 `5a75633`, Task 9 `b6edea8` | Đã sửa | Đọc `README.md` mục "Bật LLM" |
+| A-3 project-status cũ | Task 16 | Đã làm mới | `docs/project-status.md` |
+| A-4 chú thích `feat/core-pipeline` | Task 1 `5a75633` | Đã sửa chú thích; xóa/đẩy nhánh cũ vẫn chờ người dùng | `grep -n "feat/core-pipeline" docs/task-tracking.md` |
+| A-5 coverage | Task 16 | Đã làm: CI chạy `--cov=citeproof --cov-report=term`, không đặt ngưỡng | `uv run pytest --cov=citeproof --cov-report=term` (TOTAL 96%) |
+| A-6 chạy live | Task 16 | **Một phần**: GROBID live đạt; LLM live và bài thật qua UI chưa chạy (chưa cấu hình LLM) | `docs/live-check.md` |
+| §3.2 T-604 HTML in được | Task 15 `9b990ba`, `b535443` | Đã xong (COMPLETED) | `uv run pytest tests/web tests/modules -q -k report` |
+| §3.5 P1: migration 0010 trùng lặp | Task 11 `5f7df9f`, `44020b8` | Đã sửa | `CITEPROOF_REQUIRE_DB=1 uv run pytest tests/db -q` |
+| §3.5 P1: job RUNNING lease NULL | Task 11 `5f7df9f` | Đã sửa | `CITEPROOF_REQUIRE_DB=1 uv run pytest tests/pipeline tests/db -q` |
+| §3.5 P1: cache metadata all-dropped, key không có version | Task 12 `e45defd` | Đã sửa | `uv run pytest tests/modules -q` |
+| §3.5 P1: `check_url` coi 403/429 là chết | Task 12 `e45defd` | Đã sửa (trả "không rõ") | `uv run pytest tests/modules -q` |
+| §3.5 P1: cặp không truy xuất được | Task 13 | Chấp nhận (giới hạn), có test | `uv run pytest tests/modules -q -k s7_zero_hits` |
+| §3.5 P1: số/quote không theo ranh giới | Task 13 `6d0475d` | Đã sửa (còn biên "95" trong "95.7%", ghi bên dưới) | `uv run pytest tests/modules -q` |
+| §3.5 P1: chi phí vượt trần khi concurrency > 1 | Task 13 `6d0475d`, `25f2811` | Đã sửa; giá cache token vẫn ước cao có chủ đích | `uv run pytest tests/modules -q` |
+| §3.5 P1: 429 thiếu security headers | Task 14 `3dff9fe` | Đã sửa | `uv run pytest tests/web tests/deploy -q` |
+| §3.5 P1: `smoke.py --password`, `CHANGE_ME_` | Task 14 `3dff9fe` | Đã sửa (`scripts/ui_snapshots.py` vẫn nhận `--password`) | `uv run pytest tests/deploy -q` |
+| Multi-provider: provider, factory, OpenAI-compatible, agent turn | Task 2–5 `f8551c9`, `1705f20`, `bbb3958`, `8724d26`, `b4f4113` | Đã xong | `uv run pytest tests/llm -q` |
+| Multi-provider: đóng băng provider theo run, chặn reverify/resume | Task 6 `1ffd010`, `e469111` | Đã xong | `CITEPROOF_REQUIRE_DB=1 uv run pytest tests -q -k provider` |
+| Multi-provider: đồng ý lại khi đổi provider | Task 7 `f7a6140`, `7773ee1` | Đã xong | `uv run pytest tests/web -q -k consent` |
+| Multi-provider: eval trên mọi provider | Task 8 `36cae3b`, `abf0e21` | Đã xong | `uv run pytest tests/evaluation -q` |
+| Multi-provider: tài liệu cấu hình, yêu cầu đủ 8 model | Task 9 `b6edea8`, `3c904f3` | Đã xong | `uv run pytest tests/core -q` |
+| Phân loại việc hoãn (§5) | Task 10 `9eb07a7`, `10722a2` | Đã xong | Đọc §5 |
+
+### 6.3 Còn lại (ngoài phạm vi mã hoặc cần bạn)
+
+- **Live LLM**: chưa chạy (chưa cấu hình LLM); cần API key hoặc model cục bộ, rồi làm theo `docs/live-check.md` (b), (d). Đầu vào cho T-008/T-703.
+- **Q-03**: tên và link chính sách dữ liệu nhà cung cấp LLM trên màn hình đồng ý (chặn pilot).
+- **Việc hoãn ở §5**: 62 hàng "để sau" (nợ test, dọn mã, ca hiếm; nhiều mục "chưa kiểm tra"); 19 hàng chấp nhận giới hạn.
+- **Nghiên cứu, dữ liệu, thực nghiệm, pilot**: T-001…T-010, T-E01…T-E07, T-701…T-703, T-705, T-306, T-407, T-607, T-801, T-802, T-901, T-902; các task IN_PROGRESS chờ dữ liệu/vận hành: T-203, T-208, T-302, T-408, T-506, T-606, T-704; T-202 (S3) hoãn.
+- **Việc nhỏ hoãn từ sổ nhánh này**: `llm_models` một phần đã được siết bằng validator (Task 9); còn `input None → "null"` và tool_result mồ côi (Task 4); test contract/factory yếu và client SDK không đóng (Task 5); run tạo trước nhánh có `provider=None` không bị chặn (Task 6); trang overview chưa có thông báo đổi provider; biên số/quote "95" trong "95.7%" và "234" trong "1,234"; giá `verdict.judge` dùng cho closed-book khi đặt chỗ chi phí (Task 13); lỗi all-items-lack-title của Crossref nay là lỗi thay vì not_found, và key bump làm mồ côi cache metadata eval cũ (Task 12); comment sai về 413 trong Task 14, `CITEPROOF_DOMAIN`/`POSTGRES_PASSWORD` placeholder chưa quét.
+- **Nhánh `feat/core-pipeline`**: có xóa/đẩy hay không vẫn chờ bạn. Container `citeproof-grobid-1` vẫn đang chạy sau Task 16.
+
