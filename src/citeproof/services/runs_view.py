@@ -17,6 +17,7 @@ from citeproof.core.enums import JobStatus, RunStatus, StageName
 from citeproof.core.errors import NotFoundError
 from citeproof.core.settings import Settings
 from citeproof.db.models import Document, Job, LLMCall, User, VerificationRun
+from citeproof.pipeline.config import RunConfig, ensure_same_provider
 from citeproof.pipeline.runs import resume_run
 from citeproof.services.documents import is_sample
 
@@ -190,6 +191,8 @@ async def resume(session: AsyncSession, settings: Settings, *, user: User, run_i
     run = await own_run(session, user=user, run_id=run_id)
     if RunStatus(run.status) in _ACTIVE:
         return  # bấm "Tiếp tục" hai lần: lần chạy đã chạy lại rồi
+    # Provider đã đổi: chạy tiếp chỉ làm stage cần LLM lỗi lại, nên từ chối ngay (spec §5.4).
+    ensure_same_provider(RunConfig.load(run.config), settings)
     demo = (run.config or {}).get("demo")
     if settings.env == "local" and isinstance(demo, dict) and demo.get("fail_at"):
         config = {**run.config, "demo": {**demo, "fail_at": None}}

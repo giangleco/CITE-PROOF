@@ -22,11 +22,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from citeproof.core import defaults
 from citeproof.core.enums import AgentName, LLMTask, StageName, Verifier
-from citeproof.core.errors import ConflictError, NotFoundError
+from citeproof.core.errors import LLM_PROVIDER_CHANGED_MESSAGE, ConflictError, NotFoundError
 from citeproof.core.settings import Settings
 from citeproof.db.models import Document, VerificationRun
 from citeproof.llm.identity import provider_identity
-from citeproof.web import labels
 
 PROMPT_VERSIONS: Mapping[str, str] = MappingProxyType({task.value: "v1" for task in LLMTask})
 TOOL_CATALOGS: Mapping[str, str] = MappingProxyType({"meta": "v1", "source": "v1"})
@@ -189,7 +188,7 @@ def provider_changed(config: RunConfig, settings: Settings) -> bool:
 def ensure_same_provider(config: RunConfig, settings: Settings) -> None:
     """`ConflictError(LLM_PROVIDER_CHANGED)` khi provider đã đổi: không trộn hai provider."""
     if provider_changed(config, settings):
-        raise ConflictError(labels.LLM_PROVIDER_CHANGED, code="LLM_PROVIDER_CHANGED")
+        raise ConflictError(LLM_PROVIDER_CHANGED_MESSAGE, code="LLM_PROVIDER_CHANGED")
 
 
 @dataclass(frozen=True)

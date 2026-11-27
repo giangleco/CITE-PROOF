@@ -95,6 +95,16 @@ def test_benchmark_configs(name: str, variant: Verifier, cross_lingual: str) -> 
     assert raw["limits"]["max_cost_usd"] == config.limits.max_cost_usd == 5.0
 
 
+@pytest.mark.parametrize("key", ["demo", "scope", "provider"])
+def test_config_rejects_run_bound_keys(tmp_path: Path, key: str) -> None:
+    # `provider` do lần chạy tự đóng băng từ settings (spec §5.4), không đặt trong YAML.
+    path = tmp_path / "bad.yaml"
+    path.write_text(f"variant: V2\n{key}: null\n", encoding="utf-8")
+    with pytest.raises(InputError) as info:
+        load_run_config(Settings(), path)
+    assert info.value.code == "CONFIG_INVALID"
+
+
 def test_config_rejects_unknown_keys(tmp_path: Path) -> None:
     path = tmp_path / "bad.yaml"
     path.write_text("variant: V2\nretrieval_kk: 3\n", encoding="utf-8")

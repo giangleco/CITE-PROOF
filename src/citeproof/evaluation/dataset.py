@@ -34,6 +34,8 @@ __all__ = [
 
 # Khóa chỉ để mô tả cấu hình, không thuộc `RunConfig`.
 _CONFIG_META_KEYS = frozenset({"name", "description"})
+# Khóa của `RunConfig` chỉ đặt khi tạo lần chạy, không ghi đè được bằng YAML.
+_RUN_BOUND_KEYS = frozenset({"demo", "scope", "provider"})
 
 
 class _Strict(BaseModel):
@@ -161,8 +163,10 @@ def load_run_config(settings: Settings, path: Path) -> RunConfig:
         raise InputError(f"Cấu hình {path.name} phải là một bảng YAML.", code="CONFIG_INVALID")
     overrides = {k: v for k, v in raw.items() if k not in _CONFIG_META_KEYS}
     unknown = sorted(str(k) for k in overrides if k not in RunConfig.model_fields)
-    if unknown or "demo" in overrides or "scope" in overrides:
-        bad = ", ".join(unknown or ["demo/scope"])
+    # demo/scope/provider gắn với một lần chạy cụ thể; provider luôn lấy từ settings (§5.4).
+    bound = sorted(str(k) for k in overrides if k in _RUN_BOUND_KEYS)
+    if unknown or bound:
+        bad = ", ".join(unknown + bound)
         raise InputError(
             f"Cấu hình {path.name} có khóa không hỗ trợ: {bad}.", code="CONFIG_INVALID"
         )

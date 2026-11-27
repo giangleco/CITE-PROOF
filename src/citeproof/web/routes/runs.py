@@ -6,6 +6,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse, Response
 
 from citeproof.core.enums import RunStatus
+from citeproof.core.settings import Settings
+from citeproof.pipeline.config import RunConfig, provider_changed
 from citeproof.services import reverify, runs_view
 from citeproof.web.deps import AppSettings, Csrf, Db, UserDep
 from citeproof.web.rendering import render
@@ -24,8 +26,15 @@ def _heading(view: runs_view.RunView) -> str:
     return "Đang kiểm tra"
 
 
+def _provider_changed(view: runs_view.RunView, settings: Settings) -> bool:
+    """Provider LLM đã đổi: ẩn nút "Tiếp tục", chỉ còn "Kiểm tra lại cả bài" (spec §5.4)."""
+    return provider_changed(RunConfig.load(view.config), settings)
+
+
 @router.get("/runs/{run_id}")
-async def run_page(request: Request, db: Db, current: UserDep, run_id: UUID) -> Response:
+async def run_page(
+    request: Request, db: Db, settings: AppSettings, current: UserDep, run_id: UUID
+) -> Response:
     view = await runs_view.get_run_view(db, user=current.user, run_id=run_id)
     tech = (
         await runs_view.get_tech_details(db, user=current.user, run_id=run_id)
@@ -35,19 +44,32 @@ async def run_page(request: Request, db: Db, current: UserDep, run_id: UUID) -> 
     return render(
         request,
         "pages/run.html",
-        {"view": view, "tech": tech, "heading": _heading(view), "finished": FINISHED},
+        {
+            "view": view,
+            "tech": tech,
+            "heading": _heading(view),
+            "finished": FINISHED,
+            "provider_changed": _provider_changed(view, settings),
+        },
         current=current,
         nav="documents",
     )
 
 
 @router.get("/runs/{run_id}/progress")
-async def run_progress(request: Request, db: Db, current: UserDep, run_id: UUID) -> Response:
+async def run_progress(
+    request: Request, db: Db, settings: AppSettings, current: UserDep, run_id: UUID
+) -> Response:
     view = await runs_view.get_run_view(db, user=current.user, run_id=run_id)
     return render(
         request,
         "partials/progress.html",
-        {"view": view, "finished": FINISHED, "heading": _heading(view)},
+        {
+            "view": view,
+            "finished": FINISHED,
+            "heading": _heading(view),
+            "provider_changed": _provider_changed(view, settings),
+        },
         current=current,
     )
 

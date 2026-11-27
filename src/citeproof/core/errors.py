@@ -33,6 +33,13 @@ class ConflictError(CiteProofError):
     code = "CONFLICT"
 
 
+# Câu cho `ConflictError(code="LLM_PROVIDER_CHANGED")` (spec §5.4). Đặt ở core để pipeline và
+# service không phụ thuộc tầng web; `web.labels.LLM_PROVIDER_CHANGED` tham chiếu tới đây.
+LLM_PROVIDER_CHANGED_MESSAGE = (
+    "Nhà cung cấp mô hình đã đổi; hãy tạo lần kiểm tra mới cho tài liệu này."
+)
+
+
 class RateLimitedError(CiteProofError):
     """Vượt giới hạn tần suất hoặc hạn mức (429)."""
 

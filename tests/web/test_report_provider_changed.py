@@ -1,25 +1,34 @@
-"""Trang báo cáo của lần chạy có provider LLM khác provider hiện tại (spec §5.4)."""
+"""Trang báo cáo và trang tiến độ của lần chạy có provider LLM khác provider hiện tại (§5.4)."""
 
 import uuid
 
 import httpx
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from citeproof.core.enums import (
+    JobStatus,
     ParseMethod,
     ReferenceStatus,
     RefType,
     RunStatus,
+    StageName,
     UnverifiableReason,
 )
 from citeproof.core.settings import Settings
-from citeproof.db.models import ReferenceCheck, ReferenceEntry, User, VerificationRun
+from citeproof.db.models import Job, ReferenceCheck, ReferenceEntry, User, VerificationRun
 from citeproof.services import sources
 from citeproof.storage import LocalStorage
 from citeproof.web import labels
 from tests.files import titled_pdf
-from tests.services.helpers import add_claim_verification, new_run, run_document_id, set_run
+from tests.services.helpers import (
+    add_claim_verification,
+    new_run,
+    run_document_id,
+    set_jobs,
+    set_run,
+)
 from tests.web.conftest import login, page_csrf
 
 SessionFactory = async_sessionmaker[AsyncSession]
@@ -130,3 +139,44 @@ async def test_report_hides_actions_when_provider_changed(
     )
     assert upload.status_code == 409
     assert labels.LLM_PROVIDER_CHANGED in upload.text
+
+
+@pytest.mark.db
+async def test_resume_blocked_when_provider_changed(
+    client: httpx.AsyncClient, session_factory: SessionFactory, web_settings: Settings
+) -> None:
+    user = await login(client, session_factory)
+    async with session_factory() as s:
+        user = await s.merge(user)
+        run_id = await new_run(s, web_settings, user)
+        await set_jobs(s, run_id, {StageName.S5: JobStatus.FAILED})
+        await set_run(
+            s,
+            run_id,
+            status=RunStatus.FAILED,
+            error={"stage": "S5", "type": "InputError", "message": "Lỗi mô phỏng ở bước 5"},
+        )
+    html = (await client.get(f"/runs/{run_id}")).text
+    assert "Tiếp tục từ bước 5" in html
+    assert labels.LLM_PROVIDER_CHANGED not in html
+
+    await _freeze(session_factory, run_id, OLD_PROVIDER)
+    for path in (f"/runs/{run_id}", f"/runs/{run_id}/progress"):
+        body = (await client.get(path)).text
+        assert "Tiếp tục từ bước" not in body
+        assert f'action="/runs/{run_id}/resume"' not in body
+        assert labels.LLM_PROVIDER_CHANGED in body
+        assert "Kiểm tra lại cả bài" in body
+
+    token = await page_csrf(client, f"/runs/{run_id}")
+    response = await client.post(f"/runs/{run_id}/resume", data={"csrf_token": token})
+    assert response.status_code == 409
+    assert labels.LLM_PROVIDER_CHANGED in response.text
+    async with session_factory() as s:
+        run = await s.get(VerificationRun, run_id)
+        job_status = await s.scalar(
+            select(Job.status).where(Job.run_id == run_id, Job.stage == StageName.S5.value)
+        )
+    assert run is not None
+    assert run.status == RunStatus.FAILED.value
+    assert job_status == JobStatus.FAILED.value
