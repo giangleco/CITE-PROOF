@@ -69,7 +69,7 @@ async def _run(args: argparse.Namespace, settings: Settings) -> Path:
             split=args.split,
             out_dir=args.out,
             dump=args.dump,
-            provider_identity=args.provider_identity,
+            identity_override=args.provider_identity,
         )
         print(f"macro_f1={report.metrics.macro_f1:.4f} n={report.metrics.n} run={report.run_id}")
     else:
@@ -78,7 +78,7 @@ async def _run(args: argparse.Namespace, settings: Settings) -> Path:
             dataset_path=args.dataset,
             mode=args.mode,
             out_dir=args.out,
-            provider_identity=args.provider_identity,
+            identity_override=args.provider_identity,
         )
         print(f"accuracy={refs.accuracy:.4f} n={refs.n} run={refs.run_id}")
     return Path(args.out)

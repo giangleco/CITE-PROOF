@@ -255,6 +255,13 @@ def _provider_for(
     *,
     identity_override: str | None = None,
 ) -> LLMProvider | None:
+    if identity_override is not None and (
+        provider is not None or mode is not CacheMode.REPLAY_ONLY
+    ):
+        raise InputError(
+            "--provider-identity chỉ dùng được ở chế độ replay và khi không truyền provider.",
+            code="CONFIG_INVALID",
+        )
     if provider is not None:
         return provider
     if mode is CacheMode.REPLAY_ONLY:
@@ -858,12 +865,12 @@ async def run_eval(
     out_dir: Path,
     dump: bool,
     provider: LLMProvider | None = None,
-    provider_identity: str | None = None,
+    identity_override: str | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> EvalReport:
     """Đánh giá phán quyết claim (D1-D4) với một cấu hình biến thể."""
     url = check_eval_database(settings.eval_database_url)
-    llm_provider = _provider_for(settings, mode, provider, identity_override=provider_identity)
+    llm_provider = _provider_for(settings, mode, provider, identity_override=identity_override)
     pg_dump = _require_pg_dump() if dump else None
     dataset = load_claims(dataset_path)
     items = [item for item in dataset.items if split is None or item.split == split]
@@ -873,8 +880,8 @@ async def run_eval(
     config = config.model_copy(
         update={"limits": config.limits.model_copy(update={"max_claims": max(1, len(items))})}
     )
-    config = _frozen_provider(settings, config, provider_identity)
-    identity = _report_identity(settings, llm_provider, provider_identity)
+    config = _frozen_provider(settings, config, identity_override)
+    identity = _report_identity(settings, llm_provider, identity_override)
     namespace = eval_namespace(dataset.name, dataset.sha256[:12])
     engine = make_engine(url)
     session_factory = make_session_factory(engine)
@@ -936,17 +943,17 @@ async def run_reference_eval(
     mode: CacheMode,
     out_dir: Path,
     provider: LLMProvider | None = None,
-    provider_identity: str | None = None,
+    identity_override: str | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> RefEvalReport:
     """Đánh giá trạng thái tài liệu tham khảo (D5): S1-S3 thật trên một tài liệu TEXT."""
     url = check_eval_database(settings.eval_database_url)
-    llm_provider = _provider_for(settings, mode, provider, identity_override=provider_identity)
+    llm_provider = _provider_for(settings, mode, provider, identity_override=identity_override)
     dataset = load_references(dataset_path)
     config = _frozen_provider(
-        settings, RunConfig.resolve(settings, variant=RunConfig().variant), provider_identity
+        settings, RunConfig.resolve(settings, variant=RunConfig().variant), identity_override
     )
-    identity = _report_identity(settings, llm_provider, provider_identity)
+    identity = _report_identity(settings, llm_provider, identity_override)
     namespace = eval_namespace(dataset.name, dataset.sha256[:12])
     engine = make_engine(url)
     session_factory = make_session_factory(engine)

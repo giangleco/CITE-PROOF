@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import httpx
 import pytest
 from pydantic import SecretStr
 from sqlalchemy import select
@@ -13,11 +14,14 @@ from citeproof.db.models import VerificationRun
 from citeproof.evaluation.__main__ import _parser
 from citeproof.evaluation.runner import (
     ReplayOnlyProvider,
+    _frozen_provider,
     _provider_for,
     run_eval,
+    run_reference_eval,
 )
 from citeproof.llm.types import CacheMode
-from tests.evaluation.test_harness import MINI, V2_X2, _result_dir, routed
+from citeproof.pipeline.config import RunConfig
+from tests.evaluation.test_harness import MINI, MINI_REFS, V2_X2, _metadata_api, _result_dir, routed
 
 SessionFactory = async_sessionmaker[AsyncSession]
 
@@ -111,7 +115,7 @@ async def test_replay_with_other_identity_runs_and_reports_it(
         eval_settings,
         mode=CacheMode.REPLAY_ONLY,
         out_dir=tmp_path / "b",
-        provider_identity="routed",
+        identity_override="routed",
         **common,
     )
     assert second.metrics == first.metrics
@@ -125,3 +129,69 @@ async def test_replay_with_other_identity_runs_and_reports_it(
         )
     assert raw is not None
     assert raw.get("provider") is None
+
+
+@pytest.mark.parametrize("mode", [CacheMode.READ_WRITE, CacheMode.FRESH])
+def test_override_rejected_outside_replay(tmp_path: Path, mode: CacheMode) -> None:
+    with pytest.raises(InputError) as info:
+        _provider_for(_openai(tmp_path), mode, None, identity_override="a:b")
+    assert info.value.code == "CONFIG_INVALID"
+
+
+def test_override_rejected_with_explicit_provider(tmp_path: Path) -> None:
+    with pytest.raises(InputError) as info:
+        _provider_for(_settings(tmp_path), CacheMode.REPLAY_ONLY, routed(), identity_override="a:b")
+    assert info.value.code == "CONFIG_INVALID"
+
+
+async def test_run_functions_reject_override_in_read_write(tmp_path: Path) -> None:
+    settings = _openai(tmp_path)
+    with pytest.raises(InputError) as info:
+        await run_eval(
+            settings,
+            dataset_path=MINI,
+            config_path=V2_X2,
+            mode=CacheMode.READ_WRITE,
+            split=None,
+            out_dir=tmp_path,
+            dump=False,
+            identity_override="a:b",
+        )
+    assert info.value.code == "CONFIG_INVALID"
+
+
+def test_frozen_provider_keeps_identity_when_equal(tmp_path: Path) -> None:
+    settings = _openai(tmp_path)
+    config = RunConfig.resolve(settings, variant=RunConfig().variant)
+    assert _frozen_provider(settings, config, OPENAI).provider == OPENAI
+    assert _frozen_provider(settings, config, "other:x").provider is None
+    assert _frozen_provider(settings, config, None).provider == OPENAI
+
+
+def test_cli_run_refs_accepts_provider_identity() -> None:
+    args = _parser().parse_args(
+        ["run-refs", "--dataset", "d", "--mode", "replay", "--provider-identity", "a:b"]
+    )
+    assert args.provider_identity == "a:b"
+
+
+async def test_reference_eval_replay_with_override(
+    eval_settings: Settings, session_factory: SessionFactory, clean_db: None, tmp_path: Path
+) -> None:
+    common = {"dataset_path": MINI_REFS, "transport": httpx.MockTransport(_metadata_api)}
+    provider = routed()
+    await run_reference_eval(
+        eval_settings,
+        mode=CacheMode.READ_WRITE,
+        out_dir=tmp_path / "a",
+        provider=provider,
+        **common,
+    )
+    report = await run_reference_eval(
+        eval_settings,
+        mode=CacheMode.REPLAY_ONLY,
+        out_dir=tmp_path / "b",
+        identity_override="routed",
+        **common,
+    )
+    assert report.provider == "routed"
