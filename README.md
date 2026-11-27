@@ -22,9 +22,30 @@ CLI chạy trên máy host, nối tới DB ở `localhost:5432` (mặc định c
 
 - **Bài mẫu**: nút "Thêm bài mẫu" ở trang "Tài liệu của tôi", hoặc lệnh `seed-sample`. Chỉ có khi `CITEPROOF_ENV=local`.
 - **Chế độ thử** ở form "Kiểm tra bài mới" (chỉ local): đặt thời gian mỗi bước và bước giả lập lỗi để xem trang tiến độ, lỗi và "Tiếp tục từ bước N".
-- Các bước xử lý thật (đọc bài, tra cứu, đối chiếu) chưa có: bài bạn tải lên sẽ chạy hết 9 bước nhưng báo cáo trống.
 - Tài khoản `--admin` thấy thêm lựa chọn biến thể và phần "Chi tiết kỹ thuật".
 - Khi chạy sau reverse proxy (pilot), đặt `CITEPROOF_TRUSTED_PROXIES` là IP của proxy; nếu không, mọi người dùng chung một IP và giới hạn đăng nhập theo IP sẽ chặn cả lớp.
+
+### Bật LLM
+
+Đặt khóa vào `.env` ở thư mục gốc (Compose tự nạp, tệp không bắt buộc phải có):
+
+```bash
+echo 'CITEPROOF_ANTHROPIC_API_KEY=sk-ant-...' >> .env
+docker compose up -d --build
+```
+
+Không có khóa thì các bước dùng LLM hạ cấp về luật và lần chạy có cảnh báo `LLM_NOT_CONFIGURED`.
+
+### GROBID
+
+GROBID đã chạy sẵn trong compose (cổng 8070, worker gọi qua `http://grobid:8070`); không cần cài thêm. Khi GROBID không truy cập được, bước đọc PDF dùng `pypdfium2` dự phòng.
+
+### Đánh giá
+
+```bash
+make eval          # bộ đánh giá mini; gọi LLM thật (cần khóa) và ghi cache
+make eval-replay   # phát lại cache đó, không gọi LLM
+```
 
 ## Phát triển
 

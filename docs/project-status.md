@@ -2,9 +2,9 @@
 
 | Thuộc tính | Giá trị |
 |---|---|
-| Cập nhật | 20/11/2026 |
-| Phase hiện tại | Phase 0 — Project Initialization |
-| Trạng thái phase | IN_REVIEW |
+| Cập nhật | 27/11/2026 |
+| Phase hiện tại | Phase 6 — Implementation |
+| Trạng thái phase | IN_PROGRESS (MVP mã hoàn tất trên `main`; các task còn mở lấy từ `task-tracking.md`) |
 | Milestone hiện tại | Chưa áp dụng (milestone bắt đầu từ M0 trong `11`) |
 
 ## Tiến độ theo phase
@@ -17,7 +17,7 @@
 | 3 | System Architecture & Technical Design | `07`, `08`, `09`, `10` | NOT_STARTED | Bản nháp trước |
 | 4 | Project Planning | `11`, `progress/task-tracking.md` | NOT_STARTED | Bản nháp trước |
 | 5 | Development Preparation | `12`, `13` | NOT_STARTED | Bản nháp trước |
-| 6 | Implementation | Mã nguồn | NOT_STARTED | — |
+| 6 | Implementation | Mã nguồn | IN_PROGRESS | MVP mã hoàn tất trên `main`; task còn mở ở `task-tracking.md` |
 | 7 | Testing & Quality Assurance | `13` §A.6 (mẫu báo cáo) | NOT_STARTED | — |
 | 8 | Deployment & DevOps | `14` | NOT_STARTED | Bản nháp trước |
 | 9 | Monitoring & Maintenance | `15` | NOT_STARTED | Bản nháp trước |
@@ -64,3 +64,4 @@ Phát hiện mới từ desk research (`02` §4.4): R-10 tăng mức độ chú 
 | 23/11/2026 | Thiết kế điều phối, bộ nhớ, công cụ LLM (`07a`) được duyệt (D-11, D-12, D-13); cập nhật `04`, `07`–`13`, task-tracking; ghi ADR-009, ADR-010. Bắt đầu lập kế hoạch và viết mã M1 theo yêu cầu, song song với Phase 1 còn mở |
 | 23/11/2026 | M1 nền tảng hoàn tất trên nhánh feat/m1-foundation (T-101…T-109) |
 | 24/11/2026 | Giao diện web v1 (ADR-005; `.stitch/DESIGN.md`, `.stitch/SITE.md`) hoàn tất trên nhánh feat/web-ui: đăng nhập, đồng ý, tải lên, tiến độ, báo cáo 4 phần, phản hồi, xóa dữ liệu, bài mẫu, chế độ thử. T-305 kéo lên làm trước |
+| 27/11/2026 | MVP mã hoàn tất trên `main`; phase hiện tại chuyển sang Phase 6; Compose nạp `.env`; làm mới README và task-tracking |
