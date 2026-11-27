@@ -137,7 +137,7 @@ def _document_language(items: Sequence[ClaimItem]) -> str:
     return languages.pop() if len(languages) == 1 else Language.MIXED.value
 
 
-async def _eval_user(session: AsyncSession) -> UUID:
+async def _eval_user(session: AsyncSession, provider: str | None) -> UUID:
     await session.execute(
         insert(User)
         .values(
@@ -145,6 +145,7 @@ async def _eval_user(session: AsyncSession) -> UUID:
             password_hash=_NO_PASSWORD,
             display_name="Evaluation",
             consent_llm_at=func.now(),
+            consent_llm_provider=provider,
         )
         .on_conflict_do_nothing(index_elements=["email"])
     )
@@ -297,7 +298,7 @@ async def import_claims(
     references = "\n".join(f"[{n}] {works[key].raw_reference()}" for key, n in numbers.items())
 
     async with session_factory() as session:
-        user_id = await _eval_user(session)
+        user_id = await _eval_user(session, config.provider)
         document_id = await _create_document(
             session,
             storage,
@@ -397,7 +398,7 @@ async def import_references(
         for n, item in enumerate(dataset.items, start=1)
     )
     async with session_factory() as session:
-        user_id = await _eval_user(session)
+        user_id = await _eval_user(session, config.provider)
         document_id = await _create_document(
             session,
             storage,

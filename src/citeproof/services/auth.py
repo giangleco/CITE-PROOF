@@ -20,6 +20,7 @@ from citeproof.core.enums import UserRole
 from citeproof.core.errors import AuthError, InputError, RateLimitedError
 from citeproof.core.settings import Settings
 from citeproof.db.models import Invite, LoginAttempt, User, WebSession
+from citeproof.llm.identity import provider_identity
 
 MIN_PASSWORD_LENGTH = 10
 _SLIDE_EVERY = timedelta(minutes=1)
@@ -216,9 +217,16 @@ async def delete_session(session: AsyncSession, token: str) -> None:
 
 
 def needs_consent(user: User, settings: Settings) -> bool:
-    return user.consent_llm_at is None or user.consent_llm_at < settings.consent_text_updated_at
+    if user.consent_llm_at is None or user.consent_llm_at < settings.consent_text_updated_at:
+        return True
+    current = provider_identity(settings)
+    if user.consent_llm_provider is None:
+        # Đồng ý từ trước khi có cột: chỉ tương đương Anthropic hoặc chưa cấu hình LLM.
+        return current not in (None, "anthropic")
+    return user.consent_llm_provider != current
 
 
-async def record_consent(session: AsyncSession, user: User) -> None:
+async def record_consent(session: AsyncSession, user: User, settings: Settings) -> None:
     user.consent_llm_at = _now()
+    user.consent_llm_provider = provider_identity(settings)
     await session.flush()
