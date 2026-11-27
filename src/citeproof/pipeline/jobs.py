@@ -5,7 +5,8 @@ Mọi so sánh thời gian dùng đồng hồ của database (`now()`; riêng gi
 lần nhận job là `locked_at` (thời điểm claim); mọi ghi kết quả đều được rào bằng
 token này. Không dùng `attempts` làm token vì `resume_run` đặt lại `attempts=0`.
 Hạn lease nằm ở cột riêng `lease_expires_at`, được worker gia hạn (`renew_lease`)
-khi stage còn chạy; job RUNNING chỉ bị coi là hết hạn khi `lease_expires_at < now()`.
+khi stage còn chạy; job RUNNING bị coi là hết hạn khi `lease_expires_at < now()`; nếu lease NULL thì
+dùng `started_at + lock_timeout` (không có cả hai: coi như đã hết hạn).
 Các hàm không commit (trừ `fenced_session`): caller quyết định ranh giới giao dịch.
 """
 
@@ -98,7 +99,11 @@ async def claim_next(
     *,
     max_attempts: int,
 ) -> ClaimedJob | None:
-    """Nhận một job sẵn sàng (hoặc job RUNNING hết hạn lease còn lượt thử); caller commit."""
+    """Nhận một job sẵn sàng (hoặc job RUNNING hết hạn lease còn lượt thử); caller commit.
+
+    `lease` cũng là `lock_timeout` cho job lease NULL: worker luôn truyền
+    `job_lock_timeout_seconds` cho cả hai (cùng `stale_exhausted`), nên dùng chung.
+    """
     candidate = (
         select(Job.id)
         .where(

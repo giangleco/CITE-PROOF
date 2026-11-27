@@ -30,8 +30,12 @@ def _dedupe_open_access() -> None:
     """Gộp các bản mở trùng (work_id, sha256) về dòng `created_at` sớm nhất trước khi tạo index.
 
     Mọi FK tới `source_files`/`source_chunks` đều ON DELETE CASCADE, nên xóa thẳng sẽ mất
-    bằng chứng. Nội dung trùng sha256 nên cắt chunk giống nhau: chuyển `evidence` và
-    `retrieval_results` sang chunk cùng `chunk_index` của dòng giữ lại rồi mới xóa.
+    bằng chứng. Chuyển `evidence` và `retrieval_results` sang chunk của dòng giữ lại chỉ khi
+    cùng `chunk_index` VÀ cùng `text` (bản chia chunk khác phiên bản sẽ làm lệch quote/offset).
+    Còn tham chiếu không ánh xạ được thì hủy migration để người vận hành xử lý tay.
+
+    Không đảo ngược được: `downgrade` không khôi phục các dòng trùng đã xóa, và các blob
+    lưu trữ (`storage_key`) của chúng bị bỏ mồ côi.
     """
     op.execute(
         "CREATE TEMP TABLE _dup_source_files ON COMMIT DROP AS "
@@ -47,8 +51,9 @@ def _dedupe_open_access() -> None:
         "FROM _dup_source_files d "
         "JOIN source_chunks dc ON dc.source_file_id = d.id "
         "JOIN source_chunks kc ON kc.source_file_id = d.keep_id "
-        "AND kc.chunk_index = dc.chunk_index"
+        "AND kc.chunk_index = dc.chunk_index AND kc.text = dc.text"
     )
+    _abort_if_unmapped_references()
     op.execute(
         "UPDATE evidence SET source_chunk_id = m.new_id "
         "FROM _dup_chunk_map m WHERE evidence.source_chunk_id = m.old_id"
@@ -71,6 +76,29 @@ def _dedupe_open_access() -> None:
     op.execute(f"DELETE FROM {_TABLE} WHERE id IN (SELECT id FROM _dup_source_files)")
     op.execute("DROP TABLE _dup_chunk_map")
     op.execute("DROP TABLE _dup_source_files")
+
+
+def _abort_if_unmapped_references() -> None:
+    rows = (
+        op.get_bind()
+        .execute(
+            sa.text(
+                "SELECT DISTINCT f.work_id, f.sha256 FROM _dup_source_files d "
+                "JOIN source_files f ON f.id = d.id "
+                "JOIN source_chunks c ON c.source_file_id = d.id "
+                "WHERE c.id NOT IN (SELECT old_id FROM _dup_chunk_map) AND ("
+                "EXISTS (SELECT 1 FROM evidence e WHERE e.source_chunk_id = c.id) OR "
+                "EXISTS (SELECT 1 FROM retrieval_results r WHERE r.source_chunk_id = c.id))"
+            )
+        )
+        .all()
+    )
+    if rows:
+        groups = ", ".join(f"(work_id={w}, sha256={h})" for w, h in rows)
+        raise RuntimeError(
+            "0010: bản mở trùng có evidence/retrieval_results không ánh xạ được sang chunk "
+            f"của bản giữ lại (khác chunk_index hoặc text); xử lý tay các nhóm: {groups}"
+        )
 
 
 def upgrade() -> None:
