@@ -145,3 +145,107 @@ Sổ handoff ghi **47 dòng** `minor (deferred)` phiên 1 (`2026-11-24-core-pipe
 | (Không làm nếu không yêu cầu) | T-202 S3 backend | Đang hoãn theo quyết định |
 
 Cần bạn quyết trước khi làm: Q-03 (nội dung màn hình đồng ý), có xóa nhánh `feat/core-pipeline` không, và có cấp API key để chạy đợt 4 không.
+
+---
+
+## 5. Phân loại việc hoãn
+
+Đã duyệt mọi dòng `minor (deferred)` của handoff 2026-11-24 (Phụ lục B, 47 dòng, Task 1–13), handoff 2026-11-25 (27 dòng `minor (deferred)` của Task 14–26 và final review, cùng 4 mục `parked` #3–#6) và 5 dòng của sổ nhánh multi-provider (Task 1, 2, 4, 5, 6; mỗi dòng tách thành 1–3 ý, ghi số Task ở cột Nguồn). Nguồn có 83 dòng; bảng có 95 hàng vì một số dòng gộp nhiều ý được tách theo phân loại. Kết quả: 5 đã xử lý, 13 sửa trong Task 11–14, 17 chấp nhận (giới hạn), 60 để sau. Mục "để sau" ghi "chưa kiểm tra" nghĩa là chưa đối chiếu với mã hiện tại, không phải đã xác nhận còn lỗi; chúng đều là nợ nhỏ (test, dọn mã, ca hiếm), không có mục P1 nào ngoài các mục đã gán Task 11–14.
+
+| Nguồn | Mục (rút gọn) | Phân loại | Ghi chú |
+|---|---|---|---|
+| Handoff 11-24, Phụ lục B, Task 1 | job_heartbeat/lock_timeout nhận 0 hoặc số âm | để sau | `core/settings.py` chỉ kiểm heartbeat×2 < lock_timeout, không chặn heartbeat ≤ 0 |
+| Handoff 11-24, Phụ lục B, Task 1 | Job RUNNING có lease_expires_at NULL không bao giờ được thu hồi | sửa trong Task 11–14 | Task 11 |
+| Handoff 11-24, Phụ lục B, Task 1 | Test fenced_session thiếu nhánh payload và rollback khi lỗi | để sau | Chỉ là khoảng trống test |
+| Handoff 11-24, Phụ lục B, Task 1 | Test heartbeat biên thời gian hẹp (1 s / 0.2 s) trên CI tải nặng | để sau | Có thể chập chờn; chưa gặp lỗi |
+| Handoff 11-24, Phụ lục B, Task 1 | Job xếp lại giữ started_at/finished_at cũ | chấp nhận (giới hạn) | Chỉ ảnh hưởng số liệu thời gian hiển thị, không ảnh hưởng đúng sai |
+| Handoff 11-24, Phụ lục B, Task 1 | Test renew_lease khẳng định đúng biên 0.5 s/1.5 s | để sau | Nên thêm biên an toàn |
+| Handoff 11-24, Phụ lục B, Task 2 | Test import httpx2 gián tiếp, chưa khai báo ở dev deps | để sau | `pyproject.toml` chỉ khai `httpx`; chưa kiểm tra nhóm dev |
+| Handoff 11-24, Phụ lục B, Task 2 | Thêm httpx2/httpcore2 vào _QUIET_LOGGERS | để sau | `core/logging.py:30` vẫn chỉ có `httpx`, `httpcore` |
+| Handoff 11-24, Phụ lục B, Task 2 | llm_effort chỉ kiểm tại thời điểm gọi | để sau | `core/settings.py:68` vẫn `dict[str, str]` không validator; chưa kiểm tra thêm |
+| Handoff 11-24, Phụ lục B, Task 2 | strict_output_schema cho qua oneOf/discriminator/prefixItems | chấp nhận (giới hạn) | Giới hạn đã biết; schema W-model tránh các cấu trúc này |
+| Handoff 11-24, Phụ lục B, Task 2 | Test khẳng định thuộc tính riêng của LLMClient | để sau | Nợ chất lượng test |
+| Handoff 11-24, Phụ lục B, Task 3 | load_run_info ném NotFoundError mang chữ UI từ tầng pipeline | đã xử lý | Commit e469111 "keep pipeline off web layer"; `pipeline/config.py:25` nay import từ `core.errors` |
+| Handoff 11-24, Phụ lục B, Task 3 | make_test_deps để httpx.AsyncClient không đóng | để sau | Chưa kiểm tra |
+| Handoff 11-24, Phụ lục B, Task 4 | Case vi_mixed_apa: listBibl ghi lại rỗng, bẫy không ghi tài liệu | để sau | Chưa kiểm tra |
+| Handoff 11-24, Phụ lục B, Task 4 | Test nhãn link không kiểm marker nằm trong văn bản | để sau | Nợ chất lượng test |
+| Handoff 11-24, Phụ lục B, Task 4 | Test fixture gần tautology; conftest nạp case lúc import | để sau | Nợ chất lượng test |
+| Handoff 11-24, Phụ lục B, Task 4 | Bản ghi TEI có timestamp/MD5, type-ignore trong generator | chấp nhận (giới hạn) | Bản ghi chỉ là fixture; không ảnh hưởng chạy thật |
+| Handoff 11-24, Phụ lục B, Task 5 | DOCX bỏ text-box; chú thích trong bảng phân loại bằng regex | chấp nhận (giới hạn) | Giới hạn bộ đọc DOCX, chưa có ca lỗi thực tế |
+| Handoff 11-24, Phụ lục B, Task 5 | parse_text_payload thiếu NO_TEXT_EXTRACTED | chấp nhận (giới hạn) | Form web đã từ chối văn bản trống; `parsing/pdf.py`/`docx.py` có mã này cho tệp |
+| Handoff 11-24, Phụ lục B, Task 5 | storage.put trước kiểm lease; model_dump_json trên event loop; bộ nhớ DOCX | chấp nhận (giới hạn) | Nội dung xác định nên vô hại; trần 200 MB; chưa đo bộ nhớ |
+| Handoff 11-24, Phụ lục B, Task 6 | Nhãn hỗn hợp/running header làm rơi mục trong đường pdfium; header "Bibliography" lặp chỉ giữ trang cuối | để sau | Cải thiện bộ tách tham khảo |
+| Handoff 11-24, Phụ lục B, Task 6 | UnsupportedProtocol/ProxyError bị retry như lỗi tạm; log fallback thiếu error_code | để sau | Chưa kiểm tra |
+| Handoff 11-24, Phụ lục B, Task 6 | Test PDF mã hóa không đi qua worker; dòng năm bị _PAGE_NUMBER_LINE bỏ; compose chờ service_started | để sau | Chưa kiểm tra compose hiện tại |
+| Handoff 11-24, Phụ lục B, Task 6 | tests/files.py import reportlab ở đầu module; _ends_entry coi "A." cuối dòng là nối tiếp | để sau | Nợ nhỏ |
+| Handoff 11-24, Phụ lục B, Task 7 | S2 chạy lại join_unlabelled lên references_raw của S1 | để sau | Chưa kiểm tra |
+| Handoff 11-24, Phụ lục B, Task 7 | Dòng "Tiếng Việt."/"English." bị coi là tiêu đề nhóm | để sau | Chưa kiểm tra |
+| Handoff 11-24, Phụ lục B, Task 7 | Đường skip mất cảnh báo LLM_NOT_CONFIGURED khi retry/reuse | để sau | Chưa kiểm tra |
+| Handoff 11-24, Phụ lục B, Task 7 | Validator tác giả W1 khớp chuỗi con (do plan quy định) | chấp nhận (giới hạn) | Ca tên họ ngắn hiếm; mất khớp chỉ làm lọt cảnh báo, không bịa trích dẫn |
+| Handoff 11-24, Phụ lục B, Task 7 | Assertion golden có điều kiện; báo cáo ghi sai pdf.py | để sau | Nợ chất lượng test/tài liệu |
+| Handoff 11-24, Phụ lục B, Task 7 | `[n]` sau dòng trống luôn bắt đầu mục mới; `1.` sau tiêu đề lạ; cảnh báo mức tài liệu | chấp nhận (giới hạn) | Đánh đổi heuristic của bộ tách tham khảo |
+| Handoff 11-24, Phụ lục B, Task 8 | Phản hồi mà mọi bản ghi bị bỏ được cache là not_found | sửa trong Task 11–14 | Task 12 |
+| Handoff 11-24, Phụ lục B, Task 8 | Phản hồi S2 dict không có `data` coi là 0 kết quả | sửa trong Task 11–14 | Task 12 (cùng sửa xử lý schema lệch) |
+| Handoff 11-24, Phụ lục B, Task 8 | Cache key không có schema version | sửa trong Task 11–14 | Task 12 |
+| Handoff 11-24, Phụ lục B, Task 8 | Thiếu test Review Focus #5 ở gateway; docstring RateLimiter nói quá; giới hạn theo từng process | để sau | Docstring/test |
+| Handoff 11-24, Phụ lục B, Task 8 | Settings thiếu openalex_api_key trong spec; 4xx không retry vẫn tính vào breaker; safe_http dùng mạng thật | để sau | Chưa kiểm tra |
+| Handoff 11-24, Phụ lục B, Task 9 | Lỗi không cô lập không dừng các lookup còn lại; domain_flag bị ghi đè; race xóa sample | để sau | Tốn quota, chưa gây sai kết quả |
+| Handoff 11-24, Phụ lục B, Task 9 | check_url coi 403/429 là link chết | sửa trong Task 11–14 | Task 12 |
+| Handoff 11-24, Phụ lục B, Task 9 | Test helper import chéo, test concurrency dựa sleep, Focus #4 còn khoảng trống, migration 0008 trùng DOI khác hoa thường | để sau | Nợ test và ca lý thuyết |
+| Handoff 11-24, Phụ lục B, Task 9 | Nguồn lỗi một phần xuất hiện ở cả searched và failed; tham khảo dài phụ đề bị loại | chấp nhận (giới hạn) | Thà báo thiếu tin cậy hơn kết luận sai; văn bản đã ghi coverage thận trọng |
+| Handoff 11-24, Phụ lục B, Task 10 | Tỉ lệ `[1:2]`/`[10:30]` bị đọc là trích dẫn | đã xử lý | Ghi nhận "Hạn chế đã biết" ở spec §7.4 (`docs/superpowers/specs/2026-11-24-core-pipeline-design.md:230`) |
+| Handoff 11-24, Phụ lục B, Task 10 | Downgrade 0009 mất dữ liệu không có test; `Tr.` phân biệt hoa thường; `[3]–[2]`; "No." | để sau | Hiếm gặp |
+| Handoff 11-24, Phụ lục B, Task 10 | Token toàn viết tắt ("p.p.") nuốt ranh giới câu; `[2019, tr. 5, 3, tr. 7]` giải sai | chấp nhận (giới hạn) | Heuristic tách marker; ca rất hiếm |
+| Handoff 11-24, Phụ lục B, Task 11 | Suy biến W2 im lặng khi lần thử cuối lỗi | để sau | Nên thêm cảnh báo như S2; chưa kiểm tra |
+| Handoff 11-24, Phụ lục B, Task 11 | Nhánh ngoại lệ W2 không test; test_demo nới COMPLETED_WITH_WARNINGS; gọi tuần tự; tách câu thừa | để sau | Nợ test/hiệu năng |
+| Handoff 11-24, Phụ lục B, Task 12 | Work không có bản mở bị truy vấn lại mỗi run; abstract đã lưu không làm mới | để sau | Chỉ tốn thời gian/quota OA, không sai kết quả |
+| Handoff 11-24, Phụ lục B, Task 12 | Ngày consent trùng ngày ship; .env.example ghim ngày; consent chỉ kiểm ở tầng web | để sau | Chưa kiểm tra sau nhánh multi-provider (re-consent đã thêm) |
+| Handoff 11-24, Phụ lục B, Task 12 | Ghi đồng thời chưa test; file mồ côi; redirect không giới hạn tốc độ; fallback ArxivAccess chỉ khi arxiv_id rỗng | để sau | Chưa kiểm tra |
+| Handoff 11-24, Phụ lục B, Task 12 | Test helper import chéo, AsyncClient không đóng, ghi 48 MB, WORK_CONCURRENCY cứng, props test-only | để sau | Nợ test |
+| Handoff 11-24, Phụ lục B, Task 13 | Bộ tách câu chunker lệch với citations/sentences.py | để sau | Điểm cắt đã đóng băng; thống nhất ở `citeproof.parsing` sau |
+| Handoff 11-24, Phụ lục B, Task 13 | Cửa sổ ≥250 token không tổng quát; race parsed-JSON; thiếu unique chunk_index; GROBID outage không dừng sớm | để sau | Chưa kiểm tra |
+| Handoff 11-25, Task 14 | numbers_preserved khớp chuỗi con ("12" trong "2012") | sửa trong Task 11–14 | Task 13 |
+| Handoff 11-25, Task 14 | test_lexical chấp nhận hai thứ tự; bad_output không khẳng định W3; STOPWORDS trùng | để sau | Nợ test |
+| Handoff 11-25, Task 14 | Cặp không có hit không ghi dòng, bị xử lý lại khi resume | sửa trong Task 11–14 | Task 13 (sẽ test và quyết định) |
+| Handoff 11-25, Task 14 | retrieve() giữ session kết nối lười qua lúc gọi W3 | để sau | Bất biến chỉ nằm trong chú thích |
+| Handoff 11-25, Task 14 | test_search_finds_decimal có replace vô tác dụng; số thập phân sinh thêm phần nguyên/phân số | chấp nhận (giới hạn) | Nhiễu truy xuất nhỏ |
+| Handoff 11-25, Task 15 | Quote có thể kết thúc ở ký tự gốc trước dấu kết hợp (không phải tiếng Việt) | chấp nhận (giới hạn) | Ngoài phạm vi ngôn ngữ v1 |
+| Handoff 11-25, Task 15 | Quote khớp chuỗi con không theo ranh giới từ ("95.7%" trong "195.7%") | sửa trong Task 11–14 | Task 13 |
+| Handoff 11-25, Task 15 | Downgrade giữ lời LLM có thể mâu thuẫn; _NOTES trùng rules.py | để sau | Plan quy định downgrade_note |
+| Handoff 11-25, Task 16 | Cuộc gọi đang bay vượt trần chi phí khi concurrency>1 | sửa trong Task 11–14 | Task 13 |
+| Handoff 11-25, Task 16 | Retry schema LLMClient không bị chặn; COST_LIMIT_REACHED mất nếu lần chạm trần lỗi | để sau | Chưa kiểm tra |
+| Handoff 11-25, Task 16 | Thay từ cấm làm mất downgrade note; wrapper source_chunks viết tay; trùng vòng ưu tiên; import LLM_NOT_CONFIGURED | để sau | Dọn mã |
+| Handoff 11-25, Task 17 | Vòng lặp vẫn truy xuất sau khi chạm trần; SubClaim thiếu extra=forbid; test từ cấm rỗng; nhiều nợ nhỏ khác | để sau | Chưa kiểm tra từng mục |
+| Handoff 11-25, Task 17 | Chính sách lỗi W3 của V3 khác S7; nhánh lỗi V3 chưa test | để sau | Chưa kiểm tra |
+| Handoff 11-25, Task 18 | Việc cần làm "missing" đếm cả REFERENCE_NOT_FOUND; config lưu sai gây báo cáo 500; test chưa đủ | để sau | Chưa kiểm tra |
+| Handoff 11-25, Task 19 | Upload thứ hai giữ dòng/tệp cũ ẩn; tệp mồ côi nếu commit lỗi; chữ inline; FILE_TOO_LARGE trùng | để sau | Chưa kiểm tra |
+| Handoff 11-25, Task 19 | services/sources.py import web.labels (phân lớp) | để sau | Vẫn còn: `services/sources.py:36 from citeproof.web import labels`; Task 3 đã sửa ở pipeline nhưng không phải ở đây |
+| Handoff 11-25, Task 20 | Đọc status trước lock; test merge thiếu; is_new so now() đầu giao dịch; progress hiển thị skipped là DONE | để sau | Chưa kiểm tra |
+| Handoff 11-25, Task 21 | _finalize_if_idle chứa tri thức DAG; _drive không deadline; eval dùng chung storage_dir; hòa khi cross-file | để sau | Chưa kiểm tra |
+| Handoff 11-25, Task 21 | V2 mọi hit bằng 0 báo metric None thay vì 0 | để sau | Chưa kiểm tra |
+| Handoff 11-25, Task 22 | 429 không có security headers | sửa trong Task 11–14 | Task 14 |
+| Handoff 11-25, Task 22 | _prune O(n); thiếu test XFF; settings rate thiếu ge=1; bucket "unknown" dùng chung | để sau | Chưa kiểm tra |
+| Handoff 11-25, Task 22 | Regex progress dùng match+$ (nhận "\n" cuối) | để sau | fullmatch chặt hơn; chưa sửa |
+| Handoff 11-25, Task 23 | smoke --password lộ trong argv | sửa trong Task 11–14 | Task 14 |
+| Handoff 11-25, Task 23 | CHANGE_ME_ không bị từ chối khi khởi động prod | sửa trong Task 11–14 | Task 14 |
+| Handoff 11-25, Task 23 | Thiếu citeproof_eval làm backup dừng; backup lỗi bị nuốt im lặng; citeproof_test tạo ở prod; test deploy thiếu ca | để sau | Chưa kiểm tra từng mục; `scripts/backup.sh` |
+| Handoff 11-25, Task 23 | Ví dụ "Thử khôi phục" thiếu sudo; test deploy chỉ kiểm chuỗi có mặt | để sau | `docs/14-deployment-devops.md:110` đã nói cần sudo nhưng ví dụ dòng 112 chưa có |
+| Handoff 11-25, Task 24 | gather không hủy tool anh em; LAST_CALL_TEXT lặp; cache key bước thiếu effort/max_tokens; logic trùng LLMClient | để sau | Cache key là quy định plan; chưa kiểm tra phần còn lại |
+| Handoff 11-25, Task 25 | PARSE_FAILED test bag-of-words; agent_run_id mất; truncated không đặt; agent input thiếu top-3 | để sau | Chưa kiểm tra |
+| Handoff 11-25, Task 25 | venues_equal nhận series một chữ cái; venue_in_raw một chiều; DOI regex tham lam | chấp nhận (giới hạn) | Luôn gắn cờ METADATA_MISMATCH hoặc false negative an toàn (theo ghi chú nguồn) |
+| Handoff 11-25, Task 26 | V4 bỏ qua enabled; READ_LIMIT_EXCEEDED không phát; cắt đo trên chữ thô; S7 chạy cho V4 | để sau | Chưa kiểm tra |
+| Handoff 11-25, Task 26 | _latest_agent_run có thể chọn hàng ERROR của lần thử trước; import trong hàm | để sau | Chưa kiểm tra |
+| Handoff 11-25, Final review | Parked #3: run cha vẫn mời kiểm chứng lại sau khi run con dùng upload | chấp nhận (giới hạn) | Phán quyết: chi phí ≈ 0 nhờ cache LLM; tệ nhất là run con trùng |
+| Handoff 11-25, Final review | Parked #4: refusal fallback theo prefix model, không theo task | để sau | Đúng với cấu hình mặc định; ghi lại ở đây, sửa khi đổi mặc định |
+| Handoff 11-25, Final review | Parked #5: token cache tính theo giá input đầy đủ | chấp nhận (giới hạn) | Ước cao có chủ đích (phán quyết Task 2); trần chi phí chạm hơi sớm |
+| Handoff 11-25, Final review | Parked #6: migration 0010 unique index không khử trùng lặp | sửa trong Task 11–14 | Task 11 |
+| Handoff 11-25, Final review | Retention backup bị bỏ khi dump lỗi; guard discard không khóa dòng document; chữ RUN_IN_PROGRESS inline | để sau | Chưa kiểm tra |
+| nhánh multi-provider, Task 1 | bảng phase của project-status cũ; env_file brittle; README `echo >> .env` trùng | đã xử lý | Commit 5a75633 "load .env in app containers; refresh stale docs"; chưa kiểm tra riêng từng ý |
+| nhánh multi-provider, Task 2 | llm_models override một phần giữ tên Claude trên openai_compatible | đã xử lý | Commit 3c904f3 "require every task model when LLM is configured"; docs b6edea8 |
+| nhánh multi-provider, Task 2 | cổng 0 bị bỏ qua | chấp nhận (giới hạn) | Cổng 0 không hợp lệ cho dịch vụ LLM; negligible |
+| nhánh multi-provider, Task 4 | input None → "null"; không chặn tool_result mồ côi; trùng cảnh báo empty_choices | để sau | Chưa kiểm tra |
+| nhánh multi-provider, Task 5 | ADR-011 còn todo "cập nhật 07 §4.2"; bảng 07 §4.2 một provider | để sau | Chưa kiểm tra; Task 9 có phạm vi tài liệu này |
+| nhánh multi-provider, Task 5 | LLMProvider protocol thiếu aclose | đã xử lý | `src/citeproof/llm/client.py:37` nay có `aclose` trong protocol; provider đều cài `aclose` |
+| nhánh multi-provider, Task 5 | contract roundtrip yếu; client SDK không đóng trong test_factory; import private; không chạy RED | để sau | Nợ test |
+| nhánh multi-provider, Task 6 | run tạo trước nhánh có provider=None, không bị chặn | chấp nhận (giới hạn) | Phán quyết người điều phối: chưa có run LLM thật trước đây |
+| nhánh multi-provider, Task 6 | _provider_changed dựng RunConfig đầy đủ; test freeze DB yếu; trang overview không có thông báo | để sau | Chưa kiểm tra |
