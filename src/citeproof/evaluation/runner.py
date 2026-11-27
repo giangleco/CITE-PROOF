@@ -81,6 +81,7 @@ from citeproof.evaluation.metrics import (
     recall_at_k,
 )
 from citeproof.llm.cache import eval_namespace
+from citeproof.llm.identity import provider_identity
 from citeproof.llm.providers.anthropic import AnthropicProvider
 from citeproof.llm.providers.base import LLMProvider
 from citeproof.llm.types import (
@@ -177,6 +178,7 @@ class EvalReport(BaseModel):
     variant: str
     cross_lingual: str
     mode: CacheMode
+    provider: str | None
     split: str | None
     cache_namespace: str
     run_id: UUID
@@ -201,6 +203,7 @@ class RefEvalReport(BaseModel):
     dataset: str
     dataset_sha256: str
     mode: CacheMode
+    provider: str | None
     cache_namespace: str
     run_id: UUID
     run_status: RunStatus
@@ -231,11 +234,12 @@ def check_eval_database(url: str) -> str:
 
 
 class ReplayOnlyProvider:
-    """Provider của chế độ phát lại khi không truyền provider: cùng tên với provider Anthropic
-    (cùng khóa cache) nhưng không bao giờ gọi mạng. `LLMClient` ở `REPLAY_ONLY` không gọi provider
-    (thiếu cache → `CacheMissError`), nên tới được đây là lỗi lập trình."""
+    """Provider của chế độ phát lại khi không truyền provider: mang định danh của provider đã ghi
+    cache (cùng khóa cache) nhưng không bao giờ gọi mạng. `LLMClient` ở `REPLAY_ONLY` không gọi
+    provider (thiếu cache → `CacheMissError`), nên tới được đây là lỗi lập trình."""
 
-    name = AnthropicProvider.name
+    def __init__(self, name: str) -> None:
+        self.name = name
 
     async def complete(self, request: ProviderRequest) -> ProviderResponse:
         raise InternalError("Chế độ phát lại không được gọi provider LLM")
@@ -245,20 +249,44 @@ class ReplayOnlyProvider:
 
 
 def _provider_for(
-    settings: Settings, mode: CacheMode, provider: LLMProvider | None
+    settings: Settings,
+    mode: CacheMode,
+    provider: LLMProvider | None,
+    *,
+    identity_override: str | None = None,
 ) -> LLMProvider | None:
     if provider is not None:
         return provider
     if mode is CacheMode.REPLAY_ONLY:
-        return ReplayOnlyProvider()
-    key = settings.anthropic_api_key
-    if key is None or not key.get_secret_value():
+        name = identity_override or provider_identity(settings) or AnthropicProvider.name
+        return ReplayOnlyProvider(name)
+    if not settings.llm_configured:
         raise InputError(
-            "Đánh giá ở chế độ read_write/fresh cần CITEPROOF_ANTHROPIC_API_KEY "
-            "(chế độ replay dùng cache của một lần read_write trước).",
+            "Đánh giá ở chế độ read_write/fresh cần cấu hình một provider LLM "
+            "(CITEPROOF_LLM_PROVIDER và khóa/URL tương ứng); chế độ replay dùng cache của một "
+            "lần read_write trước.",
             code="LLM_NOT_CONFIGURED",
         )
-    return None  # `make_llm_client` dựng provider Anthropic từ khóa
+    return None  # `make_llm_client` dựng provider theo cấu hình
+
+
+def _frozen_provider(settings: Settings, config: RunConfig, override: str | None) -> RunConfig:
+    """Định danh đóng băng vào lần chạy phải qua được chốt chặn của worker (so với `settings`).
+
+    Phát lại với định danh khác provider đang cấu hình: không gắn provider nào (replay không bao
+    giờ gọi provider; định danh chỉ nằm ở tên provider phát lại và báo cáo)."""
+    if override is None:
+        return config
+    frozen = override if override == provider_identity(settings) else None
+    return config.model_copy(update={"provider": frozen})
+
+
+def _report_identity(
+    settings: Settings, provider: LLMProvider | None, override: str | None
+) -> str | None:
+    if override is not None:
+        return override
+    return provider.name if provider is not None else provider_identity(settings)
 
 
 def _require_pg_dump() -> str:
@@ -486,6 +514,7 @@ async def _claim_report(
     config: RunConfig,
     config_name: str,
     mode: CacheMode,
+    provider: str | None,
     split: str | None,
     namespace: str,
 ) -> EvalReport:
@@ -537,6 +566,7 @@ async def _claim_report(
         variant=config.variant.value,
         cross_lingual=config.cross_lingual,
         mode=mode,
+        provider=provider,
         split=split,
         cache_namespace=namespace,
         run_id=run_id,
@@ -563,6 +593,7 @@ async def _reference_report(
     document_id: UUID,
     run_status: RunStatus,
     mode: CacheMode,
+    provider: str | None,
     namespace: str,
 ) -> RefEvalReport:
     async with session_factory() as session:
@@ -604,6 +635,7 @@ async def _reference_report(
         dataset=dataset.name,
         dataset_sha256=dataset.sha256,
         mode=mode,
+        provider=provider,
         cache_namespace=namespace,
         run_id=run_id,
         run_status=run_status,
@@ -750,6 +782,7 @@ def _claim_markdown(report: EvalReport) -> str:
         f"# Evaluation — {report.dataset} / {report.config}",
         "",
         f"- Variant: {report.variant} ({report.cross_lingual}); cache mode: {report.mode.value}",
+        f"- Provider: `{report.provider or 'none'}`",
         f"- Split: {report.split or 'all'}; items: {m.n}; run: `{report.run_id}` "
         f"({report.run_status.value})",
         f"- Dataset SHA-256: `{report.dataset_sha256}`",
@@ -783,6 +816,7 @@ def _reference_markdown(report: RefEvalReport) -> str:
         "",
         f"- Cache mode: {report.mode.value}; items: {report.n}; run: `{report.run_id}` "
         f"({report.run_status.value})",
+        f"- Provider: `{report.provider or 'none'}`",
         f"- Dataset SHA-256: `{report.dataset_sha256}`",
         f"- Accuracy: {report.accuracy:.4f}",
         f"- Real references reported not found: {_fmt(report.false_not_found_rate)}",
@@ -824,11 +858,12 @@ async def run_eval(
     out_dir: Path,
     dump: bool,
     provider: LLMProvider | None = None,
+    provider_identity: str | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> EvalReport:
     """Đánh giá phán quyết claim (D1-D4) với một cấu hình biến thể."""
     url = check_eval_database(settings.eval_database_url)
-    llm_provider = _provider_for(settings, mode, provider)
+    llm_provider = _provider_for(settings, mode, provider, identity_override=provider_identity)
     pg_dump = _require_pg_dump() if dump else None
     dataset = load_claims(dataset_path)
     items = [item for item in dataset.items if split is None or item.split == split]
@@ -838,6 +873,8 @@ async def run_eval(
     config = config.model_copy(
         update={"limits": config.limits.model_copy(update={"max_claims": max(1, len(items))})}
     )
+    config = _frozen_provider(settings, config, provider_identity)
+    identity = _report_identity(settings, llm_provider, provider_identity)
     namespace = eval_namespace(dataset.name, dataset.sha256[:12])
     engine = make_engine(url)
     session_factory = make_session_factory(engine)
@@ -867,6 +904,7 @@ async def run_eval(
             config=config,
             config_name=config_path.stem,
             mode=mode,
+            provider=identity,
             split=split,
             namespace=namespace,
         )
@@ -875,6 +913,7 @@ async def run_eval(
     manifest = _manifest(
         dataset=dataset, config=config, mode=mode, namespace=namespace, run_id=report.run_id
     )
+    manifest["provider"] = identity
     manifest["config"] = config_path.stem
     manifest["split"] = split
     await asyncio.to_thread(
@@ -897,13 +936,17 @@ async def run_reference_eval(
     mode: CacheMode,
     out_dir: Path,
     provider: LLMProvider | None = None,
+    provider_identity: str | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> RefEvalReport:
     """Đánh giá trạng thái tài liệu tham khảo (D5): S1-S3 thật trên một tài liệu TEXT."""
     url = check_eval_database(settings.eval_database_url)
-    llm_provider = _provider_for(settings, mode, provider)
+    llm_provider = _provider_for(settings, mode, provider, identity_override=provider_identity)
     dataset = load_references(dataset_path)
-    config = RunConfig.resolve(settings, variant=RunConfig().variant)
+    config = _frozen_provider(
+        settings, RunConfig.resolve(settings, variant=RunConfig().variant), provider_identity
+    )
+    identity = _report_identity(settings, llm_provider, provider_identity)
     namespace = eval_namespace(dataset.name, dataset.sha256[:12])
     engine = make_engine(url)
     session_factory = make_session_factory(engine)
@@ -934,6 +977,7 @@ async def run_reference_eval(
             document_id=imported.document_id,
             run_status=status,
             mode=mode,
+            provider=identity,
             namespace=namespace,
         )
     finally:
@@ -941,6 +985,7 @@ async def run_reference_eval(
     manifest = _manifest(
         dataset=dataset, config=config, mode=mode, namespace=namespace, run_id=report.run_id
     )
+    manifest["provider"] = identity
     await asyncio.to_thread(
         _write_outputs,
         out_dir,
