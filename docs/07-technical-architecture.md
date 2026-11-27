@@ -63,6 +63,8 @@ Kiến trúc kỹ thuật cho MVP Pilot: một modular monolith viết bằng Py
 
 Đây là đề xuất. Nếu bạn muốn giữ nguyên một lựa chọn của v1.0 (ví dụ LangGraph hoặc Next.js), ghi lại trong ADR tương ứng và cập nhật `11`.
 
+Cập nhật 27/11/2026 (ADR-011): hãng LLM chưa được chọn (phụ thuộc nhà đầu tư), nên lớp truy cập LLM có thêm `OpenAICompatibleProvider` (SDK `openai`, Chat Completions) bên cạnh `AnthropicProvider`. `make_provider(settings)` chọn theo `CITEPROOF_LLM_PROVIDER`; mỗi provider có định danh riêng (`anthropic`, hoặc `openai_compatible:<host>`) dùng cho cache key, đóng băng vào lần chạy và đồng ý lại. Fallback phía server và prompt caching chỉ có ở Anthropic. ADR-006 vẫn đúng với `LLMClient` và `AnthropicProvider`.
+
 ### 4.3 Kiến trúc tổng thể
 
 ```mermaid

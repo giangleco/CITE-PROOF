@@ -61,7 +61,7 @@ asyncio_default_test_loop_scope = "function"
 testpaths = ["tests"]
 markers = [
     "db: needs PostgreSQL",
-    "live: calls the real Anthropic API (needs CITEPROOF_LIVE_LLM=1 and a key)",
+    "live: calls the configured real LLM provider (needs CITEPROOF_LIVE_LLM=1 and a configured provider)",
     "grobid: calls a live GROBID service (needs CITEPROOF_LIVE_GROBID=1)",
 ]
 

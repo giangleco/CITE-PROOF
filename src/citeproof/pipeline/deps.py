@@ -23,7 +23,7 @@ from citeproof.integrations.oa import HostRateLimits
 from citeproof.llm.agent_runner import AgentRunner
 from citeproof.llm.cache import doc_namespace
 from citeproof.llm.client import LLMClient
-from citeproof.llm.factory import make_agent_runner, make_anthropic_provider, make_llm_client
+from citeproof.llm.factory import make_agent_runner, make_llm_client, make_provider
 from citeproof.llm.prompts import PromptLoader
 from citeproof.llm.providers.base import LLMProvider
 from citeproof.llm.types import CacheMode, CallContext
@@ -89,7 +89,7 @@ async def open_deps(
             httpx.AsyncClient(timeout=_HTTP_TIMEOUT_S, transport=transport)
         )
         if provider is None:
-            provider = make_anthropic_provider(settings)
+            provider = make_provider(settings)
         llm: LLMClient | None = None
         agents: AgentRunner | None = None
         if provider is not None:
