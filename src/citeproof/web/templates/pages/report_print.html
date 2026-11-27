@@ -74,6 +74,11 @@
 
   <h2>Giới hạn</h2>
   <p>{{ limitation }}</p>
+
+  <h2>Gợi ý hành động</h2>
+  {% if todos %}<ul>
+    {% for todo in todos %}<li>{{ todo.title }}. {{ todo.detail }}</li>{% endfor %}
+  </ul>{% else %}<p class="note">Không có.</p>{% endif %}
 </main>
 </body>
 </html>

@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from citeproof.db.models import Document
+from citeproof.db.models import ClaimVerification, Document, Evidence
 from tests.web.conftest import login
 from tests.web.report_helpers import sample_run
 
@@ -35,6 +35,17 @@ async def test_print_page_has_all_sections_and_evidence(
     text = htmllib.unescape(html)
     for quote in quotes:
         assert quote in text, quote
+    # Phần còn lại của báo cáo.md: gợi ý hành động, câu, giải thích, nhãn trạng thái.
+    todos = markdown.split("## Gợi ý hành động", 1)[1].strip().splitlines()
+    assert todos and todos[0].startswith("- ")
+    prefixes = ("- Câu trong bài: ", "- Giải thích: ", "- Trạng thái: ")
+    fields = [ln for ln in markdown.splitlines() if ln.startswith(prefixes)]
+    assert len(fields) >= 3
+    for line in [*todos, *fields]:
+        expected = line.removeprefix("- ")
+        for prefix in prefixes:
+            expected = expected.removeprefix(prefix.removeprefix("- "))
+        assert expected.strip() and expected in text, line
 
 
 @pytest.mark.db
@@ -76,6 +87,13 @@ async def test_print_page_escapes_user_content(
         await s.commit()
     html = (await client.get(f"/runs/{run_id}/report.html")).text
     assert "&lt;b&gt;đậm&lt;/b&gt;" in html and "<b>đậm</b>" not in html
+    async with session_factory() as s:
+        await s.execute(update(ClaimVerification).values(explanation="<script>x()</script> giải"))
+        await s.execute(update(Evidence).values(quote_text="<b>trích</b> <script>y()</script>"))
+        await s.commit()
+    html = (await client.get(f"/runs/{run_id}/report.html")).text
+    assert "<script" not in html and "<b>trích" not in html
+    assert "&lt;script&gt;x()&lt;/script&gt;" in html and "&lt;b&gt;trích&lt;/b&gt;" in html
 
 
 @pytest.mark.db

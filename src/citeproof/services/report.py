@@ -525,6 +525,7 @@ async def render_print_context(
             if s.status == ClaimStatus.UNVERIFIABLE
         ],
         "limitation": GENERAL_LIMITATION,
+        "todos": overview.todos,
     }
 
 
