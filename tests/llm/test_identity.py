@@ -12,6 +12,13 @@ _MODELS = {task: "qwen3:8b" for task in Settings(_env_file=None).llm_models}
         ("https://API.OpenAI.com/v1/", "openai_compatible:api.openai.com"),
         ("http://localhost:11434/v1", "openai_compatible:localhost:11434"),
         ("https://openrouter.ai/api/v1", "openai_compatible:openrouter.ai"),
+        ("http://[::1]:11434/v1", "openai_compatible:[::1]:11434"),
+        ("http://[::1]/v1", "openai_compatible:[::1]"),
+        ("https://x.com", "openai_compatible:x.com"),
+        ("https://x.com:443/v1", "openai_compatible:x.com"),
+        ("http://x.com:80/v1", "openai_compatible:x.com"),
+        ("https://x.com:80/v1", "openai_compatible:x.com:80"),
+        (" https://u:p@Host:8080/v1 ", "openai_compatible:host:8080"),
     ],
 )
 def test_openai_identity(url: str, expected: str) -> None:

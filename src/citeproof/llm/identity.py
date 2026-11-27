@@ -13,5 +13,6 @@ def provider_identity(settings: Settings) -> str | None:
         return None
     if settings.llm_provider == "anthropic":
         return "anthropic"
-    assert settings.openai_base_url is not None
+    if settings.openai_base_url is None:
+        raise ValueError("llm_provider=openai_compatible nhưng thiếu openai_base_url")
     return openai_identity(settings.openai_base_url)

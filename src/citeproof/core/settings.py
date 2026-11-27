@@ -25,7 +25,10 @@ def base_url_authority(base_url: str) -> str:
         raise ValueError(f"base_url không hợp lệ: {base_url!r}") from exc
     if not host:
         raise ValueError(f"base_url thiếu host (cần dạng https://host/...): {base_url!r}")
-    return f"{host}:{port}" if port else host
+    if ":" in host:  # IPv6 literal: hostname bỏ dấu ngoặc, thêm lại để không nhập nhằng với port
+        host = f"[{host}]"
+    default_port = {"https": 443, "http": 80}.get(parts.scheme.lower())
+    return f"{host}:{port}" if port and port != default_port else host
 
 
 class Settings(BaseSettings):
