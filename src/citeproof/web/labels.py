@@ -190,6 +190,7 @@ SOURCE_IN_USE = (
 )
 UPLOAD_BUTTON = "Tải lên"
 DISCARD_BUTTON = "Xóa tệp này"
+PRINT_EXPORT_BUTTON = "Tải bản in"
 REVERIFY_BUTTON = "Kiểm chứng lại các tài liệu đã tải"
 RETRY_LOOKUPS_BUTTON = "Tra lại các tài liệu lỗi kết nối"
 NO_NEW_UPLOADS = (

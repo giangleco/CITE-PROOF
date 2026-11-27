@@ -10,6 +10,7 @@
   </div>
   <div class="row">
     <a class="btn small" href="/runs/{{ header.run_id }}/report.md">Tải báo cáo</a>
+    <a class="btn small" href="/runs/{{ header.run_id }}/report.html" target="_blank" rel="noopener">{{ labels.PRINT_EXPORT_BUTTON }}</a>
     {% if not header.is_sample %}
     <form method="post" action="/documents/{{ header.document_id }}/runs" class="row">
       {{ csrf(csrf_token) }}

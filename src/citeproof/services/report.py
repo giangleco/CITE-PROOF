@@ -477,7 +477,10 @@ def _md_quote(text: str) -> str:
     return "\n".join(f"> {line}" for line in text.splitlines() or [""])
 
 
-async def render_markdown(session: AsyncSession, *, user: User, run_id: UUID) -> str:
+async def _load_report(
+    session: AsyncSession, *, user: User, run_id: UUID
+) -> tuple[Overview, list[ReferenceView], list[ClaimSheet]]:
+    """Dữ liệu dùng chung cho các bản xuất (Markdown, HTML in được)."""
     overview = await get_overview(session, user=user, run_id=run_id)
     _, references = await list_references(session, user=user, run_id=run_id)
     rows = (await session.execute(_claims_query(run_id, overview.header.verifier))).all()
@@ -486,6 +489,47 @@ async def render_markdown(session: AsyncSession, *, user: User, run_id: UUID) ->
         _sheet(cv, claim, citation, entry, evidence.get(cv.id, []), None)
         for cv, claim, citation, entry in rows
     ]
+    return overview, references, sheets
+
+
+async def render_print_context(
+    session: AsyncSession, *, user: User, run_id: UUID
+) -> dict[str, Any]:
+    """Ngữ cảnh cho trang báo cáo in được: cùng dữ liệu và cùng nhãn với `render_markdown`."""
+    overview, references, sheets = await _load_report(session, user=user, run_id=run_id)
+    _, missing = await list_missing(session, user=user, run_id=run_id)
+    return {
+        "overview": overview,
+        "missing": missing,
+        "header": overview.header,
+        "claim_total": sum(t.count for t in overview.claim_tally),
+        "ref_total": sum(t.count for t in overview.ref_tally),
+        "flagged": sum(1 for s in sheets if s.needs_user_review),
+        "references": [
+            {
+                "ref": ref,
+                "mismatches": [_mismatch_text(m) for m in ref.mismatches],
+                "searched": ", ".join(labels.source_name(s) for s in ref.sources_searched),
+                "not_found": ref.status == ReferenceStatus.NOT_FOUND_IN_SEARCHED_SOURCES,
+            }
+            for ref in references
+        ],
+        "claims": [
+            {"sheet": s, "ref_label": _ref_label(s.ref_index)}
+            for s in sheets
+            if s.status != ClaimStatus.UNVERIFIABLE
+        ],
+        "unverifiable": [
+            {"sheet": s, "ref_label": _ref_label(s.ref_index)}
+            for s in sheets
+            if s.status == ClaimStatus.UNVERIFIABLE
+        ],
+        "limitation": GENERAL_LIMITATION,
+    }
+
+
+async def render_markdown(session: AsyncSession, *, user: User, run_id: UUID) -> str:
+    overview, references, sheets = await _load_report(session, user=user, run_id=run_id)
     header = overview.header
     out: list[str] = [f"# Báo cáo kiểm tra trích dẫn: {header.document_name}", ""]
     if header.is_sample:

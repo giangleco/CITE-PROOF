@@ -128,6 +128,7 @@ Cả ba font đều có bộ ký tự tiếng Việt (đã kiểm tra trên Goog
   - Cột trái: câu của bạn. Phần nhận định được tô bằng dải Bút xanh nhạt ở 38% dưới của dòng chữ; marker hiển thị Geist Mono trên nền Bút xanh nhạt.
   - Cột phải: nền Giấy nguồn, đoạn bằng chứng Literata có viền trái 3 px theo quan hệ. Hỗ trợ: Khớp. Hỗ trợ một phần: Một phần. Ngược lại: Mâu thuẫn. Liên quan gần nhất: viền nét đứt Đường kẻ đậm.
   - Dưới thân tờ: khối "Vì sao" kèm bảng dữ kiện, rồi hàng nút phản hồi.
+- **Trang báo cáo in được** (`/runs/{id}/report.html`, `Content-Disposition: inline`): trang tĩnh riêng, không script, không htmx, không thanh điều hướng. Nền trắng, chữ Mực; bằng chứng Literata trong khối trích dẫn viền trái 3 px. Kiểu nằm ở `static/css/report-print.css` (CSP `style-src 'self'` không cho `<style>` inline) và có `@media print` (lề trang 18 mm, ẩn liên kết quay lại, không ngắt giữa nhận định). Gồm các phần: Tổng quan, Tài liệu tham khảo, Nhận định, Còn thiếu, Giới hạn; cùng nhãn và cùng dữ liệu với `report.md`. Chủ bài mới xem được (người khác 404).
 - **Đang tải:** khung xương có đúng kích thước của nội dung sắp hiện, nhấp nháy rất nhẹ; không dùng vòng xoay.
 - **Trạng thái rỗng:** một câu nói vì sao rỗng và một nút hành động ("Kiểm tra bài mới", "Thêm bài mẫu"). Không dùng hình minh họa.
 - **Hộp thoại:** `dialog` gốc, góc bo 16 px, nền mờ `rgba(20,26,24,.45)`, nút hủy bên trái nút xác nhận.
@@ -239,6 +240,7 @@ Bảng nhãn này là nguồn duy nhất; mã nguồn sinh nhãn từ đây, tem
 | Khớp tên bài của tệp tải lên | `MATCH` Tên bài trong tệp khớp với tài liệu tham khảo.; `MISMATCH` Tên bài trong tệp có vẻ không khớp với tài liệu tham khảo. Kiểm tra lại trước khi dùng.; `UNKNOWN` Chưa kiểm tra được tên bài trong tệp. |
 | Tệp tải lên đã được dùng | `SOURCE_IN_USE` Tệp này đã được dùng trong một lần kiểm tra nên chưa xóa được, để kết quả của lần đó vẫn đầy đủ. |
 | Nút tải nguồn | `UPLOAD_BUTTON` Tải lên; `DISCARD_BUTTON` Xóa tệp này |
+| Nút xuất bản in (cạnh "Tải báo cáo") | `PRINT_EXPORT_BUTTON` Tải bản in |
 | Nút kiểm chứng lại một phần | `REVERIFY_BUTTON` Kiểm chứng lại các tài liệu đã tải; `RETRY_LOOKUPS_BUTTON` Tra lại các tài liệu lỗi kết nối |
 | Không kiểm chứng lại được | `NO_NEW_UPLOADS` Chưa có tệp nào được tải lên sau lần kiểm tra này. Hãy tải toàn văn của tài liệu cần đối chiếu trước.; `NO_FAILED_LOOKUPS` Lần kiểm tra này không có tài liệu nào bị lỗi kết nối khi tra cứu.; `RUN_NOT_FINISHED` Chỉ kiểm chứng lại được khi lần kiểm tra này đã xong. |
 | Nhà cung cấp mô hình đã đổi (ẩn nút kiểm chứng lại, tra lại, tải nguồn; báo cáo vẫn xem và xuất được) | `LLM_PROVIDER_CHANGED` Nhà cung cấp mô hình đã đổi; hãy tạo lần kiểm tra mới cho tài liệu này. |

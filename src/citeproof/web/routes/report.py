@@ -13,6 +13,7 @@ from citeproof.core.settings import Settings
 from citeproof.pipeline.config import RunConfig, provider_changed
 from citeproof.schemas.report import Overview
 from citeproof.services import documents, feedback, report, reverify, sources
+from citeproof.web import labels
 from citeproof.web.deps import (
     AppSettings,
     AppStorage,
@@ -23,7 +24,7 @@ from citeproof.web.deps import (
     is_htmx,
     rollback_keeping_user,
 )
-from citeproof.web.rendering import render
+from citeproof.web.rendering import render, templates
 
 router = APIRouter()
 
@@ -314,6 +315,18 @@ async def markdown_export(db: Db, current: UserDep, run_id: UUID) -> Response:
         content=text,
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="citeproof-{str(run_id)[:8]}.md"'},
+    )
+
+
+@router.get("/runs/{run_id}/report.html")
+async def print_export(request: Request, db: Db, current: UserDep, run_id: UUID) -> Response:
+    """Bản in được: trang tĩnh riêng, không script, không htmx; kiểu in ở tệp CSS tĩnh (CSP)."""
+    context = await report.render_print_context(db, user=current.user, run_id=run_id)
+    return templates.TemplateResponse(
+        request,
+        "pages/report_print.html",
+        {"labels": labels, **context},
+        headers={"Content-Disposition": "inline"},
     )
 
 
