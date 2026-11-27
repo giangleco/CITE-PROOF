@@ -74,7 +74,11 @@ class _Unit:
 
 
 def judge_reserve(config: RunConfig, prices: Mapping[str, tuple[float, float]]) -> Decimal:
-    """Chi phí đầu ra tối đa của một lời gọi W5: giá đầu ra * `max_tokens` (model lạ → 0)."""
+    """Chi phí đầu ra tối đa của một lời gọi W5: giá đầu ra * `max_tokens` (model lạ → 0).
+
+    Mọi cặp (kể cả V0 closed-book dùng `verdict.judge_closed_book`) giữ chỗ theo giá và
+    `max_tokens` của `verdict.judge`, theo quyết định của controller Task 13.
+    """
     key = LLMTask.VERDICT_JUDGE.value
     model = config.models[key]
     if model not in prices:
@@ -91,10 +95,12 @@ class _Gate(Protocol):
 class _CostGate:
     """Hạn mức chi phí có giữ chỗ cho cặp đang gọi LLM (QĐ-32).
 
-    `allow(reserve)` được phép khi `run_cost + reserved + reserve < limit`; không đủ chỗ chỉ vì
-    chỗ đang giữ thì chờ `release` rồi xét lại. `run_cost + reserve >= limit` → `reached`, từ đó
-    mọi lời gọi đều bị từ chối. `reserve = 0` (lời gọi sau của cặp đã giữ chỗ, hoặc model không
-    có giá) bỏ qua chỗ đang giữ và không bao giờ chờ, nên cặp không tự chặn chính nó.
+    Hai mức dừng: `stopped` (chi phí thật `run_cost >= limit`) từ chối mọi lời gọi; `closed`
+    (`run_cost + reserve >= limit` với cặp mới) chỉ ngừng nhận cặp mới, cặp đang giữ chỗ vẫn
+    gọi tiếp được tới khi chi phí thật chạm hạn mức. Cặp mới được phép khi
+    `run_cost + reserved + reserve < limit`; không đủ chỗ chỉ vì chỗ đang giữ thì chờ `release`
+    rồi xét lại. `reserve = 0` (lời gọi sau của cặp đã giữ chỗ, hoặc model không có giá) chỉ
+    kiểm `run_cost < limit` và không bao giờ chờ, nên cặp không tự chặn chính nó.
     """
 
     def __init__(self, read_cost: Callable[[], Awaitable[Decimal]], limit: Decimal) -> None:
@@ -102,20 +108,33 @@ class _CostGate:
         self._limit = limit
         self._cond = asyncio.Condition()
         self.reserved = Decimal(0)
-        self.reached = False
+        self.stopped = False
+        self.closed = False
+
+    @property
+    def reached(self) -> bool:
+        """Có lời gọi bị từ chối vì hạn mức (cảnh báo `COST_LIMIT_REACHED`)."""
+        return self.stopped or self.closed
 
     async def allow(self, reserve: Decimal) -> bool:
         async with self._cond:
-            while not self.reached:
+            while not self.stopped:
                 cost = await self._read_cost()
+                if cost >= self._limit:
+                    self.stopped = True
+                    break
+                if reserve == 0:
+                    return True
+                if self.closed:
+                    return False
                 if cost + reserve >= self._limit:
-                    self.reached = True
-                    self._cond.notify_all()  # cặp đang chờ chỗ cũng dừng ngay
-                elif reserve == 0 or cost + self.reserved + reserve < self._limit:
+                    self.closed = True
+                    break
+                if cost + self.reserved + reserve < self._limit:
                     self.reserved += reserve
                     return True
-                else:  # chỉ thiếu vì chỗ đang giữ (`reserved > 0`): chờ một `release`
-                    await self._cond.wait()
+                await self._cond.wait()  # chỉ thiếu vì chỗ đang giữ (`reserved > 0`)
+            self._cond.notify_all()  # đã dừng: cặp đang chờ chỗ cũng dừng ngay
             return False
 
     async def release(self, reserve: Decimal) -> None:

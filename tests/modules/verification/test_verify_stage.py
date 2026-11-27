@@ -1,5 +1,6 @@
 """S8 — phán quyết với W5 và biến thể V0-V2 (spec §7.8, §6.4; T-502, T-504)."""
 
+import asyncio
 import json
 import uuid
 from collections.abc import Sequence
@@ -24,7 +25,7 @@ from citeproof.core.enums import (
     UnverifiableReason,
     Verifier,
 )
-from citeproof.core.errors import ExternalServiceError, InternalError
+from citeproof.core.errors import ExternalServiceError, InternalError, RetryableError
 from citeproof.core.settings import Settings
 from citeproof.db.models import (
     CitationLink,
@@ -70,7 +71,8 @@ CHUNKS: list[str | tuple[str, str | None]] = [
     ("Residual connections stabilise deep models.", "3 Method"),
 ]
 SONNET = "claude-sonnet-5-5"
-# Hạn mức chi phí nhỏ mà cặp đầu vẫn đủ giữ chỗ cho W5 (Task 13): `max_tokens` của W5 là 1 nên
+# Hạn mức chi phí nhỏ mà cặp đầu vẫn đủ giữ chỗ cho W5 (Task 13). Với `max_tokens` mặc định chỗ
+# giữ là 0.16 USD, lớn hơn mọi hạn mức nhỏ nên cặp đầu đã bị từ chối; `max_tokens` của W5 là 1 nên
 # chỗ giữ = 10 USD/1M * 1 = 0.00001 < 0.00002; sau một lời gọi thật, chi phí vượt hạn mức.
 TINY_LIMIT: dict[str, Any] = {"max_cost_usd": 0.00002}
 TINY_RESERVE: dict[str, Any] = {"max_tokens": {**defaults.LLM_MAX_TOKENS, "verdict.judge": 1}}
@@ -750,6 +752,27 @@ async def test_pair_exception_isolated(
     assert second.status == ClaimStatus.SUPPORTED.value
     run = await _run_row(session_factory, setup.run_id)
     assert run.status == RunStatus.COMPLETED.value
+
+
+@pytest.mark.db
+async def test_reservation_released_when_pair_raises(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    """llm_concurrency 3, hạn mức chỉ đủ một chỗ giữ W5 (0.16 USD) mỗi lúc. Cặp đầu gặp
+    `RetryableError` (lan ra khỏi `handle`) vẫn trả chỗ trong `finally`, nên hai cặp còn lại
+    chạy được ngay trong lần thử đó; thiếu release thì chúng chờ mãi."""
+    setup = await _setup(
+        session_factory, ["claim một", "claim hai", "claim ba"], limits={"max_cost_usd": 0.17}
+    )
+    provider = ScriptedProvider([RetryableError("529"), SUPPORTED, SUPPORTED])
+    await asyncio.wait_for(
+        _run(session_factory, settings.model_copy(update={"llm_concurrency": 3}), provider),
+        timeout=60,  # chỉ là chốt an toàn chống treo, không phải phép đo thời gian
+    )
+    # Lần thử đầu: cặp lỗi chưa có dòng (thử lại đã lên lịch sau), hai cặp kia đã xong.
+    rows = await _rows(session_factory, setup.run_id)
+    assert [r.status for r in rows] == [ClaimStatus.SUPPORTED.value] * 2
+    assert len(provider.requests) == 3
 
 
 @pytest.mark.db

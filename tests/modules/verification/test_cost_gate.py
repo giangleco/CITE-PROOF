@@ -51,8 +51,12 @@ async def test_reservation_admits_one_pair_until_release() -> None:
     await gate.release(reserve)
     assert await third is False
     assert gate.reached is True
+    assert gate.closed is True and gate.stopped is False
     assert gate.reserved == 0
-    assert await gate.allow(Decimal(0)) is False  # đã chạm hạn mức thì dừng hẳn
+    assert await gate.allow(reserve) is False  # không nhận cặp mới nữa
+    cost.value = Decimal("1.00")
+    assert await gate.allow(Decimal(0)) is False  # chi phí thật chạm hạn mức: dừng hẳn
+    assert gate.stopped is True
 
 
 async def test_zero_reserve_keeps_old_semantics() -> None:
@@ -64,6 +68,24 @@ async def test_zero_reserve_keeps_old_semantics() -> None:
     cost.value = Decimal("1.00")
     assert await gate.allow(Decimal(0)) is False
     assert gate.reached is True
+
+
+async def test_new_pair_denial_does_not_stop_holder_follow_up() -> None:
+    """A giữ chỗ ở 4.80; chi phí thành 4.85; B bị từ chối (4.85 + 0.30 >= 5) nhưng lời gọi
+    tiếp theo của A (đã trả tiền giữ chỗ) vẫn được phép vì chi phí thật 4.85 < 5."""
+    cost = _Cost("4.80")
+    gate = _CostGate(cost, Decimal("5"))
+    reserve = Decimal("0.10")
+    a = _PairBudget(gate, reserve)
+    b = _PairBudget(gate, Decimal("0.30"))
+    assert await a() is True
+    cost.value = Decimal("4.85")
+    assert await b() is False
+    assert gate.reached is True  # cảnh báo COST_LIMIT_REACHED vẫn phát
+    assert gate.stopped is False
+    assert await a() is True
+    await a.release()
+    assert gate.reserved == 0
 
 
 class _FakeGate:

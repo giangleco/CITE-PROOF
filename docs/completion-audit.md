@@ -150,7 +150,7 @@ Cần bạn quyết trước khi làm: Q-03 (nội dung màn hình đồng ý), 
 
 ## 5. Phân loại việc hoãn
 
-Đã duyệt mọi dòng `minor (deferred)` của handoff 2026-11-24 (Phụ lục B, 47 dòng, Task 1–13), handoff 2026-11-25 (27 dòng `minor (deferred)` của Task 14–26 và final review, cùng 4 mục `parked` #3–#6) và 5 dòng của sổ nhánh multi-provider (Task 1, 2, 4, 5, 6; mỗi dòng tách thành 1–3 ý, ghi số Task ở cột Nguồn). Nguồn có 83 dòng; bảng có 97 hàng vì một số dòng gộp nhiều ý được tách theo phân loại. Kết quả: 4 đã xử lý, 13 sửa trong Task 11–14, 18 chấp nhận (giới hạn), 62 để sau. Mục "để sau" ghi "chưa kiểm tra" nghĩa là chưa đối chiếu với mã hiện tại, không phải đã xác nhận còn lỗi; chúng đều là nợ nhỏ (test, dọn mã, ca hiếm), không có mục P1 nào ngoài các mục đã gán Task 11–14.
+Đã duyệt mọi dòng `minor (deferred)` của handoff 2026-11-24 (Phụ lục B, 47 dòng, Task 1–13), handoff 2026-11-25 (27 dòng `minor (deferred)` của Task 14–26 và final review, cùng 4 mục `parked` #3–#6) và 5 dòng của sổ nhánh multi-provider (Task 1, 2, 4, 5, 6; mỗi dòng tách thành 1–3 ý, ghi số Task ở cột Nguồn). Nguồn có 83 dòng; bảng có 97 hàng vì một số dòng gộp nhiều ý được tách theo phân loại. Kết quả: 4 đã xử lý, 12 sửa trong Task 11–14, 19 chấp nhận (giới hạn), 62 để sau. Mục "để sau" ghi "chưa kiểm tra" nghĩa là chưa đối chiếu với mã hiện tại, không phải đã xác nhận còn lỗi; chúng đều là nợ nhỏ (test, dọn mã, ca hiếm), không có mục P1 nào ngoài các mục đã gán Task 11–14.
 
 | Nguồn | Mục (rút gọn) | Phân loại | Ghi chú |
 |---|---|---|---|
@@ -207,7 +207,7 @@ Cần bạn quyết trước khi làm: Q-03 (nội dung màn hình đồng ý), 
 | Handoff 11-24, Phụ lục B, Task 13 | Cửa sổ ≥250 token không tổng quát; race parsed-JSON; thiếu unique chunk_index; GROBID outage không dừng sớm | để sau | Chưa kiểm tra |
 | Handoff 11-25, Task 14 | numbers_preserved khớp chuỗi con ("12" trong "2012") | sửa trong Task 11–14 | Task 13 |
 | Handoff 11-25, Task 14 | test_lexical chấp nhận hai thứ tự; bad_output không khẳng định W3; STOPWORDS trùng | để sau | Nợ test |
-| Handoff 11-25, Task 14 | Cặp không có hit không ghi dòng, bị xử lý lại khi resume | sửa trong Task 11–14 | Task 13 (sẽ test và quyết định) |
+| Handoff 11-25, Task 14 | Cặp không có hit không ghi dòng, bị xử lý lại khi resume | chấp nhận (giới hạn) | Task 13: chạy lại vô hại vì truy xuất lexical tất định và bản dịch W3 lấy từ cache LLM; S8 xử lý cặp 0 kết quả và cặp không có dòng `retrieval_results` như nhau (`EVIDENCE_INCONCLUSIVE` tất định, không gọi LLM), xem `test_s7_zero_hits_same_as_pair_without_retrieval_rows` |
 | Handoff 11-25, Task 14 | retrieve() giữ session kết nối lười qua lúc gọi W3 | để sau | Bất biến chỉ nằm trong chú thích |
 | Handoff 11-25, Task 14 | test_search_finds_decimal có replace vô tác dụng; số thập phân sinh thêm phần nguyên/phân số | chấp nhận (giới hạn) | Nhiễu truy xuất nhỏ |
 | Handoff 11-25, Task 15 | Quote có thể kết thúc ở ký tự gốc trước dấu kết hợp (không phải tiếng Việt) | chấp nhận (giới hạn) | Ngoài phạm vi ngôn ngữ v1 |
