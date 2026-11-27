@@ -8,6 +8,7 @@ thái. Các hàm không commit: caller quyết định ranh giới giao dịch.
 """
 
 from collections.abc import Collection, Mapping, Sequence
+from datetime import timedelta
 from types import MappingProxyType
 from typing import Any
 from uuid import UUID
@@ -249,7 +250,9 @@ async def fail_stage(
     return status is not None
 
 
-async def fail_expired_jobs(session: AsyncSession, *, max_attempts: int) -> list[ClaimedJob]:
+async def fail_expired_jobs(
+    session: AsyncSession, *, max_attempts: int, lock_timeout: timedelta
+) -> list[ClaimedJob]:
     """Đánh FAILED các job RUNNING hết hạn lease đã hết lượt thử, cùng run của chúng.
 
     Khóa trước các run liên quan (theo thứ tự id) rồi mới cập nhật job, giữ đúng thứ
@@ -257,14 +260,14 @@ async def fail_expired_jobs(session: AsyncSession, *, max_attempts: int) -> list
     `stale_exhausted` với `expire_stale_jobs` nên tập job hết hạn luôn nằm trong tập
     run đã khóa (`now()` cố định trong một giao dịch).
     """
-    stale_run_ids = select(Job.run_id).where(stale_exhausted(max_attempts))
+    stale_run_ids = select(Job.run_id).where(stale_exhausted(max_attempts, lock_timeout))
     await session.execute(
         select(VerificationRun.id)
         .where(VerificationRun.id.in_(stale_run_ids))
         .order_by(VerificationRun.id)
         .with_for_update()
     )
-    expired = await expire_stale_jobs(session, max_attempts)
+    expired = await expire_stale_jobs(session, max_attempts, lock_timeout)
     for job in expired:
         run = await _lock_run(session, job.run_id)
         if run is not None and run.status in _ACTIVE:

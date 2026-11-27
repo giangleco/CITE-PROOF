@@ -81,7 +81,7 @@ class CrossrefConnector:
         items = as_dict(as_dict(data).get("message")).get("items")
         if not isinstance(items, list):
             raise bad_envelope(self.name)
-        return parse_records(items, parse_work)
+        return parse_records(items, parse_work, source=self.name)
 
     async def _get(self, url: str, params: dict[str, str] | None = None) -> Any | None:
         return await get_json(

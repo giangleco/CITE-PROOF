@@ -1,5 +1,6 @@
 """S8 — phán quyết với W5 và biến thể V0-V2 (spec §7.8, §6.4; T-502, T-504)."""
 
+import asyncio
 import json
 import uuid
 from collections.abc import Sequence
@@ -11,6 +12,7 @@ import pytest
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from citeproof.core import defaults
 from citeproof.core.enums import (
     ChunkRegion,
     ClaimStatus,
@@ -23,7 +25,7 @@ from citeproof.core.enums import (
     UnverifiableReason,
     Verifier,
 )
-from citeproof.core.errors import ExternalServiceError, InternalError
+from citeproof.core.errors import ExternalServiceError, InternalError, RetryableError
 from citeproof.core.settings import Settings
 from citeproof.db.models import (
     CitationLink,
@@ -41,6 +43,7 @@ from citeproof.db.models import (
 from citeproof.llm.providers.scripted import ScriptedProvider
 from citeproof.llm.types import CacheMissError, ProviderResponse
 from citeproof.modules.retrieval.pairs import load_pairs
+from citeproof.modules.retrieval.stage import RetrieveStage
 from citeproof.modules.verification.explanations import (
     deterministic_explanation,
     status_explanation,
@@ -68,6 +71,11 @@ CHUNKS: list[str | tuple[str, str | None]] = [
     ("Residual connections stabilise deep models.", "3 Method"),
 ]
 SONNET = "claude-sonnet-5-5"
+# Hạn mức chi phí nhỏ mà cặp đầu vẫn đủ giữ chỗ cho W5 (Task 13). Với `max_tokens` mặc định chỗ
+# giữ là 0.16 USD, lớn hơn mọi hạn mức nhỏ nên cặp đầu đã bị từ chối; `max_tokens` của W5 là 1 nên
+# chỗ giữ = 10 USD/1M * 1 = 0.00001 < 0.00002; sau một lời gọi thật, chi phí vượt hạn mức.
+TINY_LIMIT: dict[str, Any] = {"max_cost_usd": 0.00002}
+TINY_RESERVE: dict[str, Any] = {"max_tokens": {**defaults.LLM_MAX_TOKENS, "verdict.judge": 1}}
 
 
 class _Recording:
@@ -471,6 +479,66 @@ async def test_zero_hits_inconclusive_without_llm_call(
 
 
 @pytest.mark.db
+async def test_s7_zero_hits_same_as_pair_without_retrieval_rows(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    """S7 không ghi dòng nào cho cặp 0 kết quả; S8 xử lý cặp đó y như cặp chưa từng truy xuất
+    (tiền kiểm qua, V2 không có chunk → EVIDENCE_INCONCLUSIVE tất định, không gọi LLM)."""
+    x1 = {"cross_lingual": "X1"}
+    zero = await _setup(
+        session_factory,
+        ["Ngựa vằn phi nước đại", "The encoder accuracy reaches 95.7%"],
+        retrieved=(),
+        config_extra=x1,
+    )
+    provider = ScriptedProvider([SUPPORTED])
+    deps = make_test_deps(settings, session_factory, provider=provider)
+    stage = _Recording(deps)
+    registry = StageRegistry(
+        RetrieveStage(deps)
+        if name is StageName.S7
+        else stage
+        if name is StageName.S8
+        else CountingStage(name)
+        for name in StageName
+    )
+    await drain(session_factory, registry, pipeline_settings())
+    async with session_factory() as s:
+        hit_claims = set(
+            (
+                await s.execute(
+                    select(RetrievalResult.claim_id).where(RetrievalResult.run_id == zero.run_id)
+                )
+            ).scalars()
+        )
+    assert hit_claims == {zero.claim_ids[1]}  # S7 đã chạy: claim đầu 0 kết quả, không có dòng
+    assert len(provider.requests) == 1  # chỉ W5 của claim có kết quả
+    rows = await _by_claim(session_factory, zero.run_id)
+    zero_hit = rows[zero.claim_ids[0]]
+    assert rows[zero.claim_ids[1]].status == ClaimStatus.SUPPORTED.value
+
+    never = await _setup(session_factory, ["Ngựa vằn phi nước đại"], retrieved=(), config_extra=x1)
+    untouched = ScriptedProvider([])
+    await _run(session_factory, settings, untouched)  # S7 là CountingStage: không truy xuất
+    [no_rows] = await _rows(session_factory, never.run_id)
+    assert untouched.requests == []
+
+    def shape(row: ClaimVerification) -> tuple[object, ...]:
+        return (
+            row.status,
+            row.unverifiable_reason,
+            row.needs_user_review,
+            row.content_level_used,
+            row.model,
+            row.prompt_version,
+        )
+
+    assert shape(zero_hit) == shape(no_rows)
+    assert zero_hit.unverifiable_reason == R.EVIDENCE_INCONCLUSIVE.value
+    assert zero_hit.model == "none"
+
+
+@pytest.mark.db
 async def test_not_a_claim(
     session_factory: SessionFactory, clean_db: None, settings: Settings
 ) -> None:
@@ -510,7 +578,7 @@ async def test_cost_limit_stops_new_calls(
     session_factory: SessionFactory, clean_db: None, settings: Settings
 ) -> None:
     setup = await _setup(
-        session_factory, ["claim một", "claim hai"], limits={"max_cost_usd": 0.000001}
+        session_factory, ["claim một", "claim hai"], limits=TINY_LIMIT, config_extra=TINY_RESERVE
     )
     provider = ScriptedProvider([SUPPORTED, SUPPORTED])
     stage = await _run(session_factory, _one_thread(settings), provider)
@@ -521,7 +589,7 @@ async def test_cost_limit_stops_new_calls(
     assert second.unverifiable_reason == R.PROCESSING_ERROR.value
     assert [r.warnings for r in stage.results] == [("COST_LIMIT_REACHED",)]
     async with session_factory() as s:
-        assert await run_cost(s, setup.run_id) > Decimal("0.000001")
+        assert await run_cost(s, setup.run_id) > Decimal("0.00002")
 
 
 @pytest.mark.db
@@ -532,7 +600,8 @@ async def test_cost_limit_keeps_deterministic_results(
     setup = await _setup(
         session_factory,
         ["claim một", "claim hai", "claim ba"],
-        limits={"max_cost_usd": 0.000001},
+        limits=TINY_LIMIT,
+        config_extra=TINY_RESERVE,
     )
     async with session_factory() as s:
         await s.execute(
@@ -683,6 +752,27 @@ async def test_pair_exception_isolated(
     assert second.status == ClaimStatus.SUPPORTED.value
     run = await _run_row(session_factory, setup.run_id)
     assert run.status == RunStatus.COMPLETED.value
+
+
+@pytest.mark.db
+async def test_reservation_released_when_pair_raises(
+    session_factory: SessionFactory, clean_db: None, settings: Settings
+) -> None:
+    """llm_concurrency 3, hạn mức chỉ đủ một chỗ giữ W5 (0.16 USD) mỗi lúc. Cặp đầu gặp
+    `RetryableError` (lan ra khỏi `handle`) vẫn trả chỗ trong `finally`, nên hai cặp còn lại
+    chạy được ngay trong lần thử đó; thiếu release thì chúng chờ mãi."""
+    setup = await _setup(
+        session_factory, ["claim một", "claim hai", "claim ba"], limits={"max_cost_usd": 0.17}
+    )
+    provider = ScriptedProvider([RetryableError("529"), SUPPORTED, SUPPORTED])
+    await asyncio.wait_for(
+        _run(session_factory, settings.model_copy(update={"llm_concurrency": 3}), provider),
+        timeout=60,  # chỉ là chốt an toàn chống treo, không phải phép đo thời gian
+    )
+    # Lần thử đầu: cặp lỗi chưa có dòng (thử lại đã lên lịch sau), hai cặp kia đã xong.
+    rows = await _rows(session_factory, setup.run_id)
+    assert [r.status for r in rows] == [ClaimStatus.SUPPORTED.value] * 2
+    assert len(provider.requests) == 3
 
 
 @pytest.mark.db

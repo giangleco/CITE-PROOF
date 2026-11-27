@@ -15,6 +15,7 @@ dependencies = [
     "httpx>=0.28.1",
     "idna>=3.20",
     "jinja2>=3.1.6",
+    "openai>=2,<3",
     "pgvector>=0.5.1",
     "psycopg[binary]>=3.2",
     "pydantic>=2",
@@ -60,7 +61,7 @@ asyncio_default_test_loop_scope = "function"
 testpaths = ["tests"]
 markers = [
     "db: needs PostgreSQL",
-    "live: calls the real Anthropic API (needs CITEPROOF_LIVE_LLM=1 and a key)",
+    "live: calls the configured real LLM provider (needs CITEPROOF_LIVE_LLM=1 and a configured provider)",
     "grobid: calls a live GROBID service (needs CITEPROOF_LIVE_GROBID=1)",
 ]
 
@@ -70,6 +71,7 @@ dev = [
     "pre-commit>=4.7.0",
     "pytest>=9.2.0",
     "pytest-asyncio>=1.5.0",
+    "pytest-cov>=7.1.0",
     "reportlab>=5.1.0",
     "ruff>=0.17.6",
     "types-defusedxml>=0.7.0.20260504",

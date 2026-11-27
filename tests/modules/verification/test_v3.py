@@ -12,6 +12,8 @@ from citeproof.db.models import Claim, LLMCall, RetrievalResult
 from citeproof.llm.providers.scripted import ScriptedProvider
 from citeproof.llm.types import ProviderResponse
 from tests.modules.verification.test_verify_stage import (
+    TINY_LIMIT,
+    TINY_RESERVE,
     SessionFactory,
     _by_claim,
     _evidence,
@@ -156,8 +158,8 @@ async def test_v3_cost_cap_applies_to_each_llm_call(
         [CLAIM],
         variant="V3",
         retrieved=(),
-        config_extra=X1,
-        limits={"max_cost_usd": 0.000001},
+        config_extra={**X1, **TINY_RESERVE},
+        limits=TINY_LIMIT,
     )
     provider = ScriptedProvider([W4_TWO, V_S1, V_S2])
     await _run(session_factory, settings, provider)

@@ -1,11 +1,14 @@
 """`python -m citeproof.evaluation`: chạy đánh giá trên `CITEPROOF_EVAL_DATABASE_URL` (spec §11).
 
     run --dataset <jsonl> --config <yaml> --mode read_write|replay|fresh [--split dev]
-        [--out benchmark/results] [--dump]
+        [--out benchmark/results] [--dump] [--provider-identity <định danh>]
     run-refs --dataset <jsonl> --mode read_write|replay|fresh [--out benchmark/results]
+        [--provider-identity <định danh>]
 
 `replay` (spec) và `replay_only` (tên trong mã) cùng là `CacheMode.REPLAY_ONLY`: không gọi LLM,
-thiếu cache thì lần chạy FAILED và lệnh thoát mã 1. Lỗi chỉ in mã và thông điệp của
+thiếu cache thì lần chạy FAILED và lệnh thoát mã 1. `--provider-identity` (ví dụ
+`openai_compatible:host:8000`) chọn cache của provider đó khi phát lại mà không cần cấu hình nó;
+mặc định là định danh của provider đang cấu hình, hoặc `anthropic`. Lỗi chỉ in mã và thông điệp của
 `CiteProofError` (không chứa nội dung bộ dữ liệu).
 """
 
@@ -47,10 +50,12 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--split", default=None)
     run.add_argument("--out", type=Path, default=DEFAULT_OUT)
     run.add_argument("--dump", action="store_true")
+    run.add_argument("--provider-identity", default=None)
     refs = commands.add_parser("run-refs", help="đánh giá trạng thái tài liệu tham khảo (D5)")
     refs.add_argument("--dataset", type=Path, required=True)
     refs.add_argument("--mode", type=parse_mode, required=True)
     refs.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    refs.add_argument("--provider-identity", default=None)
     return parser
 
 
@@ -64,11 +69,16 @@ async def _run(args: argparse.Namespace, settings: Settings) -> Path:
             split=args.split,
             out_dir=args.out,
             dump=args.dump,
+            identity_override=args.provider_identity,
         )
         print(f"macro_f1={report.metrics.macro_f1:.4f} n={report.metrics.n} run={report.run_id}")
     else:
         refs = await run_reference_eval(
-            settings, dataset_path=args.dataset, mode=args.mode, out_dir=args.out
+            settings,
+            dataset_path=args.dataset,
+            mode=args.mode,
+            out_dir=args.out,
+            identity_override=args.provider_identity,
         )
         print(f"accuracy={refs.accuracy:.4f} n={refs.n} run={refs.run_id}")
     return Path(args.out)

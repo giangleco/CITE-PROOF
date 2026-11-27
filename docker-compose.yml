@@ -28,6 +28,9 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     command: ["alembic", "upgrade", "head"]
+    env_file:
+      - path: .env
+        required: false
     environment: &app-env
       CITEPROOF_DATABASE_URL: postgresql+psycopg://citeproof:citeproof@db:5432/citeproof
       CITEPROOF_STORAGE_DIR: /app/var/storage
@@ -40,6 +43,9 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     command: ["python", "-m", "citeproof.api"]
+    env_file:
+      - path: .env
+        required: false
     environment: *app-env
     volumes:
       - citeproof_storage:/app/var/storage
@@ -63,9 +69,14 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     command: ["python", "-m", "citeproof.pipeline"]
+    env_file:
+      - path: .env
+        required: false
     environment:
       <<: *app-env
       CITEPROOF_GROBID_URL: http://grobid:8070
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - citeproof_storage:/app/var/storage
     depends_on:

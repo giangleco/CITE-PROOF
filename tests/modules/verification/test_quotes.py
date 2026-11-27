@@ -70,3 +70,33 @@ def test_unescape_quote_inverts_escape_data() -> None:
 
     raw = "p < 0.05 & R&D > x &lt; literal"
     assert unescape_quote(escape_data(raw)) == raw
+
+
+def test_quote_number_requires_word_boundary() -> None:
+    assert locate_quote("95.7%", "Độ chính xác 195.7%.") is None
+    text = "Mô hình đạt 95.7%."
+    span = locate_quote("95.7%", text)
+    assert span is not None
+    assert text[span[0] : span[1]] == "95.7%"
+
+
+def test_quote_word_boundary_at_end() -> None:
+    assert locate_quote("accuracy 95", "accuracy 957") is None
+    assert locate_quote("encode", "the encoder") is None
+
+
+def test_quote_word_boundary_skips_to_later_valid_occurrence() -> None:
+    text = "giá 195.7% rồi 95.7% sau"
+    span = locate_quote("95.7%", text)
+    assert span is not None
+    assert text[span[0] : span[1]] == "95.7%"
+    assert span[0] == text.index(" 95.7%") + 1
+
+
+def test_quote_with_punctuation_edges_matches_inside_words() -> None:
+    # Quote bắt đầu/kết thúc bằng dấu câu: không áp ranh giới từ ở đầu/cuối đó.
+    assert locate_quote(".7%", "đạt 95.7%") is not None
+    assert locate_quote("(95.7", "x(95.7) y") is not None
+    assert locate_quote("ab-", "xab-y") is None  # đầu là chữ, trước nó là chữ
+    assert locate_quote("-y", "xab-yz") is None  # cuối là chữ, sau nó là chữ
+    assert locate_quote("-y", "xab-y z") is not None

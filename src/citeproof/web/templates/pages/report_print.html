@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Báo cáo kiểm tra trích dẫn: {{ header.document_name }}</title>
+<link rel="stylesheet" href="/static/css/fonts.css">
+<link rel="stylesheet" href="/static/css/report-print.css">
+</head>
+<body>
+<main class="print-page">
+  <p class="print-actions"><a href="/runs/{{ header.run_id }}/report">Quay lại báo cáo</a></p>
+  <h1>Báo cáo kiểm tra trích dẫn: {{ header.document_name }}</h1>
+  <p class="meta">
+    {% if header.is_sample %}Bài mẫu: dữ liệu minh họa, không phải kết quả thật. {% endif %}
+    Trạng thái lần chạy: {{ labels.RUN_STATUS[header.status].label }}
+    {% if header.finished_at %}. Kiểm tra xong {{ header.finished_at | vn_time }}{% endif %}
+  </p>
+  {% for w in header.warnings %}<p class="note">Cảnh báo: {{ labels.warning_text(w.code, w.detail) }}</p>{% endfor %}
+
+  <h2>Tổng quan</h2>
+  <ul>
+    <li>{{ ref_total }} tài liệu tham khảo, {{ claim_total }} nhận định có trích dẫn.</li>
+    <li>{{ flagged }} nhận định được gắn cờ nên tự kiểm tra.</li>
+  </ul>
+  <table>
+    <thead><tr><th>Nhóm</th><th>Trạng thái</th><th>Số lượng</th></tr></thead>
+    <tbody>
+    {% for t in overview.claim_tally %}<tr><td>Nhận định</td><td>{{ labels.CLAIM_STATUS[t.key].label }}</td><td>{{ t.count }}</td></tr>{% endfor %}
+    {% for t in overview.ref_tally %}<tr><td>Tài liệu tham khảo</td><td>{{ labels.REF_STATUS[t.key].label }}</td><td>{{ t.count }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Tài liệu tham khảo</h2>
+  <ol>
+    {% for item in references %}{% set ref = item.ref %}
+    <li value="{{ ref.index }}">{{ ref.raw_text }}
+      <div class="sub"><span class="tag">{{ labels.REF_STATUS[ref.status].label }}</span>
+      {% for m in item.mismatches %}<br>{{ m }}{% endfor %}
+      {% if item.not_found %}<br>Đã tra: {{ item.searched }}{% endif %}
+      {% if ref.doi %}<br>DOI: {{ ref.doi }}{% endif %}
+      {% if ref.cited_count == 0 %}<br>{{ labels.UNCITED_REFERENCE }}{% endif %}</div>
+    </li>
+    {% endfor %}
+  </ol>
+
+  <h2>Nhận định</h2>
+  {% for item in claims %}{% set sheet = item.sheet %}
+  <section class="claim">
+    <h3>Trang {{ sheet.page or '[chưa có]' }}, tài liệu {{ item.ref_label }}{% if sheet.needs_user_review %} (nên tự kiểm tra){% endif %}</h3>
+    <div>{{ sheet.sentence }}</div>
+    <div class="sub"><span class="tag">{{ labels.CLAIM_STATUS[sheet.status].label }}</span>. Dựa trên: {{ labels.CONTENT_LEVEL[sheet.content_level_used] }}</div>
+    <div>{{ sheet.explanation }}</div>
+    {% for ev in sheet.evidence %}
+    <blockquote lang="{{ ev.language }}">{{ ev.quote }}</blockquote>
+    <p class="rel">{{ labels.RELATIONS[ev.relation] }}{% if ev.page %}; trang {{ ev.page }}{% endif %}{% if ev.section %}{{ ', ' if ev.page else '; ' }}{{ ev.section }}{% endif %}</p>
+    {% endfor %}
+  </section>
+  {% endfor %}
+
+  <h2>Còn thiếu</h2>
+  <h3>Tài liệu chưa có toàn văn</h3>
+  {% if missing %}<ul>
+    {% for m in missing %}<li>[{{ m.ref_index }}] {{ m.raw_text }}
+      <div class="sub">{{ m.waiting_claims }} nhận định đang chờ. {{ labels.REASONS[m.reason] }}</div></li>{% endfor %}
+  </ul>{% else %}<p class="note">Không có.</p>{% endif %}
+  <h3>Nhận định chưa kiểm chứng được</h3>
+  {% if unverifiable %}<ul>
+    {% for item in unverifiable %}{% set sheet = item.sheet %}
+    <li>Trang {{ sheet.page or '[chưa có]' }}, tài liệu {{ item.ref_label }}: {{ sheet.sentence }}{% if sheet.unverifiable_reason %} ({{ labels.REASONS[sheet.unverifiable_reason] }}){% endif %}</li>
+    {% endfor %}
+  </ul>{% else %}<p class="note">Không có.</p>{% endif %}
+
+  <h2>Giới hạn</h2>
+  <p>{{ limitation }}</p>
+
+  <h2>Gợi ý hành động</h2>
+  {% if todos %}<ul>
+    {% for todo in todos %}<li>{{ todo.title }}. {{ todo.detail }}</li>{% endfor %}
+  </ul>{% else %}<p class="note">Không có.</p>{% endif %}
+</main>
+</body>
+</html>

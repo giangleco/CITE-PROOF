@@ -247,7 +247,7 @@ async def test_needs_consent(
         assert auth.needs_consent(user, settings)
         user.consent_llm_at = settings.consent_text_updated_at - timedelta(days=1)
         assert auth.needs_consent(user, settings)
-        await auth.record_consent(s, user)
+        await auth.record_consent(s, user, settings)
         await s.commit()
         await s.refresh(user)
         assert not auth.needs_consent(user, settings)

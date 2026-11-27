@@ -1,14 +1,36 @@
 """Cấu hình ứng dụng, chỉ đọc từ biến môi trường tiền tố CITEPROOF_."""
 
+import logging
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from citeproof.core import defaults
+
+logger = logging.getLogger(__name__)
+
+_PLACEHOLDER = "CHANGE_ME_"
+
+
+def base_url_authority(base_url: str) -> str:
+    """`host[:port]` chữ thường của base URL; ValueError khi URL không có host."""
+    try:
+        parts = urlsplit(base_url.strip())
+        host = parts.hostname
+        port = parts.port
+    except ValueError as exc:
+        raise ValueError(f"base_url không hợp lệ: {base_url!r}") from exc
+    if not host:
+        raise ValueError(f"base_url thiếu host (cần dạng https://host/...): {base_url!r}")
+    if ":" in host:  # IPv6 literal: hostname bỏ dấu ngoặc, thêm lại để không nhập nhằng với port
+        host = f"[{host}]"
+    default_port = {"https": 443, "http": 80}.get(parts.scheme.lower())
+    return f"{host}:{port}" if port and port != default_port else host
 
 
 class Settings(BaseSettings):
@@ -33,6 +55,15 @@ class Settings(BaseSettings):
     anthropic_max_retries: int = 2
     # Worker gọi Sonnet/Opus bị từ chối thì server chạy lại trên model dự phòng.
     anthropic_refusal_fallback: bool = True
+    # Provider LLM: `anthropic` (mặc định) hoặc máy chủ tương thích OpenAI (OpenAI, Gemini,
+    # OpenRouter, Ollama...); chỉ một provider mỗi lần triển khai.
+    llm_provider: Literal["anthropic", "openai_compatible"] = "anthropic"
+    openai_base_url: str | None = None
+    openai_api_key: SecretStr | None = None
+    openai_timeout_seconds: float = 600.0
+    openai_max_retries: int = 2
+    openai_structured_output: Literal["json_schema", "json_object", "none"] = "json_schema"
+    openai_send_reasoning_effort: bool = False
     llm_concurrency: int = 4
     # Theo tác vụ (spec §8.2); mặc định ở `core.defaults`, dùng chung với `RunConfig`.
     llm_models: dict[str, str] = Field(default_factory=lambda: dict(defaults.LLM_MODELS))
@@ -109,6 +140,74 @@ class Settings(BaseSettings):
         if self.job_heartbeat_seconds * 2 >= self.job_lock_timeout_seconds:
             raise ValueError("job_heartbeat_seconds phải nhỏ hơn nửa job_lock_timeout_seconds")
         return self
+
+    @property
+    def llm_configured(self) -> bool:
+        if self.llm_provider == "anthropic":
+            key = self.anthropic_api_key
+            return key is not None and bool(key.get_secret_value().strip())
+        return bool(self.openai_base_url and self.openai_base_url.strip())
+
+    @model_validator(mode="after")
+    def _llm_provider_consistent(self) -> Self:
+        if self.llm_provider != "openai_compatible":
+            return self
+        if self.openai_base_url:
+            try:
+                base_url_authority(self.openai_base_url)
+            except ValueError as exc:
+                raise ValueError(f"openai_base_url: {exc}") from exc
+        if not self.llm_configured:
+            return self
+        if dict(self.llm_models) == dict(defaults.LLM_MODELS):
+            raise ValueError(
+                "llm_provider=openai_compatible cần đặt CITEPROOF_LLM_MODELS: "
+                "tên model mặc định chỉ dành cho Anthropic"
+            )
+        self._require_tasks()
+        self._require_prices()
+        if not self.llm_provider_name:
+            logger.warning(
+                "Chưa đặt CITEPROOF_LLM_PROVIDER_NAME: màn hình đồng ý sẽ không nêu "
+                "tên nhà cung cấp LLM"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _anthropic_prices(self) -> Self:
+        if self.llm_provider == "anthropic" and self.llm_configured:
+            self._require_tasks()
+            self._require_prices()
+        return self
+
+    @model_validator(mode="after")
+    def _pilot_no_placeholders(self) -> Self:
+        if self.env != "pilot":
+            return self
+        bad: list[str] = []
+        for name in type(self).model_fields:
+            value = getattr(self, name)
+            if isinstance(value, SecretStr):
+                value = value.get_secret_value()
+            if isinstance(value, str) and _PLACEHOLDER in value:
+                bad.append(f"CITEPROOF_{name}".upper())
+        if bad:
+            raise ValueError(
+                "env=pilot còn giá trị giữ chỗ CHANGE_ME_ ở: " + ", ".join(sorted(bad))
+            )
+        return self
+
+    def _require_tasks(self) -> None:
+        missing = sorted(set(defaults.LLM_MODELS) - set(self.llm_models))
+        if missing:
+            raise ValueError("CITEPROOF_LLM_MODELS thiếu model cho tác vụ: " + ", ".join(missing))
+
+    def _require_prices(self) -> None:
+        missing = sorted({m for m in self.llm_models.values() if m not in self.llm_prices})
+        if missing:
+            raise ValueError(
+                "thiếu giá trong CITEPROOF_LLM_PRICES cho model: " + ", ".join(missing)
+            )
 
     def secure_cookies(self) -> bool:
         if self.cookie_secure is not None:

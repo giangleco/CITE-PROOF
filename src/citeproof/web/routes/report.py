@@ -9,11 +9,15 @@ from fastapi.responses import RedirectResponse, Response
 
 from citeproof.core.enums import ClaimStatus, FeedbackVerdict, ReferenceStatus
 from citeproof.core.errors import CiteProofError, ConflictError, InputError
+from citeproof.core.settings import Settings
+from citeproof.pipeline.config import RunConfig, provider_changed
 from citeproof.schemas.report import Overview
 from citeproof.services import documents, feedback, report, reverify, sources
+from citeproof.web import labels
 from citeproof.web.deps import (
     AppSettings,
     AppStorage,
+    ConsentedUser,
     Csrf,
     CurrentUser,
     Db,
@@ -21,7 +25,7 @@ from citeproof.web.deps import (
     is_htmx,
     rollback_keeping_user,
 )
-from citeproof.web.rendering import render
+from citeproof.web.rendering import render, templates
 
 router = APIRouter()
 
@@ -69,10 +73,20 @@ def _page(
     )
 
 
-def _can_start_child(overview: Overview) -> bool:
-    """Nút kiểm chứng lại/tra lại chỉ hiện khi lần chạy đã xong và không phải bài mẫu."""
+def _provider_changed(overview: Overview, settings: Settings) -> bool:
+    """Lần chạy gắn provider LLM khác provider hiện tại: ẩn mọi hành động tạo lần chạy con."""
+    return provider_changed(RunConfig(provider=overview.header.provider), settings)
+
+
+def _can_start_child(overview: Overview, settings: Settings) -> bool:
+    """Nút kiểm chứng lại/tra lại chỉ hiện khi lần chạy đã xong, không phải bài mẫu và cùng
+    provider LLM (spec §5.4)."""
     header = overview.header
-    return not header.is_sample and header.status in reverify.FINISHED
+    return (
+        not header.is_sample
+        and header.status in reverify.FINISHED
+        and not _provider_changed(overview, settings)
+    )
 
 
 @router.get("/runs/{run_id}/report")
@@ -83,7 +97,12 @@ async def overview_page(request: Request, db: Db, current: UserDep, run_id: UUID
 
 @router.get("/runs/{run_id}/references")
 async def references_page(
-    request: Request, db: Db, current: UserDep, run_id: UUID, status: str | None = None
+    request: Request,
+    db: Db,
+    settings: AppSettings,
+    current: UserDep,
+    run_id: UUID,
+    status: str | None = None,
 ) -> Response:
     chosen = _enum(ReferenceStatus, status)
     overview = await report.get_overview(db, user=current.user, run_id=run_id)
@@ -97,8 +116,9 @@ async def references_page(
         {
             "items": items,
             "status": chosen,
-            "can_retry_lookups": _can_start_child(overview)
+            "can_retry_lookups": _can_start_child(overview, settings)
             and any(t.key == ReferenceStatus.LOOKUP_FAILED.value for t in overview.ref_tally),
+            "provider_changed": _provider_changed(overview, settings),
         },
     )
 
@@ -197,6 +217,7 @@ async def claim_sheet(
 async def _missing(
     request: Request,
     db: Db,
+    settings: Settings,
     current: CurrentUser,
     run_id: UUID,
     *,
@@ -214,8 +235,9 @@ async def _missing(
         {
             "items": items,
             "upload_error": error,
-            "can_reverify": _can_start_child(overview)
+            "can_reverify": _can_start_child(overview, settings)
             and any(item.uploaded and item.uploaded.is_new for item in items),
+            "provider_changed": _provider_changed(overview, settings),
         },
     )
     response.status_code = status
@@ -223,8 +245,10 @@ async def _missing(
 
 
 @router.get("/runs/{run_id}/missing")
-async def missing_page(request: Request, db: Db, current: UserDep, run_id: UUID) -> Response:
-    return await _missing(request, db, current, run_id)
+async def missing_page(
+    request: Request, db: Db, settings: AppSettings, current: UserDep, run_id: UUID
+) -> Response:
+    return await _missing(request, db, settings, current, run_id)
 
 
 @router.post("/runs/{run_id}/missing/{reference_entry_id}/upload", dependencies=[Csrf])
@@ -233,7 +257,7 @@ async def upload_source(
     db: Db,
     storage: AppStorage,
     settings: AppSettings,
-    current: UserDep,
+    current: ConsentedUser,
     run_id: UUID,
     reference_entry_id: UUID,
     file: Annotated[UploadFile | None, File()] = None,
@@ -254,7 +278,10 @@ async def upload_source(
     except InputError as exc:
         await rollback_keeping_user(db, current)
         code = 413 if exc.code == "FILE_TOO_LARGE" else 400
-        return await _missing(request, db, current, run_id, status=code, error=str(exc))
+        return await _missing(request, db, settings, current, run_id, status=code, error=str(exc))
+    except ConflictError as exc:
+        await rollback_keeping_user(db, current)
+        return await _missing(request, db, settings, current, run_id, status=409, error=str(exc))
     except CiteProofError:
         await rollback_keeping_user(db, current)
         raise
@@ -267,6 +294,7 @@ async def discard_source(
     request: Request,
     db: Db,
     storage: AppStorage,
+    settings: AppSettings,
     current: UserDep,
     run_id: UUID,
     source_file_id: UUID,
@@ -277,7 +305,7 @@ async def discard_source(
         )
     except ConflictError as exc:
         await rollback_keeping_user(db, current)
-        return await _missing(request, db, current, run_id, status=409, error=str(exc))
+        return await _missing(request, db, settings, current, run_id, status=409, error=str(exc))
     return RedirectResponse(f"/runs/{run_id}/missing", status_code=303)
 
 
@@ -288,6 +316,18 @@ async def markdown_export(db: Db, current: UserDep, run_id: UUID) -> Response:
         content=text,
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="citeproof-{str(run_id)[:8]}.md"'},
+    )
+
+
+@router.get("/runs/{run_id}/report.html")
+async def print_export(request: Request, db: Db, current: UserDep, run_id: UUID) -> Response:
+    """Bản in được: trang tĩnh riêng, không script, không htmx; kiểu in ở tệp CSS tĩnh (CSP)."""
+    context = await report.render_print_context(db, user=current.user, run_id=run_id)
+    return templates.TemplateResponse(
+        request,
+        "pages/report_print.html",
+        {"labels": labels, **context},
+        headers={"Content-Disposition": "inline"},
     )
 
 

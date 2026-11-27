@@ -18,4 +18,5 @@ class User(IdCreatedMixin, Base):
     display_name: Mapped[str] = mapped_column(Text)
     role: Mapped[str] = mapped_column(Text, server_default=UserRole.USER.value)
     consent_llm_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consent_llm_provider: Mapped[str | None] = mapped_column(Text)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

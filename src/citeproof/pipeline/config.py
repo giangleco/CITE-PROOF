@@ -4,6 +4,10 @@
 (`RunConfig.resolve`): model, effort, phiên bản prompt và bộ công cụ không đổi khi lần
 chạy tiếp tục sau lỗi. Cấu hình cũ (chỉ có `{"variant": "V2"}`) đọc bằng
 `RunConfig.load`, khóa thiếu lấy mặc định trong mã (`core.defaults`), không từ `Settings`.
+
+`provider` là định danh provider LLM lúc tạo lần chạy (spec §5.4); None khi chưa cấu hình LLM
+hoặc với cấu hình cũ không có khóa này. Lần chạy gắn provider không được tiếp tục (stage cần
+LLM, lần chạy con) với provider khác (`ensure_same_provider`).
 """
 
 from collections.abc import Mapping
@@ -18,9 +22,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from citeproof.core import defaults
 from citeproof.core.enums import AgentName, LLMTask, StageName, Verifier
-from citeproof.core.errors import NotFoundError
+from citeproof.core.errors import LLM_PROVIDER_CHANGED_MESSAGE, ConflictError, NotFoundError
 from citeproof.core.settings import Settings
 from citeproof.db.models import Document, VerificationRun
+from citeproof.llm.identity import provider_identity
 
 PROMPT_VERSIONS: Mapping[str, str] = MappingProxyType({task.value: "v1" for task in LLMTask})
 TOOL_CATALOGS: Mapping[str, str] = MappingProxyType({"meta": "v1", "source": "v1"})
@@ -105,6 +110,8 @@ class RunConfig(BaseModel):
     limits: RunLimits = Field(default_factory=RunLimits)
     demo: dict[str, Any] | None = None
     scope: RunScope | None = None
+    # Định danh provider LLM đóng băng (`llm.identity`); None: không gắn provider nào.
+    provider: str | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -159,6 +166,7 @@ class RunConfig(BaseModel):
                 },
                 "demo": dict(demo) if demo is not None else None,
                 "scope": scope,
+                "provider": provider_identity(settings),
             }
         )
 
@@ -170,6 +178,17 @@ class RunConfig(BaseModel):
             max_tokens=self.max_tokens[key],
             prompt_version=self.prompts[key],
         )
+
+
+def provider_changed(config: RunConfig, settings: Settings) -> bool:
+    """Lần chạy gắn một provider khác provider đang cấu hình (kể cả khi đã bỏ cấu hình LLM)."""
+    return config.provider is not None and config.provider != provider_identity(settings)
+
+
+def ensure_same_provider(config: RunConfig, settings: Settings) -> None:
+    """`ConflictError(LLM_PROVIDER_CHANGED)` khi provider đã đổi: không trộn hai provider."""
+    if provider_changed(config, settings):
+        raise ConflictError(LLM_PROVIDER_CHANGED_MESSAGE, code="LLM_PROVIDER_CHANGED")
 
 
 @dataclass(frozen=True)

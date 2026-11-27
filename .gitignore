@@ -16,3 +16,4 @@ benchmark/results/
 benchmark/datasets/
 .env.production
 backups/
+.coverage

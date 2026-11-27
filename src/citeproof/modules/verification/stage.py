@@ -4,8 +4,10 @@
 `claim_verifications` cho verifier của lần chạy được bỏ qua. Mỗi cặp: tiền kiểm tất định,
 giới hạn số cặp (`limits.max_claims`, theo thứ tự trong bài), rồi verifier của biến thể (đọc DB
 và gọi W5 ngoài giao dịch), cuối cùng một `fenced_session` ngắn để ghi. Hạn mức chi phí
-(`limits.max_cost_usd`) được verifier kiểm ngay trước mỗi lời gọi W5 (`llm_budget`, dưới một
-khóa); cặp có kết quả tất định (kể cả V2 không có chunk truy xuất) giữ kết quả đó.
+(`limits.max_cost_usd`) được verifier kiểm ngay trước mỗi lời gọi LLM (`llm_budget`): lời gọi
+đầu của cặp giữ chỗ bằng chi phí đầu ra tối đa của W5 (`judge_reserve`), trả lại khi cặp xong
+phần LLM, nên các cặp chạy song song không cùng vượt hạn mức; cặp có kết quả tất định (kể cả V2
+không có chunk truy xuất) giữ kết quả đó.
 
 Cô lập theo cặp: `CiteProofError` của một cặp cho dòng `PROCESSING_ERROR` của cặp đó (log
 chỉ tên lớp lỗi), cặp khác vẫn chạy. Ngoại lệ: `InternalError`, `LeaseLostError`, lỗi cache
@@ -15,13 +17,15 @@ phát lại luôn làm stage lỗi; `RetryableError` làm stage thử lại (tr�
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Protocol
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from citeproof.core.enums import SourceOrigin, StageName, UnverifiableReason
+from citeproof.core.enums import LLMTask, SourceOrigin, StageName, UnverifiableReason
 from citeproof.core.errors import CiteProofError, InternalError, LeaseLostError, RetryableError
 from citeproof.llm.types import CacheEntryInvalidError, CacheMissError, CallContext
 from citeproof.modules.references.stage_extract import LLM_NOT_CONFIGURED
@@ -43,13 +47,13 @@ from citeproof.modules.verification.verifiers.base import (
     VerificationOutcome,
     deterministic,
 )
-from citeproof.pipeline.config import RunInfo, load_run_info
+from citeproof.pipeline.config import RunConfig, RunInfo, load_run_info
 from citeproof.pipeline.deps import PipelineDeps, call_context
 from citeproof.pipeline.jobs import fenced_session
 from citeproof.pipeline.stages import StageContext, StageResult
 from citeproof.pipeline.units import process_units
 
-__all__ = ["CLAIM_LIMIT_REACHED", "COST_LIMIT_REACHED", "VerifyStage"]
+__all__ = ["CLAIM_LIMIT_REACHED", "COST_LIMIT_REACHED", "VerifyStage", "judge_reserve"]
 
 CLAIM_LIMIT_REACHED = "CLAIM_LIMIT_REACHED"
 COST_LIMIT_REACHED = "COST_LIMIT_REACHED"
@@ -69,25 +73,95 @@ class _Unit:
         return self.state.pair
 
 
+def judge_reserve(config: RunConfig, prices: Mapping[str, tuple[float, float]]) -> Decimal:
+    """Chi phí đầu ra tối đa của một lời gọi W5: giá đầu ra * `max_tokens` (model lạ → 0).
+
+    Mọi cặp (kể cả V0 closed-book dùng `verdict.judge_closed_book`) giữ chỗ theo giá và
+    `max_tokens` của `verdict.judge`, theo quyết định của controller Task 13.
+    """
+    key = LLMTask.VERDICT_JUDGE.value
+    model = config.models[key]
+    if model not in prices:
+        return Decimal(0)
+    return Decimal(str(prices[model][1])) * config.max_tokens[key] / Decimal(1_000_000)
+
+
+class _Gate(Protocol):
+    async def allow(self, reserve: Decimal) -> bool: ...
+
+    async def release(self, reserve: Decimal) -> None: ...
+
+
 class _CostGate:
-    """Kiểm `run_cost` trước mỗi cặp cần LLM; đã chạm hạn mức thì mọi cặp sau đều dừng."""
+    """Hạn mức chi phí có giữ chỗ cho cặp đang gọi LLM (QĐ-32).
 
-    def __init__(self, deps: PipelineDeps, run_id: UUID, limit: float) -> None:
-        self._deps = deps
-        self._run_id = run_id
-        self._limit = Decimal(str(limit))
-        self._lock = asyncio.Lock()
-        self.reached = False
+    Hai mức dừng: `stopped` (chi phí thật `run_cost >= limit`) từ chối mọi lời gọi; `closed`
+    (`run_cost + reserve >= limit` với cặp mới) chỉ ngừng nhận cặp mới, cặp đang giữ chỗ vẫn
+    gọi tiếp được tới khi chi phí thật chạm hạn mức. Cặp mới được phép khi
+    `run_cost + reserved + reserve < limit`; không đủ chỗ chỉ vì chỗ đang giữ thì chờ `release`
+    rồi xét lại. `reserve = 0` (lời gọi sau của cặp đã giữ chỗ, hoặc model không có giá) chỉ
+    kiểm `run_cost < limit` và không bao giờ chờ, nên cặp không tự chặn chính nó.
+    """
 
-    async def allow(self) -> bool:
-        async with self._lock:
-            if self.reached:
-                return False
-            async with self._deps.session_factory() as session:
-                cost = await run_cost(session, self._run_id)
-            if cost >= self._limit:
-                self.reached = True
-            return not self.reached
+    def __init__(self, read_cost: Callable[[], Awaitable[Decimal]], limit: Decimal) -> None:
+        self._read_cost = read_cost
+        self._limit = limit
+        self._cond = asyncio.Condition()
+        self.reserved = Decimal(0)
+        self.stopped = False
+        self.closed = False
+
+    @property
+    def reached(self) -> bool:
+        """Có lời gọi bị từ chối vì hạn mức (cảnh báo `COST_LIMIT_REACHED`)."""
+        return self.stopped or self.closed
+
+    async def allow(self, reserve: Decimal) -> bool:
+        async with self._cond:
+            while not self.stopped:
+                cost = await self._read_cost()
+                if cost >= self._limit:
+                    self.stopped = True
+                    break
+                if reserve == 0:
+                    return True
+                if self.closed:
+                    return False
+                if cost + reserve >= self._limit:
+                    self.closed = True
+                    break
+                if cost + self.reserved + reserve < self._limit:
+                    self.reserved += reserve
+                    return True
+                await self._cond.wait()  # chỉ thiếu vì chỗ đang giữ (`reserved > 0`)
+            self._cond.notify_all()  # đã dừng: cặp đang chờ chỗ cũng dừng ngay
+            return False
+
+    async def release(self, reserve: Decimal) -> None:
+        async with self._cond:
+            self.reserved -= reserve
+            self._cond.notify_all()
+
+
+class _PairBudget:
+    """`llm_budget` của một cặp: lời gọi đầu giữ chỗ `reserve`, các lời gọi sau kiểm với 0;
+    `release` trả chỗ đúng một lần (stage gọi trong `finally` sau khi cặp xong phần LLM)."""
+
+    def __init__(self, gate: _Gate, reserve: Decimal) -> None:
+        self._gate = gate
+        self._reserve = reserve
+        self._held = False
+
+    async def __call__(self) -> bool:
+        if self._held:
+            return await self._gate.allow(Decimal(0))
+        self._held = await self._gate.allow(self._reserve)
+        return self._held
+
+    async def release(self) -> None:
+        if self._held:
+            self._held = False
+            await self._gate.release(self._reserve)
 
 
 class VerifyStage:
@@ -115,12 +189,21 @@ class VerifyStage:
         ):
             warnings.append(LLM_NOT_CONFIGURED)
 
-        gate = _CostGate(self._deps, info.run_id, info.config.limits.max_cost_usd)
+        async def read_cost() -> Decimal:
+            async with self._deps.session_factory() as session:
+                return await run_cost(session, info.run_id)
+
+        gate = _CostGate(read_cost, Decimal(str(info.config.limits.max_cost_usd)))
+        reserve = judge_reserve(info.config, self._deps.settings.llm_prices)
         verifier = make_verifier(variant, self._deps) if llm_configured else None
         call_ctx = call_context(self._deps, info, StageName.S8)
 
         async def handle(unit: _Unit) -> None:
-            outcomes = await self._outcomes(ctx, info, unit, gate, verifier, call_ctx)
+            budget = _PairBudget(gate, reserve)
+            try:
+                outcomes = await self._outcomes(ctx, info, unit, budget, verifier, call_ctx)
+            finally:
+                await budget.release()
             async with fenced_session(self._deps.session_factory, ctx.lease) as session:
                 await write_outcomes(session, info=info, pair=unit.pair, outcomes=outcomes)
 
@@ -165,7 +248,7 @@ class VerifyStage:
         ctx: StageContext,
         info: RunInfo,
         unit: _Unit,
-        gate: _CostGate,
+        budget: _PairBudget,
         verifier: PairVerifier | None,
         call_ctx: CallContext,
     ) -> list[VerificationOutcome]:
@@ -183,7 +266,7 @@ class VerifyStage:
             sources=unit.state.sources,
             ref=unit.ref,
             call_ctx=call_ctx,
-            llm_budget=gate.allow,
+            llm_budget=budget,
             lease=ctx.lease,
             is_last_attempt=ctx.is_last_attempt,
         )

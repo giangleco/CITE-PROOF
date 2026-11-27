@@ -2,7 +2,7 @@
 
 | Thuộc tính | Giá trị |
 |---|---|
-| Trạng thái | Accepted (24/11/2026). Q-01 (ngân sách) và Q-03 (chính sách dữ liệu nhà cung cấp) vẫn mở |
+| Trạng thái | Accepted (24/11/2026); Superseded in part by ADR-011 (27/11/2026: thêm provider tương thích OpenAI, chọn provider theo cấu hình). Q-01 (ngân sách) và Q-03 (chính sách dữ liệu nhà cung cấp) vẫn mở |
 | Ngày | 2026-11-24 |
 | Liên quan | FR-45, FR-63, FR-81, NFR-05, NFR-06, NFR-08, SR-08, `07` §4.2, §4.6, `07a` §4.4, §4.5, §4.7.2, `12` §4.8, ADR-009, ADR-010, spec `superpowers/specs/2026-11-24-core-pipeline-design.md` (QĐ-01, QĐ-36, QĐ-37) |
 

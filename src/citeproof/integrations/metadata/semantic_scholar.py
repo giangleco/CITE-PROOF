@@ -85,7 +85,7 @@ class SemanticScholarConnector:
         papers = data.get("data", [])
         if not isinstance(papers, list):
             raise bad_envelope(self.name)
-        return parse_records(papers, parse_paper)
+        return parse_records(papers, parse_paper, source=self.name)
 
     async def _get(self, url: str, params: dict[str, str]) -> Any | None:
         return await get_json(

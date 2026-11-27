@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "partials/ui.html" import badge, flag, csrf %}
+{% from "partials/ui.html" import badge, flag, csrf, notice %}
 {% block title %}Tài liệu tham khảo: {{ header.document_name }} | CiteProof{% endblock %}
 {% block content %}
 {% include "partials/report_head.html" %}
@@ -9,6 +9,7 @@
   <a class="chip" href="/runs/{{ header.run_id }}/references?status={{ t.key }}"{% if status == t.key %} aria-current="true"{% endif %}>{{ labels.REF_STATUS[t.key].label }}</a>
   {% endfor %}
 </nav>
+{% if provider_changed %}{{ notice(labels.LLM_PROVIDER_CHANGED, "warn") }}{% endif %}
 {% if can_retry_lookups %}
 <form method="post" action="/runs/{{ header.run_id }}/retry-lookups">
   {{ csrf(csrf_token) }}

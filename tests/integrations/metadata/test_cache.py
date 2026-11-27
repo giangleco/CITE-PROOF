@@ -1,5 +1,6 @@
 """MetadataCache trên PostgreSQL: khóa hash, TTL, không lưu truy vấn, không cache lỗi (T-304)."""
 
+import hashlib
 import re
 from datetime import timedelta
 from typing import Any
@@ -13,6 +14,7 @@ from citeproof.core.enums import MetadataOutcome
 from citeproof.core.settings import Settings
 from citeproof.db.models import MetadataCacheEntry
 from citeproof.integrations.metadata import (
+    METADATA_CACHE_VERSION,
     CrossrefConnector,
     MetadataCache,
     MetadataGateway,
@@ -22,8 +24,10 @@ from citeproof.integrations.metadata import (
     make_gateway_factory,
     query_hash,
 )
+from citeproof.llm.cache import canonical_json
 from tests.integrations.metadata.fakes import FakeApi, json_response, load_fixture
 
+PINNED_HASH = "ee492922cff2e2222b6ca8e37971212a217e25f0b04fcf3d8310da3742aef844"
 SessionFactory = async_sessionmaker[AsyncSession]
 
 
@@ -71,6 +75,15 @@ def test_query_hash_is_sha256_of_canonical_json() -> None:
     assert re.fullmatch(r"[0-9a-f]{64}", first)
     assert first == query_hash({"args": {"doi": "10.1000/x"}, "op": "doi"})  # thứ tự khóa không đổi
     assert first != query_hash({"op": "doi", "args": {"doi": "10.1000/y"}})
+
+
+def test_query_hash_is_versioned_and_pinned() -> None:
+    assert METADATA_CACHE_VERSION == 2
+    payload = {"op": "doi", "args": {"doi": "10.1000/x"}}
+    assert query_hash(payload) == PINNED_HASH
+    old = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+    assert query_hash(payload) != old  # khóa cũ (chưa có phiên bản) không còn trúng
+    assert query_hash(payload) == query_hash(dict(payload))
 
 
 async def test_cache_hit_skips_http(session_factory: SessionFactory, clean_db: None) -> None:

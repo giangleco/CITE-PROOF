@@ -68,13 +68,22 @@ def _normalize_with_map(text: str) -> tuple[str, list[int], list[int]]:
 def locate_quote(quote: str, text: str) -> tuple[int, int] | None:
     """Vị trí `[start, end)` của quote trong `text` gốc, hoặc None nếu không khớp nguyên văn.
 
-    So khớp sau NFC và gộp khoảng trắng; dấu lược `…`/`...` được so nguyên văn.
+    So khớp sau NFC và gộp khoảng trắng; dấu lược `…`/`...` được so nguyên văn. Ranh giới từ:
+    quote bắt đầu (kết thúc) bằng chữ/số thì vị trí khớp không được đứng ngay sau (trước) một
+    chữ/số trong `text` ("95.7%" không khớp trong "195.7%"); gặp vị trí như vậy thì tìm tiếp.
     """
     needle = _normalize_quote(quote)
     if not needle:
         return None
     haystack, starts, ends = _normalize_with_map(text)
+    check_start = needle[0].isalnum()
+    check_end = needle[-1].isalnum()
     pos = haystack.find(needle)
-    if pos < 0:
-        return None
-    return starts[pos], ends[pos + len(needle) - 1]
+    while pos >= 0:
+        end = pos + len(needle)
+        if not (check_start and pos > 0 and haystack[pos - 1].isalnum()) and not (
+            check_end and end < len(haystack) and haystack[end].isalnum()
+        ):
+            return starts[pos], ends[end - 1]
+        pos = haystack.find(needle, pos + 1)
+    return None

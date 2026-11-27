@@ -98,3 +98,25 @@ def test_0010_maps_legacy_access_status(database_url: str) -> None:
         ("k", "OPEN_ABSTRACT"),  # giá trị đã hợp lệ giữ nguyên
         ("u", "USER_PROVIDED"),
     ]
+
+
+@pytest.mark.db
+def test_0011_adds_nullable_consent_provider(database_url: str) -> None:
+    config = alembic_config(database_url)
+    parsed = make_url(database_url)
+    conninfo = parsed.set(drivername="postgresql").render_as_string(hide_password=False)
+    command.downgrade(config, "0010")
+    with psycopg.connect(conninfo, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO users (email, password_hash, display_name, consent_llm_at) "
+            "VALUES ('m11@x.vn', 'x', 'M', now())"
+        )
+    command.upgrade(config, "0011")
+    with psycopg.connect(conninfo, autocommit=True) as conn:
+        row = conn.execute(
+            "SELECT consent_llm_provider FROM users WHERE email = 'm11@x.vn'"
+        ).fetchone()
+        assert row == (None,)
+        conn.execute("DELETE FROM users WHERE email = 'm11@x.vn'")
+    command.downgrade(config, "0010")
+    command.upgrade(config, "head")

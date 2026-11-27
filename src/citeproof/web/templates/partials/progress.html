@@ -1,4 +1,4 @@
-{% from "partials/ui.html" import csrf %}
+{% from "partials/ui.html" import csrf, notice %}
 <div id="progress" aria-live="polite"{% if view.is_active %} hx-get="/runs/{{ view.id }}/progress" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
 <div class="page-head">
   <div>
@@ -34,8 +34,9 @@
     <div class="panel side-block">
       {% set msg = view.error_message or '' %}
       <div class="notice err">{{ msg }}{% if msg and msg[-1] not in '.!?' %}.{% endif %} Các bước trước vẫn giữ nguyên.</div>
+      {% if provider_changed and msg != labels.LLM_PROVIDER_CHANGED %}{{ notice(labels.LLM_PROVIDER_CHANGED, "warn") }}{% endif %}
       <div class="row">
-        {% if view.failed_stage %}
+        {% if view.failed_stage and not provider_changed %}
         <form method="post" action="/runs/{{ view.id }}/resume">
           {{ csrf(csrf_token) }}
           <button class="btn small primary" type="submit">Tiếp tục từ bước {{ view.failed_stage.value[1:] }}</button>

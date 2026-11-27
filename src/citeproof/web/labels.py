@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from citeproof.core import errors
 from citeproof.core.enums import (
     ClaimStatus,
     ContentLevelUsed,
@@ -189,6 +190,7 @@ SOURCE_IN_USE = (
 )
 UPLOAD_BUTTON = "Tải lên"
 DISCARD_BUTTON = "Xóa tệp này"
+PRINT_EXPORT_BUTTON = "Tải bản in"
 REVERIFY_BUTTON = "Kiểm chứng lại các tài liệu đã tải"
 RETRY_LOOKUPS_BUTTON = "Tra lại các tài liệu lỗi kết nối"
 NO_NEW_UPLOADS = (
@@ -197,6 +199,9 @@ NO_NEW_UPLOADS = (
 )
 NO_FAILED_LOOKUPS = "Lần kiểm tra này không có tài liệu nào bị lỗi kết nối khi tra cứu."
 RUN_NOT_FINISHED = "Chỉ kiểm chứng lại được khi lần kiểm tra này đã xong."
+# Provider LLM hiện tại khác provider đã đóng băng vào lần chạy (spec §5.4); câu nằm ở core
+# vì pipeline cũng ném lỗi này.
+LLM_PROVIDER_CHANGED = errors.LLM_PROVIDER_CHANGED_MESSAGE
 HIDDEN_WARNINGS = frozenset({"SAMPLE_DOCUMENT"})
 
 

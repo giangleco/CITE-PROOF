@@ -48,9 +48,18 @@ class Recorder:
 
 @pytest.mark.parametrize(
     ("status", "expected"),
-    [(200, True), (204, True), (304, True), (403, False), (404, False), (500, False)],
+    [
+        (200, True),
+        (204, True),
+        (304, True),
+        (403, None),
+        (429, None),
+        (404, False),
+        (410, False),
+        (500, False),
+    ],
 )
-async def test_check_url_status(status: int, expected: bool) -> None:
+async def test_check_url_status(status: int, expected: bool | None) -> None:
     recorder = Recorder(lambda: stream_response(status, b"..."))
     assert await check_url(recorder.client(), PAGE) is expected
     assert recorder.requests[0].headers["host"] == "example.org"

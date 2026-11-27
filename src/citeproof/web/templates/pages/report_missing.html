@@ -4,7 +4,7 @@
 {% block content %}
 {% include "partials/report_head.html" %}
 <p class="lede">Hệ thống chưa lấy được toàn văn mở cho các tài liệu dưới đây. Bạn có thể tải PDF của từng tài liệu lên để đối chiếu các nhận định liên quan; chỉ những nhận định đó được kiểm tra lại.</p>
-{% if upload_error %}{{ notice(upload_error, "err") }}{% endif %}
+{% if upload_error %}{{ notice(upload_error, "err") }}{% elif provider_changed %}{{ notice(labels.LLM_PROVIDER_CHANGED, "warn") }}{% endif %}
 {% if can_reverify %}
 <form method="post" action="/runs/{{ header.run_id }}/reverify">
   {{ csrf(csrf_token) }}
@@ -28,7 +28,7 @@
           {{ csrf(csrf_token) }}
           <button class="btn small" type="submit">{{ labels.DISCARD_BUTTON }}</button>
         </form>
-      {% else %}
+      {% elif not provider_changed %}
         <form method="post" enctype="multipart/form-data" action="/runs/{{ header.run_id }}/missing/{{ item.reference_entry_id }}/upload">
           {{ csrf(csrf_token) }}
           <label class="sr" for="src-{{ item.ref_index }}">Tải PDF cho tài liệu [{{ item.ref_index }}]</label>

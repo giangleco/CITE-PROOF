@@ -166,6 +166,6 @@ async def consent_submit(
             current=current,
             status=400,
         )
-    await auth.record_consent(db, current.user)
+    await auth.record_consent(db, current.user, settings)
     await db.commit()
     return RedirectResponse(safe_next(next), status_code=303)

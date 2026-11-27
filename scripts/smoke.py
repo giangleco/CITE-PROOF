@@ -3,10 +3,15 @@
 Đăng nhập, gửi một văn bản ngắn, chờ lần kiểm tra xong rồi mở trang báo cáo. Thoát 0 nếu đạt,
 1 nếu không. Tài khoản phải có sẵn và đã đồng ý màn hình đồng ý (hoặc script đồng ý giúp).
 
-    uv run python scripts/smoke.py --base-url https://DOMAIN --email E --password P
+    CITEPROOF_SMOKE_PASSWORD=... uv run python scripts/smoke.py --base-url https://DOMAIN --email E
+
+Mật khẩu đọc từ biến môi trường CITEPROOF_SMOKE_PASSWORD; thiếu thì hỏi bằng getpass. Không có
+tùy chọn dòng lệnh cho mật khẩu để nó không nằm trong argv (lộ qua `ps` và lịch sử shell).
 """
 
 import argparse
+import getpass
+import os
 import re
 import sys
 import time
@@ -73,12 +78,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--email", required=True)
-    parser.add_argument("--password", required=True)
     parser.add_argument("--timeout", type=float, default=600.0)
     args = parser.parse_args(argv)
+    password = os.environ.get("CITEPROOF_SMOKE_PASSWORD") or getpass.getpass("Mật khẩu: ")
     try:
         with httpx.Client(base_url=args.base_url, timeout=30.0) as client:
-            login(client, args.email, args.password)
+            login(client, args.email, password)
             run_id = submit_text(client)
             wait_finished(client, run_id, args.timeout)
             report = client.get(f"/runs/{run_id}/report")

@@ -60,10 +60,10 @@ def _patch_llm(monkeypatch: pytest.MonkeyPatch) -> ClosingProvider:
     """Provider "Anthropic" giả, dùng chung cho `LLMClient` và `AgentRunner` của `open_deps`."""
     closing = ClosingProvider()
 
-    def fake_make_anthropic_provider(settings: Settings) -> ClosingProvider:
+    def fake_make_provider(settings: Settings) -> ClosingProvider:
         return closing
 
-    monkeypatch.setattr(deps_module, "make_anthropic_provider", fake_make_anthropic_provider)
+    monkeypatch.setattr(deps_module, "make_provider", fake_make_provider)
     return closing
 
 
