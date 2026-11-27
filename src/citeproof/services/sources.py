@@ -30,6 +30,7 @@ from citeproof.db.models import (
 )
 from citeproof.modules.sources.title_match import title_match
 from citeproof.parsing.pdf import pdf_page_count
+from citeproof.pipeline.config import RunConfig, ensure_same_provider
 from citeproof.services.documents import ensure_no_active_run, sniff_kind
 from citeproof.storage import Storage, document_prefix
 from citeproof.web import labels
@@ -90,6 +91,11 @@ async def upload_source(
     data: bytes,
 ) -> UploadedSource:
     document_id = await _own_run_document(session, user=user, run_id=run_id)
+    # Nguồn tải lên chỉ dùng cho lần chạy con, mà lần chạy con bị chặn khi provider đã đổi.
+    config = await session.scalar(
+        select(VerificationRun.config).where(VerificationRun.id == run_id)
+    )
+    ensure_same_provider(RunConfig.load(config), settings)
     entry = (
         await session.execute(
             select(ReferenceEntry).where(

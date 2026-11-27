@@ -40,6 +40,8 @@ class RunHeader(_View):
     warnings: list[WarningView]
     # Biến thể cuối của lần chạy: báo cáo chỉ hiện dòng của verifier này (QĐ-28).
     verifier: Verifier
+    # Provider LLM đóng băng vào lần chạy (spec §5.4); None: không gắn provider.
+    provider: str | None = None
 
 
 class Tally(_View):

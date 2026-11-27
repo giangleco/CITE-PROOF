@@ -241,6 +241,7 @@ Bảng nhãn này là nguồn duy nhất; mã nguồn sinh nhãn từ đây, tem
 | Nút tải nguồn | `UPLOAD_BUTTON` Tải lên; `DISCARD_BUTTON` Xóa tệp này |
 | Nút kiểm chứng lại một phần | `REVERIFY_BUTTON` Kiểm chứng lại các tài liệu đã tải; `RETRY_LOOKUPS_BUTTON` Tra lại các tài liệu lỗi kết nối |
 | Không kiểm chứng lại được | `NO_NEW_UPLOADS` Chưa có tệp nào được tải lên sau lần kiểm tra này. Hãy tải toàn văn của tài liệu cần đối chiếu trước.; `NO_FAILED_LOOKUPS` Lần kiểm tra này không có tài liệu nào bị lỗi kết nối khi tra cứu.; `RUN_NOT_FINISHED` Chỉ kiểm chứng lại được khi lần kiểm tra này đã xong. |
+| Nhà cung cấp mô hình đã đổi (ẩn nút kiểm chứng lại, tra lại, tải nguồn; báo cáo vẫn xem và xuất được) | `LLM_PROVIDER_CHANGED` Nhà cung cấp mô hình đã đổi; hãy tạo lần kiểm tra mới cho tài liệu này. |
 
 ### 8.6 Cảnh báo khi xử lý
 

@@ -102,6 +102,7 @@ async def _header(session: AsyncSession, *, user: User, run_id: UUID) -> RunHead
     for code in run.warnings or []:
         if isinstance(code, str):
             warnings.append(WarningView(code=code))
+    config = RunConfig.load(run.config)
     return RunHeader(
         run_id=run.id,
         document_id=document.id,
@@ -111,7 +112,8 @@ async def _header(session: AsyncSession, *, user: User, run_id: UUID) -> RunHead
         created_at=run.created_at,
         finished_at=run.finished_at,
         warnings=warnings,
-        verifier=RunConfig.load(run.config).variant,
+        verifier=config.variant,
+        provider=config.provider,
     )
 
 
